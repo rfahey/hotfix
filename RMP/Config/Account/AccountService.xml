@@ -4,7 +4,7 @@
 		<section name="AccountServiceConfig" type="MetraTech.Core.Services.AccountServiceConfigSection, MetraTech.Core.Services.dll"/>
 	</configSections>
   <!-- ESR-5877 add GetAccountListTimeOut configuration -->
-  <AccountServiceConfig GetAccountListMaxPages="20" GetAccountListTimeOut="70001">
+  <AccountServiceConfig GetAccountListMaxPages="20" GetAccountListTimeOut="80001">
 	</AccountServiceConfig>
 </configuration>
 <!-- Adding new comment in hotfix repo -->
