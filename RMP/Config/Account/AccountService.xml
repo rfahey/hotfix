@@ -7,3 +7,4 @@
   <AccountServiceConfig GetAccountListMaxPages="20" GetAccountListTimeOut="20001">
 	</AccountServiceConfig>
 </configuration>
+<!-- Adding new comment in hotfix repo -->
