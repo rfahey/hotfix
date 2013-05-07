@@ -1,0 +1,232 @@
+<procs>
+  <proc name='generate_usage_qual_group_proc'>
+    <param name='usage_qualification_group'/>
+    <initialize>
+      <define_memory_index>
+        <index>'GENERATED_USAGE_QUAL_GROUPS'</index>
+        <key_field>'usage_qualification_group'</key_field>
+        <field>'generated'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'ALL_USAGE_QUAL_GROUPS'</index>
+        <key_field>'usage_qualification_group'</key_field>
+        <field>'exists'</field>
+      </define_memory_index>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select distinct usage_qualification_group usage_qualification_group from usage_qualification_groups"
+        </query>
+        <query type="sql">
+          "select distinct usage_qualification_group usage_qualification_group from usage_qualification_groups"
+        </query>
+        <cursor>TEMP.usg_qual_groups</cursor>
+        <loop>
+          <index_insert>
+            <index>'ALL_USAGE_QUAL_GROUPS'</index>
+            <field name="account_qualification_group">OBJECT(TEMP.usg_qual_groups).usage_qualification_group</field>
+            <field name="exists">'1'</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query>
+        "select distinct usage_qualification_group, usage_qualification_group uqg_real from usage_qualification_groups
+        union all
+        select distinct lower(usage_qualification_group) usage_qualification_group, usage_qualification_group uqg_real from usage_qualification_groups"
+      </query>
+      <cursor>TEMP.all_usg_qual_rows</cursor>
+      <loop>
+        <do>TEMP.usage_qualification_group = OBJECT(TEMP.all_usg_qual_rows).usage_qualification_group</do>
+        <do>TEMP.uqg_real = OBJECT(TEMP.all_usg_qual_rows).uqg_real</do>
+        <!--<print>'generating UQG['~TEMP.usage_qualification_group~']'</print>-->
+
+        <index_select>
+          <index>'GENERATED_USAGE_QUAL_GROUPS'</index>
+          <field name="usage_qualification_group">TEMP.usage_qualification_group</field>
+          <cursor>TEMP.outer_group_csr</cursor>
+          <else>
+            <index_insert>
+              <index>'GENERATED_USAGE_QUAL_GROUPS'</index>
+              <field name="usage_qualification_group">TEMP.usage_qualification_group</field>
+              <field name="generated">'1'</field>
+            </index_insert>
+            <!-- <to_lower>
+            	<input>TEMP.usage_qualification_group</input>
+            	<output>TEMP.lower_uqg</output>
+            </to_lower> -->
+            <do>
+              TEMP.my_uq_proc="<![CDATA[
+<proc name='determine_usg_qual_"~TEMP.usage_qualification_group~"'>
+  <param name='bucket_object'/>
+<!--<print>'Determining usage qual group ["~TEMP.usage_qualification_group~"]'</print>-->
+  <if>
+    <condition>OBJECT.usg_member_of_"~TEMP.usage_qualification_group~" ne ''</condition>
+    <else>
+      <do>OBJECT.usg_member_of_"~TEMP.usage_qualification_group~" = '1'</do>
+            ]]>"
+            </do>
+
+            <db_select>
+              <login_object>GLOBAL.target_login</login_object>
+              <query type="oracle">
+                "select * from usage_qualification_groups where usage_qualification_group = $${TEMP.uqg_real} order by row_num"
+              </query>
+              <query type="sql">
+                "select * from usage_qualification_groups where usage_qualification_group = $${TEMP.uqg_real} order by row_num"
+              </query>
+              <cursor>TEMP.usg_qual_rows</cursor>
+              <loop>
+                <if>
+                  <condition>OBJECT(TEMP.usg_qual_rows).filter ne ''</condition>
+                  <then>
+                    <do>TEMP.curr_filter = OBJECT(TEMP.usg_qual_rows).filter</do>
+                    <do>TEMP.success = '1'</do>
+                    <while>
+                      <condition>TEMP.success eq '1'</condition>
+                      <loop>
+                        <match>
+                          <input>TEMP.curr_filter</input>
+                          <regex>"GROUP\.(\w+)"</regex>
+                          <success>TEMP.success</success>
+                          <capture>TEMP.my_group</capture>
+                        </match>
+                        <if>
+                          <condition>TEMP.success eq '1'</condition>
+                          <then>
+                            <replace>
+                              <input>TEMP.curr_filter</input>
+                              <old_value>'GROUP.'~TEMP.my_group</old_value>
+                              <new_value>'OBJECT.usg_member_of_'~TEMP.my_group</new_value>
+                              <output>TEMP.curr_filter</output>
+                            </replace>
+                            <call_proc_for_current_object>
+                              <name>'generate_usage_qual_group_proc'</name>
+                              <param name='usage_qualification_group'>TEMP.my_group</param>
+                            </call_proc_for_current_object>
+                            <do>
+                              TEMP.my_uq_proc~="<![CDATA[
+      <call_proc_for_current_object>
+        <name>'determine_usg_qual_"~TEMP.my_group~"'</name>
+        <param name='bucket_object'>TEMP.bucket_object</param>
+      </call_proc_for_current_object>
+                    ]]>"
+                            </do>
+                          </then>
+                        </if>
+                      </loop>
+                    </while>
+                    <do>TEMP.success = '1'</do>
+                    <while>
+                      <condition>TEMP.success eq '1'</condition>
+                      <loop>
+                        <match>
+                          <input>TEMP.curr_filter</input>
+                          <regex>"DECISION\.(\w+)"</regex>
+                          <success>TEMP.success</success>
+                          <capture>TEMP.my_field</capture>
+                        </match>
+                        <if>
+                          <condition>TEMP.success eq '1'</condition>
+                          <then>
+                            <replace>
+                              <input>TEMP.curr_filter</input>
+                              <old_value>'DECISION.'~TEMP.my_field</old_value>
+                              <new_value>'OBJECT(TEMP.bucket_object).'~TEMP.my_field</new_value>
+                              <output>TEMP.curr_filter</output>
+                            </replace>
+                          </then>
+                        </if>
+                      </loop>
+                    </while>
+                    <do>TEMP.success = '1'</do>
+                    <while>
+                      <condition>TEMP.success eq '1'</condition>
+                      <loop>
+                        <match>
+                          <input>TEMP.curr_filter</input>
+                          <regex>"USAGE\.(\w+)"</regex>
+                          <success>TEMP.success</success>
+                          <capture>TEMP.my_field</capture>
+                        </match>
+                        <if>
+                          <condition>TEMP.success eq '1'</condition>
+                          <then>
+                            <replace>
+                              <input>TEMP.curr_filter</input>
+                              <old_value>'USAGE.'~TEMP.my_field</old_value>
+                              <new_value>'OBJECT.'~TEMP.my_field</new_value>
+                              <output>TEMP.curr_filter</output>
+                            </replace>
+                          </then>
+                        </if>
+                      </loop>
+                    </while>
+                    <do>TEMP.success = '1'</do>
+                    <while>
+                      <condition>TEMP.success eq '1'</condition>
+                      <loop>
+                        <match>
+                          <input>TEMP.curr_filter</input>
+                          <regex>"DIMENSION\((\d+)\)\.(\w+)"</regex>
+                          <success>TEMP.success</success>
+                          <capture>TEMP.my_dimension</capture>
+                          <capture>TEMP.my_field</capture>
+                        </match>
+                        <if>
+                          <condition>TEMP.success eq '1'</condition>
+                          <then>
+                            <replace>
+                              <input>TEMP.curr_filter</input>
+                              <old_value>'DIMENSION('~TEMP.my_dimension~').'</old_value>
+                              <new_value>'OBJECT(OBJECT(TEMP.bucket_object).dimension_ref_'~TEMP.my_dimension~').</new_value>
+                              <output>TEMP.curr_filter</output>
+                            </replace>
+                          </then>
+                        </if>
+                      </loop>
+                    </while>
+                    <call_proc_for_current_object>
+                      <name>'replace_enum_strings'</name>
+                      <param name='source_string'>TEMP.curr_filter</param>
+                      <param name='target_string'>TEMP.curr_filter</param>
+                    </call_proc_for_current_object>
+
+                    <do>
+                      TEMP.my_uq_proc~="<![CDATA[
+      <if>
+        <condition>"~TEMP.curr_filter~"</condition>
+        <else>
+          <do>OBJECT.usg_member_of_"~TEMP.usage_qualification_group~" = '0'</do>
+        </else>
+      </if>
+                  ]]>"
+                    </do>
+
+                  </then>
+                </if>
+              </loop>
+            </db_select>
+            <do>
+              TEMP.my_uq_proc~="<![CDATA[
+    </else>
+  </if>
+</proc>
+          ]]>"
+            </do>
+            <!--<print>TEMP.my_uq_proc</print>-->
+            <execute_immediate>TEMP.my_uq_proc</execute_immediate>
+          </else>
+        </index_select>
+      </loop>
+    </db_select>
+
+    </initialize>
+  </proc>
+
+</procs>

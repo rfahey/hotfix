@@ -1,0 +1,20 @@
+<proc name="usage_hook_add_object">
+  <param name="usage_hook_id"/>
+  <param name="usage_oid"/>
+
+  <info>'[usage_hook_add_object][gen]proc called with usage_oid=['~TEMP.usage_oid~'] parent_oid=['~OBJECT(TEMP.usage_oid).parent_oid~'] id_view=['~OBJECT(TEMP.usage_oid).id_view~'] amount=['~OBJECT(TEMP.usage_oid).amount~']'</info>
+  <do>OBJECT(TEMP.usage_oid).is_generated_charge=1</do>
+
+  <info>'[usage_hook_add_object][gen] calling proc ['~'generate_sortkey_'~OBJECT(TEMP.usage_oid).id_view~']'</info>
+  <call_dynamic_proc_for_object>
+    <name>'generate_sortkey_'~OBJECT(TEMP.usage_oid).id_view</name>
+    <object_id>TEMP.usage_oid</object_id>
+  </call_dynamic_proc_for_object>
+  <info>'[usage_hook_add_object][gen] set sortkey=['~OBJECT(TEMP.usage_oid).sortkey~']'</info>
+
+  <usage_hook_add_object>
+    <hook_id>TEMP.usage_hook_id</hook_id>
+    <object_id>TEMP.usage_oid</object_id>
+  </usage_hook_add_object>
+  <info>'[usage_hook_add_object][gen] complete with usage_oid=['~TEMP.usage_oid~'] parent_oid=['~OBJECT(TEMP.usage_oid).parent_oid~'] id_view=['~OBJECT(TEMP.usage_oid).id_view~'] amount=['~OBJECT(TEMP.usage_oid).amount~'] sortkey=['~OBJECT(TEMP.usage_oid).sortkey~'] is_live_parent=['~OBJECT(TEMP.usage_oid).is_live_parent~'],is_generated_charge=['~OBJECT(TEMP.usage_oid).is_generated_charge~']'</info>
+</proc>

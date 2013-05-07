@@ -1,0 +1,330 @@
+<proc name="find_bucket_dates">
+  <param name="bucket_object"/>
+  <param name="usage_object"/>
+  <param name="found_bucket" mode="out"/>
+
+  <if>
+    <condition>OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'interval' </condition>
+    <then>
+
+      <do>OBJECT(TEMP.bucket_object).last_end_date = (OBJECT(TEMP.bucket_object).last_end_date eq ''?OBJECT(TEMP.bucket_object).start_date:OBJECT(TEMP.bucket_object).last_end_date)</do>
+      <do>OBJECT(TEMP.bucket_object).id_interval = (OBJECT(TEMP.bucket_object).id_interval eq ''?OBJECT(TEMP.usage_object).id_usage_interval:OBJECT(TEMP.bucket_object).id_interval)</do>
+
+      <run_once>
+        <define_memory_index>
+          <index>'INTERVAL_DATES'</index>
+          <key_field>'id_usage_interval'</key_field>
+          <field>'start_date'</field>
+          <field>'end_date'</field>
+          <field>'previous_id_usage_interval'</field>
+          <field>'id_usage_cycle'</field>
+          <field>'id_cycle_type'</field>
+          <field>'tx_cycle_type_method'</field>
+        </define_memory_index>
+      </run_once>
+      <do>TEMP.starting_interval=OBJECT(TEMP.bucket_object).id_interval</do>
+      <do>TEMP.ending_interval = OBJECT(TEMP.bucket_object).id_interval</do>
+      <do>TEMP.start_date = ''</do>
+      <do>TEMP.end_date = ''</do>
+      <do>TEMP.previous_id_usage_interval = ''</do>
+      <do>TEMP.id_usage_cycle = ''</do>
+      <do>TEMP.id_cycle_type = ''</do>
+      <do>TEMP.tx_cycle_type_method = ''</do>
+      <index_select>
+        <index>'INTERVAL_DATES'</index>
+        <field name="id_usage_interval">TEMP.starting_interval</field>
+        <cursor>TEMP.interval_dates</cursor>
+        <then>
+          <do>TEMP.start_date = OBJECT(TEMP.interval_dates).start_date</do>
+          <do>TEMP.end_date = OBJECT(TEMP.interval_dates).end_date</do>
+          <do>TEMP.previous_id_usage_interval = OBJECT(TEMP.interval_dates).previous_id_interval</do>
+          <do>TEMP.id_usage_cycle = OBJECT(TEMP.interval_dates).id_usage_cycle</do>
+          <do>TEMP.id_cycle_type = OBJECT(TEMP.interval_dates).id_cycle_type</do>
+          <do>TEMP.tx_cycle_type_method = OBJECT(TEMP.interval_dates).tx_cycle_type_method</do>
+        </then>
+        <else>
+          <db_select>
+            <login_object>GLOBAL.target_login</login_object>
+            <query>
+              "select a.id_interval, a.dt_start, a.dt_end, a.id_usage_cycle, b.id_cycle_type, c.tx_cycle_type_method,
+              (datediff(day,'1970-01-01',dateadd(second, -1, dateadd(month,-1,dateadd(second,1,a.dt_end))))*65536 + a.id_usage_cycle) previous_id_interval
+              from t_usage_interval a
+              inner join t_usage_cycle b on a.id_usage_cycle = b.id_usage_cycle
+              inner join t_usage_cycle_type c on b.id_cycle_type = c.id_cycle_type
+              where a.id_interval = $${TEMP.starting_interval}"
+            </query>
+            <cursor>TEMP.interval_db_dates</cursor>
+            <loop>
+              <index_insert>
+                <index>'INTERVAL_DATES'</index>
+                <field name='id_usage_interval'>OBJECT(TEMP.interval_db_dates).id_interval</field>
+                <field name='start_date'>OBJECT(TEMP.interval_db_dates).dt_start</field>
+                <field name='end_date'>OBJECT(TEMP.interval_db_dates).dt_end</field>
+                <field name='previous_id_usage_interval'>OBJECT(TEMP.interval_db_dates).previous_id_interval</field>
+                <field name='id_usage_cycle'>OBJECT(TEMP.interval_db_dates).id_usage_cycle</field>
+                <field name='id_cycle_type'>OBJECT(TEMP.interval_db_dates).id_cycle_type</field>
+                <field name='tx_cycle_type_method'>OBJECT(TEMP.interval_db_dates).tx_cycle_type_method</field>
+              </index_insert>
+              <do>TEMP.start_date = OBJECT(TEMP.interval_db_dates).dt_start</do>
+              <do>TEMP.end_date = OBJECT(TEMP.interval_db_dates).dt_end</do>
+              <do>TEMP.previous_id_usage_interval = OBJECT(TEMP.interval_db_dates).previous_id_interval</do>
+              <do>TEMP.id_usage_cycle = OBJECT(TEMP.interval_db_dates).id_usage_cycle</do>
+              <do>TEMP.id_cycle_type = OBJECT(TEMP.interval_db_dates).id_cycle_type</do>
+              <do>TEMP.tx_cycle_type_method = OBJECT(TEMP.interval_db_dates).tx_cycle_type_method</do>
+              <print>'JHERE BEFORE with ['~TEMP.start_date~'] and ['~TEMP.end_date~'] and ['~TEMP.previous_id_usage_interval~']'</print>
+            </loop>
+          </db_select>
+        </else>
+      </index_select>
+
+      <do>TEMP.my_units = ''</do>
+      <do>TEMP.my_multiplier = ''</do>
+      <do>TEMP.my_offset = ''</do>
+      <if>
+        <condition>TEMP.id_cycle_type eq '1'</condition>
+        <then>
+          <do>TEMP.my_units = 'MM'</do>
+          <do>TEMP.my_multiplier = '1'</do>
+        </then>
+      </if>
+      <if>
+        <condition>TEMP.id_cycle_type eq '3'</condition>
+        <then>
+          <do>TEMP.my_units = 'DD'</do>
+          <do>TEMP.my_multiplier = '1'</do>
+        </then>
+      </if>
+      <if>
+        <condition>TEMP.id_cycle_type eq '4'</condition>
+        <then>
+          <do>TEMP.my_units = 'DD'</do>
+          <do>TEMP.my_multiplier = '7'</do>
+        </then>
+      </if>
+      <if>
+        <condition>TEMP.id_cycle_type eq '5'</condition>
+        <then>
+          <do>TEMP.my_units = 'DD'</do>
+          <do>TEMP.my_multiplier = '14'</do>
+        </then>
+      </if>
+      <if>
+        <condition>TEMP.id_cycle_type eq '7'</condition>
+        <then>
+          <do>TEMP.my_units = 'MM'</do>
+          <do>TEMP.my_multiplier = '3'</do>
+        </then>
+      </if>
+      <if>
+        <condition>TEMP.id_cycle_type eq '8'</condition>
+        <then>
+          <do>TEMP.my_units = 'MM'</do>
+          <do>TEMP.my_multiplier = '6'</do>
+        </then>
+      </if>
+      <if>
+        <condition>TEMP.id_cycle_type eq '9'</condition>
+        <then>
+          <do>TEMP.my_units = 'MM'</do>
+          <do>TEMP.my_multiplier = '12'</do>
+        </then>
+      </if>
+      <do>TEMP.my_offset = (OBJECT(TEMP.bucket_object).cycle_units_per_tier)* TEMP.my_multiplier</do>
+      <do>TEMP.offset_end_date = TEMP.end_date</do>
+      <c>Note that this puts a restriction on id_usage_cycle being less than 35536. If we have a usage cycle greater than that, we'll start to infringe on the intervals ending on the next day</c>
+      <do>TEMP.interval_offset = 30000</do>
+      <while>
+        <condition>OBJECT(TEMP.usage_object).id_usage_interval GT TEMP.ending_interval</condition>
+        <loop>
+          <do>TEMP.starting_interval = TEMP.ending_interval + TEMP.interval_offset</do>
+
+          <print>'JHERE I have ['~TEMP.end_date~']'</print>
+          <date_add>
+            <input>TEMP.end_date</input>
+            <unit>'SS'</unit>
+            <increment>1</increment>
+            <output>TEMP.end_date</output>
+          </date_add>
+          <print>'JHERE1 I have ['~TEMP.end_date~']'</print>
+          <do>TEMP.start_date = TEMP.end_date</do>
+          <date_add>
+            <input>TEMP.end_date</input>
+            <unit>TEMP.my_units</unit>
+            <increment>TEMP.my_offset</increment>
+            <output>TEMP.end_date</output>
+          </date_add>
+          <print>'JHERE2 I have ['~TEMP.end_date~']'</print>
+          <date_add>
+            <input>TEMP.end_date</input>
+            <unit>'SS'</unit>
+            <increment>'-1'</increment>
+            <output>TEMP.end_date</output>
+          </date_add>
+          <print>'JHERE3 I have ['~TEMP.end_date~']'</print>
+
+          <c>The formula for an interval is days since 1970 for the end_date + id_usage cycle</c>
+          <date_diff>
+            <first_date>TEMP.end_date</first_date>
+            <second_date format='YYYY-MM-DD HH24:MI:SS'>'1970-01-01 00:00:00'</second_date>
+            <output type='days'>TEMP.days_diff</output>
+          </date_diff>
+          <do>TEMP.ending_interval = (TEMP.days_diff * 65536) + TEMP.id_usage_cycle</do>
+
+
+
+        </loop>
+      </while>
+
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).end_date lte TEMP.start_date or OBJECT(TEMP.bucket_object).start_date gte TEMP.end_date</condition>
+        <then>
+          <c>This is not a valid cycle</c>
+          <do>TEMP.found_bucket = 0</do>
+        </then>
+        <else>
+          <if>
+            <condition>OBJECT(TEMP.bucket_object).end_date lt TEMP.end_date or OBJECT(TEMP.bucket_object).start_date gt TEMP.start_date</condition>
+            <then>
+              <c>need to prorate</c>
+              <do>OBJECT(TEMP.bucket_object).prorate_start_date = TEMP.start_date</do>
+              <do>OBJECT(TEMP.bucket_object).prorate_end_date = TEMP.end_date</do>
+              <if>
+                <condition>OBJECT(TEMP.bucket_object).end_date gt TEMP.end_date</condition>
+                <then>
+                  <c>Bound the end date by the bucket</c>
+                  <do>OBJECT(TEMP.bucket_object).end_date = TEMP.end_date</do>
+                </then>
+              </if>
+              <if>
+                <condition>OBJECT(TEMP.bucket_object).start_date lt TEMP.start_date</condition>
+                <then>
+                  <c>Bound the start date by the bucket</c>
+                  <do>OBJECT(TEMP.bucket_object).start_date = TEMP.start_date</do>
+                </then>
+              </if>
+              <call_proc_for_current_object>
+                <name>'prorate_bucket'</name>
+                <param name='my_bucket'>TEMP.bucket_object</param>
+              </call_proc_for_current_object>
+            </then>
+          </if>
+          <c>normal case</c>
+          <do>OBJECT(TEMP.bucket_object).interval_start = TEMP.starting_interval</do>
+          <do>OBJECT(TEMP.bucket_object).interval_end = TEMP.ending_interval</do>
+          <do>TEMP.found_bucket = 1</do>
+        </else>
+      </if>
+
+    </then>
+  </if>
+
+  <if>
+    <condition>OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'monthly' or OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'weekly' or OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'daily' or OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'quarterly' or OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'annually'</condition>
+    <then>
+      <do>TEMP.start_date = OBJECT(TEMP.bucket_object).start_date</do>
+      <do>TEMP.cycles = OBJECT(TEMP.bucket_object).cycles</do>
+      <do>TEMP.cycle_units_per_tier = OBJECT(TEMP.bucket_object).cycle_units_per_tier</do>
+      <do>TEMP.unit = 'MM'</do>
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'quarterly'</condition>
+        <then>
+          <do>TEMP.cycles = TEMP.cycles * 3</do>
+          <do>TEMP.cycle_units_per_tier = TEMP.cycle_units_per_tier * 3</do>
+        </then>
+      </if>
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'annually'</condition>
+        <then>
+          <do>TEMP.cycles = TEMP.cycles * 12</do>
+          <do>TEMP.cycle_units_per_tier = TEMP.cycle_units_per_tier * 12</do>
+        </then>
+      </if>
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'daily'</condition>
+        <then>
+          <do>TEMP.unit = 'DD'</do>
+        </then>
+      </if>
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'weekly'</condition>
+        <then>
+          <do>TEMP.unit = 'DD'</do>
+          <do>TEMP.cycles = TEMP.cycles * 7</do>
+          <do>TEMP.cycle_units_per_tier = TEMP.cycle_units_per_tier * 7</do>
+        </then>
+      </if>
+
+      <do>TEMP.end_date = OBJECT(TEMP.bucket_object).start_date</do>
+      <do>TEMP.start_date = OBJECT(TEMP.bucket_object).start_date</do>
+
+      <while>
+        <condition>OBJECT(TEMP.usage_object).dt_session GT TEMP.end_date</condition>
+        <loop>
+          <do>TEMP.start_date = TEMP.end_date</do>
+
+          <date_add>
+            <input>TEMP.start_date</input>
+            <unit>TEMP.unit</unit>
+            <increment>TEMP.cycle_units_per_tier</increment>
+            <output>TEMP.end_date</output>
+          </date_add>
+
+        </loop>
+      </while>
+
+      <if>
+        <condition>(OBJECT(TEMP.bucket_object).end_date lte TEMP.start_date or OBJECT(TEMP.bucket_object).start_date gte TEMP.end_date</condition>
+        <then>
+          <c>This is not a valid cycle</c>
+          <do>TEMP.found_bucket = 0</do>
+        </then>
+        <else>
+          <c>normal case</c>
+          <do>TEMP.found_bucket = 1</do>
+          <if>
+            <condition>(OBJECT(TEMP.bucket_object).end_date lt TEMP.end_date or OBJECT(TEMP.bucket_object).start_date gt TEMP.start_date</condition>
+            <then>
+              <c>need to prorate</c>
+              <do>OBJECT(TEMP.bucket_object).prorate_start_date = TEMP.start_date</do>
+              <do>OBJECT(TEMP.bucket_object).prorate_end_date = TEMP.end_date</do>
+              <if>
+                <condition>(OBJECT(TEMP.bucket_object).end_date gt TEMP.end_date</condition>
+                <then>
+                  <c>Bound the end date by the bucket</c>
+                  <do>OBJECT(TEMP.bucket_object).end_date = TEMP.end_date</do>
+                </then>
+              </if>
+              <if>
+                <condition>(OBJECT(TEMP.bucket_object).start_date lt TEMP.start_date</condition>
+                <then>
+                  <c>Bound the start date by the bucket</c>
+                  <do>OBJECT(TEMP.bucket_object).start_date = TEMP.start_date</do>
+                </then>
+              </if>
+              <call_proc_for_current_object>
+                <name>'prorate_bucket'</name>
+                <param name='my_bucket'>TEMP.bucket_object</param>
+              </call_proc_for_current_object>
+            </then>
+            <else>
+              <do>OBJECT(TEMP.bucket_object).start_date = TEMP.start_date</do>
+              <do>OBJECT(TEMP.bucket_object).end_date = TEMP.end_date</do>
+            </else>
+          </if>          
+        </else>
+      </if>
+    </then>
+  </if>
+
+  <if>
+    <condition>OBJECT(TEMP.bucket_object).cycle_unit_type eq ''</condition>
+    <then>
+      <c>No cycle unit type, so one bucket slice for the entire decision is correct</c>
+      <do>TEMP.found_bucket = 1</do>
+      <do>OBJECT(TEMP.bucket_object).id_usage_interval = 0</do>
+    </then>
+  </if>
+
+  <print>'find bucket dates found ['~TEMP.found_bucket~']'</print>
+
+</proc>

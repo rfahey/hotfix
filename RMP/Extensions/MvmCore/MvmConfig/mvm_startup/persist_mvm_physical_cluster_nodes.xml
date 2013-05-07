@@ -1,0 +1,23 @@
+<proc name="persist_mvm_physical_cluster_nodes">
+  <index_select_keys>
+    <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+    <cursor>TEMP.keys</cursor>
+    <loop>
+      <index_select>
+        <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+        <field name="physical_node_id">OBJECT(TEMP.keys).physical_node_id</field>
+        <cursor>TEMP.csr</cursor>
+	<loop>
+		<do>TEMP.getdate=OBJECT(GLOBAL.target_login).database_type eq 'oracle' ? 'SYSDATE' : 'getdate()'</do>
+          <db_insert>
+            <name>'MVM_PHYSICAL_CLUSTER_NODES'</name>
+            <object_id>TEMP.csr</object_id>
+            <field name="status" sql="true">"'launching'"</field>
+            <field name="status_date" sql="true">TEMP.getdate</field>
+          </db_insert>
+        </loop>
+      </index_select>
+    </loop>
+  </index_select_keys>
+</proc>
+

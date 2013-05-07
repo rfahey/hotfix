@@ -1,0 +1,232 @@
+<procs>
+
+  <proc name='delta_track_gen_acc_qual_tracking'>
+    <initialize>
+
+      <define_memory_index>
+        <index>'POSSIBLE_AQG_PARENTS1'</index>
+        <key_field>'id_acc'</key_field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'POSSIBLE_AQG_PARENTS2'</index>
+        <field>'id_acc'</field>
+      </define_memory_index>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select * from account_qualification_groups where include IS NOT NULL order by account_qualification_group, include, row_num"
+        </query>
+        <cursor>TEMP.acc_qual_rows</cursor>
+        <loop>
+          <print>'JONAH IS ALSO IN HERE1234567!'</print>
+          <do>TEMP.filter = OBJECT(TEMP.acc_qual_rows).filter</do>
+          <if>
+            <condition>TEMP.filter eq ''</condition>
+            <then>
+              <do>TEMP.filter = '1 eq 1'</do>
+            </then>
+          </if>
+          <do>
+            TEMP.my_aq_proc="<![CDATA[
+<proc name='delta_track_aqg_"~OBJECT(TEMP.acc_qual_rows).account_qualification_group~"_"~OBJECT(TEMP.acc_qual_rows).include~"_"~OBJECT(TEMP.acc_qual_rows).row_num~"_routing'>
+  <index_clear>
+    <index>'POSSIBLE_AQG_PARENTS1'</index>
+  </index_clear>
+  <index_clear>
+    <index>'POSSIBLE_AQG_PARENTS2'</index>
+  </index_clear>
+            ]]>"
+          </do>
+
+          <if>
+            <condition>OBJECT(TEMP.acc_qual_rows).target_field eq 'id_group'</condition>
+            <then>
+              <do>
+                TEMP.my_aq_proc~="<![CDATA[
+  <db_select>
+    <login_object>GLOBAL.target_login</login_object>
+    <query>
+      'select id_acc id_acc_field, * from t_gsubmember
+      where id_group = $${OBJECT."~OBJECT(TEMP.acc_qual_rows).target_field~"}'
+    </query>
+    <cursor>TEMP.output_csr_group</cursor>
+    <loop>
+      <index_insert>
+        <index>'POSSIBLE_AQG_PARENTS1'</index>
+        <field name='id_acc'>OBJECT(TEMP.output_csr_group).id_acc_field</field>
+      </index_insert>
+    </loop>
+  </db_select>
+                    ]]>"
+              </do>
+            </then>
+            <else>
+              <do>
+                TEMP.my_aq_proc~="<![CDATA[
+  <index_insert>
+    <index>'POSSIBLE_AQG_PARENTS1'</index>
+    <field name='id_acc'>OBJECT."~OBJECT(TEMP.acc_qual_rows).target_field~"</field>
+  </index_insert>
+                    ]]>"
+              </do>
+            </else>
+          </if>
+
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from account_qualification_groups 
+                  where account_qualification_group = $${OBJECT(TEMP.acc_qual_rows).account_qualification_group} and $${OBJECT(TEMP.acc_qual_rows).row_num} > row_num 
+                  order by row_num desc"
+                </query>
+                <cursor>TEMP.acc_qual_rows_inner</cursor>
+                <loop>
+                  <do>TEMP.filter = OBJECT(TEMP.acc_qual_rows_inner).filter</do>
+                  <if>
+                    <condition>TEMP.filter eq ''</condition>
+                    <then>
+                      <do>TEMP.filter = '1 eq 1'</do>
+                    </then>
+                  </if>
+                  <do>
+                    TEMP.my_aq_proc~="<![CDATA[
+  <index_select_keys>
+    <index>'POSSIBLE_AQG_PARENTS1'</index>
+    <cursor>TEMP.poss_parents</cursor>
+    <loop>
+                    ]]>"
+                  </do>
+                  <if>
+                    <condition>OBJECT(TEMP.acc_qual_rows_inner).include ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_aq_proc~="<![CDATA[
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          'select "~OBJECT(TEMP.acc_qual_rows_inner).target_field~" id_acc_field, * from "~OBJECT(TEMP.acc_qual_rows_inner).include~"
+           where "~OBJECT(TEMP.acc_qual_rows_inner).output_field~" = $${"~OBJECT(TEMP.poss_parents).id_acc~"}'
+        </query>
+        <cursor>TEMP.output_csr</cursor>
+        <loop>
+                    ]]>"
+                      </do>
+                      <if>
+                        <condition>OBJECT(TEMP.acc_qual_rows_inner).target_field eq 'id_group'</condition>
+                        <then>
+                          <do>
+                            TEMP.my_aq_proc~="<![CDATA[
+          <db_select>
+            <login_object>GLOBAL.target_login</login_object>
+            <query>
+              'select id_acc id_acc_field, * from t_gsubmember
+               where id_group = $${"~OBJECT(TEMP.output_csr).id_acc_field~"}'
+            </query>
+            <cursor>TEMP.output_csr_group</cursor>
+            <loop>
+              <index_insert>
+                <index>'POSSIBLE_AQG_PARENTS2'</index>
+                <field name='id_acc'>OBJECT(TEMP.output_csr_group).id_acc_field</field>
+              </index_insert>
+            </loop>
+          </db_select>
+                    ]]>"
+                          </do>
+                        </then>
+                        <else>
+                          <do>
+                            TEMP.my_aq_proc~="<![CDATA[
+          <index_insert>
+            <index>'POSSIBLE_AQG_PARENTS2'</index>
+            <field name='id_acc'>OBJECT."~OBJECT(TEMP.output_csr).id_acc_field~"</field>
+          </index_insert>
+                    ]]>"
+                          </do>
+                        </else>
+                      </if>
+                      <do>
+                        TEMP.my_aq_proc~="<![CDATA[
+        </loop>
+      </db_select>
+                    ]]>"
+                      </do>
+                      
+                    </then>
+                  </if>
+                  <do>
+                    TEMP.my_aq_proc~="<![CDATA[
+    </loop>
+  </index_select_keys>
+      
+  <index_clear>
+    <index>'POSSIBLE_AQG_PARENTS1'</index>
+  </index_clear>
+      
+  <index_select>
+    <index>'POSSIBLE_AQG_PARENTS2'</index>
+    <cursor>TEMP.poss_parents</cursor>
+    <loop>
+      <index_insert_if_none>
+        <index>'POSSIBLE_AQG_PARENTS1'</index>
+        <field name='id_acc'>OBJECT(TEMP.poss_parents).id_acc</field>
+      </index_insert_if_none>
+    </loop>
+  </index_select>
+  <index_clear>
+    <index>'POSSIBLE_AQG_PARENTS2'</index>
+  </index_clear>
+            ]]>"
+                  </do>
+                  
+                </loop>
+              </db_select>
+          <do>
+            TEMP.my_aq_proc~="<![CDATA[            
+  <index_select_keys>
+    <index>'POSSIBLE_AQG_PARENTS1'</index>
+    <cursor>TEMP.poss_parents</cursor>
+    <loop>
+      <spawn>
+        <object_type>'ROUTING'</object_type>
+        <object_id>TEMP.oid</object_id>
+      </spawn>
+      <do>OBJECT(TEMP.oid).id_acc = OBJECT(TEMP.poss_parents).id_acc</do>
+      <do>OBJECT(TEMP.oid).node_id = 1</do>
+      <do>OBJECT(TEMP.oid.account_qualification_group = '"~OBJECT(TEMP.acc_qual_rows).account_qualification_group~"'</do>
+      <pipe_row>TEMP.oid</pipe_row>
+    </loop>
+  </index_select_keys>
+</proc>
+            ]]>"
+          </do>
+
+          <print>TEMP.my_aq_proc</print>
+          <execute_immediate>TEMP.my_aq_proc</execute_immediate>
+          <if>
+            <condition>GLOBAL.running_nrt_amp eq '1'</condition>
+            <then>
+              <define_data_routing>
+                <table_name>OBJECT(TEMP.acc_qual_rows).include</table_name>
+                <!--<persistent_tracking>1</persistent_tracking>-->
+                <prerouting_procedure>"dummy_init_amp_namespace"</prerouting_procedure>
+                <routing_procedure>"delta_track_aqg_"~OBJECT(TEMP.acc_qual_rows).account_qualification_group~"_"~OBJECT(TEMP.acc_qual_rows).include~"_"~OBJECT(TEMP.acc_qual_rows).row_num~"_routing"</routing_procedure>
+                <integration_procedure>'get_gsub_agg_decisions_wrapper'</integration_procedure>
+                <inclusion_expression>'1 eq 1'</inclusion_expression>
+                <operation_type_field>'operation_type'</operation_type_field>
+                <table_name_field>'table_name'</table_name_field>
+              </define_data_routing>
+            </then>
+          </if>
+        </loop>
+      </db_select>
+
+
+    </initialize>
+  </proc>
+
+  <proc name='dummy_init_amp_namespace'>
+  </proc>
+  
+</procs>
+

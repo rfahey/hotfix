@@ -1,0 +1,184 @@
+<procs>
+
+  <!-- ==================================================================== -->
+  <!--                                                                      -->
+  <!--                                                                      -->
+  <!--                                                                      -->
+  <!--                                                                      -->
+  <!-- Input:                                                               -->
+  <!--    priority                                                          -->
+  <!--    attempt_lock                                                      -->
+  <!--    original_priority                                                 -->
+  <!--                                                                      -->
+  <!--                                                                      -->
+  <!-- ==================================================================== -->
+  <proc name='incorporate_more_work'>
+    <param name='priority'/>
+    <param name='attempt_lock'/>
+    <param name='original_priority'/>
+    <param name='can_be_greedy'/>
+
+    <initialize>
+      <define_memory_index>
+        <index>'NEW_DECISION_ACCOUNTS'</index>
+        <key_field>'id_acc'</key_field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'NEW_DECISIONS'</index>
+        <key_field>'bucket_object'</key_field>
+      </define_memory_index>
+    </initialize>
+
+    <debug switch='log_scheduling'>'Considering incorporating more work for priority '~TEMP.priority</debug>
+    <!--<do>TEMP.can_be_greedy = '1'</do>-->
+    <do>TEMP.can_include = '0'</do>
+    <do>TEMP.lock_granted = '0'</do>
+
+    
+    <index_select>
+      <index>'CURRENT_PRIORITIES'</index>
+      <field name="priority">TEMP.priority</field>
+      <cursor>TEMP.my_priority</cursor>
+      <loop>
+        <index_clear>
+          <index>'NEW_DECISIONS'</index>
+        </index_clear>
+
+	    <!-- This decision has not been completed. -->
+
+	    <!-- Checking if this decision we are incorporating isn't already part of our list of work. -->
+		<!-- The decision is not part of our current work list. -->
+        <index_clear>
+          <index>'NEW_DECISION_ACCOUNTS'</index>
+        </index_clear>
+        
+        <do>TEMP.my_bucket_obj = OBJECT(TEMP.my_priority).bucket_object</do>
+
+        <debug switch='log_scheduling'>'Calling incorporate decision'</debug>
+        
+        <call_proc_for_current_object>
+          <name>'incorporate_decision'</name>
+          <param name='priority'>TEMP.priority</param>
+          <param name='attempt_lock'>TEMP.attempt_lock</param>
+          <param name='original_priority'>TEMP.original_priority</param>
+          <param name='bucket_object'>OBJECT(TEMP.my_priority).bucket_object</param>
+          <param name='incorporation_status'>TEMP.incorporation_status</param>
+          <param name='incorporated_work'>TEMP.incorporated_work</param>
+          <param name='incorporated_accounts'>TEMP.incorporated_accounts</param>
+        </call_proc_for_current_object>
+
+        <debug switch='log_scheduling'>'Called incorporate decision and got status ['~TEMP.incorporation_status~'] work ['~TEMP.incorporated_work~'] accounts ['~TEMP.incorporated_accounts~']'</debug>
+
+        <if>
+          <condition>TEMP.incorporation_status eq '1'</condition>
+          <then>
+            <if>
+              <condition>TEMP.incorporated_work GT '0' or TEMP.incorporated_accounts GT '0'</condition>
+              <then>
+                <index_select_keys>
+                  <index>'NEW_DECISIONS'</index>
+                  <cursor>TEMP.curr_dec</cursor>
+                  <loop>
+                    <debug switch='log_scheduling'>'Incorporating decision ['~OBJECT(TEMP.curr_dec).bucket_object~']'</debug>
+                    <do>TEMP.temp_bucket = OBJECT(TEMP.curr_dec).bucket_object</do>
+                    <!--<if>
+                      <condition>(OBJECT(TEMP.temp_bucket).charge_on_final ne '' or OBJECT(TEMP.temp_bucket).tier_type Eq 'bulk' or OBJECT(TEMP.temp_bucket).tier_type Eq 'bulk_source' or OBJECT(TEMP.temp_bucket).tier_type Eq 'bulk_aggregate')</condition>
+                      <then>
+                        <do>TEMP.can_be_greedy = '0'</do>
+                      </then>
+                    </if>-->
+                    <index_insert>
+                      <index>'CURRENT_PRIORITIES'</index>
+                      <field name="bucket_object">OBJECT(TEMP.curr_dec).bucket_object</field>
+                      <field name="priority">OBJECT(OBJECT(TEMP.curr_dec).bucket_object).tier_priority</field>
+                    </index_insert>
+                    <index_insert>
+                      <index>'CURRENT_WORK'</index>
+                      <field name="bucket_object">OBJECT(TEMP.curr_dec).bucket_object</field>
+                    </index_insert>
+                    <index_insert>
+                      <index>'CURRENT_BUCKETS'</index>
+                      <field name="bucket_object">OBJECT(TEMP.curr_dec).bucket_object</field>
+                    </index_insert>
+                  </loop>
+                </index_select_keys>
+                <index_select_keys>
+                  <index>'NEW_DECISION_ACCOUNTS'</index>
+                  <cursor>TEMP.curr_acc</cursor>
+                  <loop>
+                    <index_insert>
+                      <index>'CURRENT_ACCOUNTS'</index>
+                      <field name="id_acc">OBJECT(TEMP.curr_acc).id_acc</field>
+                      <field name="is_member">'1'</field>
+                    </index_insert>
+                  </loop>
+                </index_select_keys>
+              </then>
+            </if>
+          </then>
+          <else>
+            <do>TEMP.can_be_greedy = '0'</do>
+            <index_select_keys>
+              <index>'NEW_DECISIONS'</index>
+              <cursor>TEMP.curr_dec</cursor>
+              <loop>
+                <index_insert>
+                  <index>'SKIPPED_WORK'</index>
+                  <field name="bucket_object">OBJECT(TEMP.curr_dec).bucket_object</field>
+                </index_insert>
+              </loop>
+            </index_select_keys>
+            <index_select_keys>
+              <index>'NEW_DECISION_ACCOUNTS'</index>
+              <cursor>TEMP.curr_acc</cursor>
+              <loop>
+                <!--<spawn>
+                  <object_type>'BOGUS'</object_type>
+                  <object_id>TEMP.bogus_object</object_id>
+                </spawn>-->
+                <call_proc_for_object>
+                  <name>'request_release_account_lock'</name>
+                  <object_id>GLOBAL.bogus_object</object_id>
+                  <param name='id_acc'>OBJECT(TEMP.curr_acc).id_acc</param>
+                </call_proc_for_object>
+                <!--<remove_object_from_cache>TEMP.bogus_object</remove_object_from_cache>-->
+              </loop>
+            </index_select_keys>
+          </else>
+        </if>
+      </loop>
+      <else>
+        <debug switch='log_scheduling'>'There are not other decisions that the slave is considering to handle.'</debug>
+      </else>
+    </index_select>
+
+    <if>
+      <condition>TEMP.can_be_greedy == '1'</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'get_next_highest_priority'</name>
+          <param name='priority'>TEMP.priority</param>
+          <param name='next_priority'>TEMP.next_priority</param>
+        </call_proc_for_current_object>
+        <debug switch='log_scheduling'>'I can look for work but priority is ['~TEMP.next_priority~']'</debug>
+        <if>
+          <condition>TEMP.next_priority ne '' and TEMP.next_priority LTE GLOBAL.hard_stop_priority</condition>
+          <then>
+            <call_proc_for_current_object>
+              <name>'incorporate_more_work'</name>
+              <param name='priority'>TEMP.next_priority</param>
+              <param name='attempt_lock'>TEMP.attempt_lock</param>
+              <param name='original_priority'>TEMP.original_priority</param>
+              <param name='can_be_greedy'>'1'</param>
+            </call_proc_for_current_object>
+          </then>
+        </if>
+      </then>
+      <else>
+      </else>
+    </if>
+
+    <debug switch='log_scheduling'>'Done incorporating work'</debug>
+  </proc>
+
+</procs>

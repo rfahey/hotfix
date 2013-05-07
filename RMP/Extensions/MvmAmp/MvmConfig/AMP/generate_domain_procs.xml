@@ -1,0 +1,185 @@
+<procs>
+  <proc name="generate_domain_procs">
+    <initialize>
+      <print>'init generate_domain_procs'</print>
+      <define_memory_index>
+        <index>'TIER_DOMAINS'</index>
+        <key_field>'tier_domain_group'</key_field>
+        <field>'tier_domain'</field>
+      </define_memory_index>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select distinct lower(tier_domain_group) tier_domain_group, lower(tier_domain) tier_domain from tier_domain_mapping"
+        </query>
+        <query type="sql">
+          "select distinct lower(tier_domain_group) tier_domain_group, lower(tier_domain) tier_domain from tier_domain_mapping"
+        </query>
+        <cursor>TEMP.tier_domains</cursor>
+        <loop>
+          <index_insert>
+            <index>'TIER_DOMAINS'</index>
+            <field name='tier_domain_group'>OBJECT(TEMP.tier_domains).tier_domain_group</field>
+            <field name='tier_domain'>OBJECT(TEMP.tier_domains).tier_domain</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <index_select_keys>
+        <index>'TIER_DOMAINS'</index>
+        <cursor>TEMP.my_domain_groups</cursor>
+        <loop>
+          <do>
+            TEMP.my_td_calc_proc="<![CDATA[
+<proc name='td_calc_remaining_"~OBJECT(TEMP.my_domain_groups).tier_domain_group~"'>
+  <param name='bucket_object'/>
+            ]]>"
+          </do>
+          <do>
+            TEMP.my_td_decrement_proc="<![CDATA[
+<proc name='td_decrement_"~OBJECT(TEMP.my_domain_groups).tier_domain_group~"'>
+  <param name='decrement_percent'/>
+            ]]>"
+          </do>
+          <do>TEMP.loop_counter = 0</do>
+          <index_select>
+            <index>'TIER_DOMAINS'</index>
+            <field name='tier_domain_group'>OBJECT(TEMP.my_domain_groups).tier_domain_group</field>
+            <cursor>TEMP.my_domain_members</cursor>
+            <loop>
+              <if>
+                <condition>TEMP.loop_counter eq '0'</condition>
+                <then>
+                  <do>
+                    TEMP.my_td_calc_proc~="<![CDATA[
+        <get_object_field>
+          <object_id>OBJECT.object_id</object_id>
+          <field_name>'percent_remaining_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+          <output>TEMP.previous_percent_remaining</output>
+        </get_object_field>
+        <do>TEMP.previous_id_sched = ''</do>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).reset_domain eq '1'</condition>
+          <then>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'sched_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+              <output>TEMP.previous_id_sched</output>
+            </get_object_field>
+          </then>
+        </if>
+        
+        <!-- <debug>'TEMP.previous_percent_remaining='~TEMP.previous_percent_remaining</debug> -->
+        <if>
+          <condition>TEMP.previous_percent_remaining eq '' or (TEMP.previous_id_sched ne '' and TEMP.previous_id_sched ne OBJECT(TEMP.bucket_object).id_sched)</condition>
+          <then>
+            <set_object_field>
+              <input>'1'</input>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'percent_remaining_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+            </set_object_field>
+            <do>TEMP.previous_percent_remaining = 1</do>
+            <set_object_field>
+              <input>OBJECT.master_amount</input>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'domain_amount_orig_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+            </set_object_field>
+            <!-- <print>'Jonah DOMAINSETTING domain_amount_orig_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge~' to ['~OBJECT.master_amount~']'</print> -->
+            <set_object_field>
+              <input>OBJECT(TEMP.bucket_object).id_sched</input>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'sched_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+            </set_object_field>
+          </then>
+        </if>
+        <get_object_field>
+          <object_id>OBJECT.object_id</object_id>
+          <field_name>'domain_amount_orig_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+          <output>OBJECT.domain_amount_orig</output>
+        </get_object_field>
+        <!-- <print>'Jonah DOMAINSETTING domain_amount_orig = ['~OBJECT.domain_amount_orig~']'</print> -->
+		    <do>TEMP.previous_percent_remaining = (TEMP.previous_percent_remaining == ''?'1':TEMP.previous_percent_remaining)</do>
+        <do>OBJECT.percent_remaining = TEMP.previous_percent_remaining</do>
+		    <!-- <debug>'OBJECT.percent_remaining='~OBJECT.percent_remaining</debug> -->
+            ]]>"
+                  </do>
+                </then>
+                <else>
+                  <do>
+                    TEMP.my_td_calc_proc~="<![CDATA[
+  <get_object_field>
+    <object_id>OBJECT.object_id</object_id>
+    <field_name>'percent_remaining_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+    <output>TEMP.previous_percent_remaining</output>
+  </get_object_field>
+  <if>
+    <condition>TEMP.previous_percent_remaining eq ''</condition>
+    <then>
+      <set_object_field>
+        <input>'1'</input>
+        <object_id>OBJECT.object_id</object_id>
+        <field_name>'percent_remaining_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+      </set_object_field>
+      <set_object_field>
+        <input>OBJECT.master_amount</input>
+        <object_id>OBJECT.object_id</object_id>
+        <field_name>'domain_amount_orig_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+      </set_object_field>
+    </then>
+  </if>
+  <get_object_field>
+    <object_id>OBJECT.object_id</object_id>
+    <field_name>'domain_amount_orig_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+    <output>OBJECT.domain_amount_orig</output>
+  </get_object_field>
+  <do>TEMP.previous_percent_remaining = (TEMP.previous_percent_remaining == ''?'1':TEMP.previous_percent_remaining)</do> 
+  <!-- <debug>'TEMP.previous_percent_remaining='~TEMP.previous_percent_remaining</debug> -->
+  <if>
+    <condition>TEMP.previous_percent_remaining LT OBJECT.percent_remaining</condition>
+    <then>
+      <do>OBJECT.percent_remaining = TEMP.previous_percent_remaining</do>
+      <!-- <debug>'OBJECT.percent_remaining='~OBJECT.percent_remaining</debug> -->
+    </then>
+  </if>
+            ]]>"
+                  </do>
+                </else>
+              </if>
+              <do>
+                TEMP.my_td_decrement_proc~="<![CDATA[
+  <get_object_field>
+    <object_id>OBJECT.object_id</object_id>
+    <field_name>'percent_remaining_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+    <output>TEMP.previous_percent_remaining</output>
+  </get_object_field>
+  <do>TEMP.previous_percent_remaining = (TEMP.previous_percent_remaining == ''?'1':TEMP.previous_percent_remaining)</do>
+  <do>TEMP.new_percent = TEMP.previous_percent_remaining - TEMP.decrement_percent</do>
+  <set_object_field>
+    <input>TEMP.new_percent</input>
+    <object_id>OBJECT.object_id</object_id>
+    <field_name>'percent_remaining_"~OBJECT(TEMP.my_domain_members).tier_domain~"_'~OBJECT.current_charge</field_name>
+  </set_object_field>              
+            ]]>"
+              </do>
+              <do>TEMP.loop_counter += 1</do>
+            </loop>
+          </index_select>
+          <do>
+            TEMP.my_td_calc_proc~="<![CDATA[
+</proc>
+            ]]>"
+          </do>
+          <do>
+            TEMP.my_td_decrement_proc~="<![CDATA[
+</proc>
+            ]]>"
+          </do>
+          <execute_immediate>TEMP.my_td_calc_proc</execute_immediate>
+          <execute_immediate>TEMP.my_td_decrement_proc</execute_immediate>
+        </loop>
+      </index_select_keys>
+    </initialize>
+  </proc>
+
+</procs>

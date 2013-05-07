@@ -1,0 +1,336 @@
+<proc name="get_next_interval">
+  <param name="id_usage_interval"/>
+  <param name="effective_date"/>
+  <param name="id_usage_interval"/>
+  <param name="start_date" mode="out"/>
+  <param name="end_date" mode="out"/>
+
+  <if>
+    <condition>OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'interval' </condition>
+    <then>
+          <run_once>
+            <define_memory_index>
+              <index>'INTERVAL_DATES'</index>
+              <key_field>'id_usage_interval'</key_field>
+              <field>'start_date'</field>
+              <field>'end_date'</field>
+            </define_memory_index>
+          </run_once>
+          <index_get>
+            <index>'INTERVAL_DATES'</index>
+            <field name="id_usage_interval">TEMP.id_usage_interval</field>
+            <cursor>TEMP.interval_dates</cursor>
+            <then>
+              <do>TEMP.start_date = OBJECT(TEMP.interval_dates).start_date</do>
+              <do>TEMP.end_date = OBJECT(TEMP.interval_dates).end_date</do>
+            </then>
+            <else>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select a.id_interval, a.dt_start, a.dt_end from t_usage_interval a
+                  where a.id_interval = $${TEMP.id_usage_interval}"
+                </query>
+                <cursor>TEMP.interval_db_dates</cursor>
+                <loop>
+                  <index_insert>
+                    <index>'INTERVAL_GAPS'</index>
+                    <field name='id_usage_interval'>OBJECT(TEMP.interval_db_dates).id_interval</field>
+                    <field name='start_date'>OBJECT(TEMP.interval_db_dates).dt_start</field>
+                    <field name='end_date'>OBJECT(TEMP.interval_db_dates).dt_end</field>
+                  </index_insert>
+                  <do>TEMP.start_date = OBJECT(TEMP.interval_db_dates).start_date</do>
+                  <do>TEMP.end_date = OBJECT(TEMP.interval_db_dates).end_date</do>
+                </loop>
+              </db_select>
+            </else>
+          </index_get>
+
+    </then>
+  </if>
+
+  <if>
+    <condition>OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'monthly' or OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'weekly' or OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'daily' or OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'quarterly' or OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'annually'</condition>
+    <then>
+      <do>TEMP.start_date = OBJECT(TEMP.my_bucket).start_date</do>
+      <do>TEMP.cycles = OBJECT(TEMP.my_bucket).cycles</do>
+      <do>TEMP.cycle_units_per_tier = OBJECT(TEMP.my_bucket).cycle_units_per_tier</do>
+      <do>TEMP.cycle_unit_offset = OBJECT(TEMP.my_bucket).cycle_unit_offset</do>
+      <do>TEMP.unit = 'MM'</do>
+      <if>
+        <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'quarterly'</condition>
+        <then>
+          <do>TEMP.cycles = TEMP.cycles * 3</do>
+          <do>TEMP.cycle_units_per_tier = TEMP.cycle_units_per_tier * 3</do>
+          <do>TEMP.cycle_unit_offset = TEMP.cycle_unit_offset * 3</do>
+        </then>
+      </if>
+      <if>
+        <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'annually'</condition>
+        <then>
+          <do>TEMP.cycles = TEMP.cycles * 12</do>
+          <do>TEMP.cycle_units_per_tier = TEMP.cycle_units_per_tier * 12</do>
+          <do>TEMP.cycle_unit_offset = TEMP.cycle_unit_offset * 12</do>
+        </then>
+      </if>
+      <if>
+        <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'daily'</condition>
+        <then>
+          <do>TEMP.unit = 'DD'</do>
+        </then>
+      </if>
+      <if>
+        <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'weekly'</condition>
+        <then>
+          <do>TEMP.unit = 'DD'</do>
+          <do>TEMP.cycles_back = TEMP.cycles_back * 7</do>
+          <do>TEMP.cycles = TEMP.cycles * 7</do>
+          <do>TEMP.cycle_units_per_tier = TEMP.cycle_units_per_tier * 7</do>
+          <do>TEMP.cycle_unit_offset = TEMP.cycle_unit_offset * 7</do>
+        </then>
+      </if>
+      <date_add>
+        <input>GLOBAL.interval_start_date</input>
+        <unit>TEMP.unit</unit>
+        <increment>TEMP.cycles_back</increment>
+        <output>TEMP.earliest_possible_start</output>
+      </date_add>
+      <if>
+        <condition>OBJECT(TEMP.my_bucket).cycles eq '0'</condition>
+        <then>
+          <string_to_date>
+            <input format='YYYYMMDDHH24MISS'>'19700101000000'</input>
+            <output>TEMP.earliest_possible_start</output>
+          </string_to_date>
+          <string_to_date>
+            <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+            <output>TEMP.latest_possible_end</output>
+          </string_to_date>
+        </then>
+        <else>
+          <do>TEMP.cycle_multiplier = TEMP.cycles * TEMP.cycle_units_per_tier + TEMP.cycle_unit_offset</do>
+          <date_add>
+            <input>OBJECT(TEMP.my_bucket).start_date</input>
+            <unit>TEMP.unit</unit>
+            <increment>TEMP.cycle_multiplier</increment>
+            <output>TEMP.latest_possible_end</output>
+          </date_add>
+        </else>
+      </if>
+
+      <index_select>
+        <index>'PREVIOUS_DECISION_MAX'</index>
+        <field name="decision_unique_id">OBJECT(TEMP.my_bucket).decision_unique_id</field>
+        <cursor>TEMP.prev_decisions</cursor>
+        <then>
+          <do>OBJECT(TEMP.my_bucket).start_date = OBJECT(TEMP.prev_decisions).end_date</do>
+        </then>
+        <else>
+          <date_add>
+            <input>OBJECT(TEMP.my_bucket).start_date</input>
+            <unit>TEMP.unit</unit>
+            <increment>TEMP.cycle_unit_offset</increment>
+            <output>OBJECT(TEMP.my_bucket).start_date</output>
+          </date_add>
+          <c>If I have no previous decision and the latest end date is prior to my interval and  </c>
+          <c>the tt_start is prior to the interval start date then I assume the decision has run its course so prevent any spawning of decisions</c>
+          <if>
+            <condition>TEMP.latest_possible_end lt GLOBAL.interval_start_date and OBJECT(TEMP.my_bucket).tt_start lt GLOBAL.interval_start_date</condition>
+            <then>
+              <string_to_date>
+                <input format='YYYYMMDDHH24MISS'>'19700101000000'</input>
+                <output>TEMP.latest_possible_end</output>
+              </string_to_date>
+            </then>
+          </if>
+        </else>
+      </index_select>
+      <!--<print>'Checking for previous decisions for ['~OBJECT(TEMP.my_bucket).decision_unique_id~']'</print>-->
+      <index_select>
+        <index>'PREVIOUS_DECISIONS'</index>
+        <field name="decision_unique_id">OBJECT(TEMP.my_bucket).decision_unique_id</field>
+        <cursor>TEMP.prev_decisions</cursor>
+        <loop>
+          <debug switch="log_materialize_decisions">'Creating pre-existing child for ['~OBJECT(TEMP.prev_decisions).decision_unique_id~']['~OBJECT(TEMP.prev_decisions).start_date~']['~OBJECT(TEMP.prev_decisions).end_date~']'</debug>
+          <call_proc_for_current_object>
+            <name>'generate_acc_qual_group_proc'</name>
+            <param name='account_qualification_group'>OBJECT(TEMP.my_bucket).account_qualification_group</param>
+          </call_proc_for_current_object>
+          <print>'CALLING1 CREATE CHILD DECISION FOR id_acc ['~TEMP.id_acc~']'</print>
+          <call_proc_for_current_object>
+            <name>'create_child_decision'</name>
+            <param name='bucket_object'>TEMP.my_bucket</param>
+            <param name='bucket_overlay'>GLOBAL.calendar_overlay_object_id</param>
+            <param name='new_bucket_object'>TEMP.my_new_bucket</param>
+            <param name='delta_tracking_available'>0</param>
+            <param name='delta_tracking_on'>0</param>
+          </call_proc_for_current_object>
+          <print>'CALLING2 CREATE CHILD DECISION FOR id_acc ['~TEMP.id_acc~']'</print>
+          <do>OBJECT(TEMP.my_new_bucket).start_date = OBJECT(TEMP.prev_decisions).start_date</do>
+          <do>OBJECT(TEMP.my_new_bucket).end_date = OBJECT(TEMP.prev_decisions).end_date</do>
+          <do>OBJECT(TEMP.my_new_bucket).decision_unique_id = OBJECT(TEMP.prev_decisions).decision_unique_id</do>
+          <!--<print>'Trying to overlay decision history calendar!'</print>-->
+
+          <!--<print>'NOW Creating pre-existing child for ['~OBJECT(TEMP.prev_decisions).decision_unique_id~']['~OBJECT(TEMP.prev_decisions).start_date~']['~OBJECT(TEMP.prev_decisions).end_date~']'</print>-->
+          <call_proc_for_current_object>
+            <name>'overlay_decision_history'</name>
+            <param name='my_bucket'>TEMP.my_new_bucket</param>
+          </call_proc_for_current_object>
+          <if>
+            <condition>OBJECT(TEMP.my_new_bucket).end_date gt OBJECT(TEMP.my_bucket).orig_end_date</condition>
+            <then>
+              <do>OBJECT(TEMP.my_new_bucket).prorate_start_date = OBJECT(TEMP.my_new_bucket).start_date</do>
+              <do>OBJECT(TEMP.my_new_bucket).prorate_end_date = OBJECT(TEMP.my_new_bucket).end_date</do>
+              <do>OBJECT(TEMP.my_new_bucket).end_date = OBJECT(TEMP.my_bucket).orig_end_date</do>
+              <call_proc_for_current_object>
+                <name>'prorate_bucket'</name>
+                <param name='my_bucket'>TEMP.my_new_bucket</param>
+              </call_proc_for_current_object>
+            </then>
+          </if>
+        </loop>
+      </index_select>
+      <date_add>
+        <input>OBJECT(TEMP.my_bucket).start_date</input>
+        <unit>TEMP.unit</unit>
+        <increment>TEMP.cycle_units_per_tier</increment>
+        <output>OBJECT(TEMP.my_bucket).end_date</output>
+      </date_add>
+      <do>TEMP.start_date_to_keep = ''</do>
+      <do>TEMP.end_date_to_keep = ''</do>
+      <do>TEMP.current_matches = 0</do>
+      <while>
+        <condition>OBJECT(TEMP.my_bucket).end_date lte TEMP.latest_possible_end and OBJECT(TEMP.my_bucket).start_date lte GLOBAL.interval_end_date and OBJECT(TEMP.my_bucket).start_date lt OBJECT(TEMP.my_bucket).orig_end_date</condition>
+        <loop>
+          <if>
+            <condition>OBJECT(TEMP.my_bucket).end_date gt TEMP.earliest_possible_start</condition>
+            <then>
+              <do>OBJECT(TEMP.my_bucket).prorate_start_date = ''</do>
+              <do>OBJECT(TEMP.my_bucket).prorate_end_date = ''</do>
+              <if>
+                <condition>OBJECT(TEMP.my_bucket).start_date lt OBJECT(TEMP.my_bucket).orig_start_date</condition>
+                <then>
+                  <do>OBJECT(TEMP.my_bucket).prorate_start_date = OBJECT(TEMP.my_bucket).start_date</do>
+                  <do>OBJECT(TEMP.my_bucket).prorate_end_date = OBJECT(TEMP.my_bucket).end_date</do>
+                  <do>OBJECT(TEMP.my_bucket).start_date = OBJECT(TEMP.my_bucket).orig_start_date</do>
+                </then>
+              </if>
+              <if>
+                <condition>OBJECT(TEMP.my_bucket).end_date gt OBJECT(TEMP.my_bucket).orig_end_date</condition>
+                <then>
+                  <do>OBJECT(TEMP.my_bucket).prorate_start_date = OBJECT(TEMP.my_bucket).start_date</do>
+                  <do>OBJECT(TEMP.my_bucket).prorate_end_date = OBJECT(TEMP.my_bucket).end_date</do>
+                  <do>OBJECT(TEMP.my_bucket).end_date = OBJECT(TEMP.my_bucket).orig_end_date</do>
+                </then>
+              </if>
+              <if>
+                <condition>TEMP.current_matches == 0</condition>
+                <then>
+                  <call_proc_for_current_object>
+                    <name>'generate_acc_qual_group_proc'</name>
+                    <param name='account_qualification_group'>OBJECT(TEMP.my_bucket).account_qualification_group</param>
+                  </call_proc_for_current_object>
+                  <do>TEMP.start_date_to_keep = OBJECT(TEMP.my_bucket).start_date</do>
+                  <do>TEMP.end_date_to_keep = OBJECT(TEMP.my_bucket).end_date</do>
+                  <do>TEMP.prorate_start_date_to_keep = OBJECT(TEMP.my_bucket).prorate_start_date</do>
+                  <do>TEMP.prorate_end_date_to_keep = OBJECT(TEMP.my_bucket).prorate_end_date</do>
+                </then>
+                <else>
+                  <!--<debug>'Creating child for ['~OBJECT(TEMP.my_bucket).start_date~']['~OBJECT(TEMP.my_bucket).end_date~']'</debug>-->
+
+                  <print>'CALLING3 CREATE CHILD DECISION FOR id_acc ['~TEMP.id_acc~']'</print>
+                  <call_proc_for_current_object>
+                    <name>'create_child_decision'</name>
+                    <param name='bucket_object'>TEMP.my_bucket</param>
+                    <param name='bucket_overlay'>GLOBAL.calendar_overlay_object_id</param>
+                    <param name='new_bucket_object'>TEMP.my_new_bucket</param>
+                    <param name='delta_tracking_available'>0</param>
+                    <param name='delta_tracking_on'>0</param>
+                  </call_proc_for_current_object>
+                  <print>'CALLING4 CREATE CHILD DECISION FOR id_acc ['~TEMP.id_acc~']'</print>
+                  <if>
+                    <condition>OBJECT(TEMP.my_new_bucket).prorate_start_date ne ''</condition>
+                    <then>
+                      <call_proc_for_current_object>
+                        <name>'prorate_bucket'</name>
+                        <param name='my_bucket'>TEMP.my_new_bucket</param>
+                      </call_proc_for_current_object>
+                    </then>
+                  </if>
+                  <do>OBJECT(TEMP.my_new_bucket).expiration_date = OBJECT(TEMP.my_new_bucket).end_date</do>
+                  <!-- commenting this out because we want the decisions to expire on the end date until proven otherwise -->
+                  <!--<date_add>
+                                          <input>OBJECT(TEMP.my_new_bucket).end_date</input>
+                                          <unit>TEMP.unit</unit>
+                                          <increment>TEMP.cycles</increment>
+                                          <increment>0</increment>
+                                          <output>OBJECT(TEMP.my_new_bucket).expiration_date</output>
+                                        </date_add>
+                                        <if>
+                                          <condition>TEMP.cycles eq '0'</condition>
+                                          <then>
+                                            <string_to_date>
+                                              <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+                                              <output>OBJECT(TEMP.my_new_bucket).expiration_date</output>
+                                            </string_to_date>
+                                          </then>
+                                        </if>-->
+                  <do>OBJECT(TEMP.my_new_bucket).expired = '0'</do>
+                </else>
+              </if>
+              <do>TEMP.current_matches += 1</do>
+            </then>
+          </if>
+          <do>OBJECT(TEMP.my_bucket).start_date = OBJECT(TEMP.my_bucket).end_date</do>
+          <date_add>
+            <input>OBJECT(TEMP.my_bucket).start_date</input>
+            <unit>TEMP.unit</unit>
+            <increment>TEMP.cycle_units_per_tier</increment>
+            <output>OBJECT(TEMP.my_bucket).end_date</output>
+          </date_add>
+        </loop>
+      </while>
+
+      <if>
+        <condition>TEMP.current_matches GT 0</condition>
+        <then>
+          <do>OBJECT(TEMP.my_bucket).start_date = TEMP.start_date_to_keep</do>
+          <do>OBJECT(TEMP.my_bucket).end_date = TEMP.end_date_to_keep</do>
+          <do>OBJECT(TEMP.my_bucket).prorate_start_date = TEMP.prorate_start_date_to_keep</do>
+          <do>OBJECT(TEMP.my_bucket).prorate_end_date = TEMP.prorate_end_date_to_keep</do>
+          <do>OBJECT(TEMP.my_bucket).expiration_date = OBJECT(TEMP.my_bucket).end_date</do>
+          <!-- commenting this out because we want the decisions to expire on the end date until proven otherwise -->
+          <!--<date_add>
+                                  <input>OBJECT(TEMP.my_bucket).end_date</input>
+                                  <unit>TEMP.unit</unit>
+                                  <increment>TEMP.cycles</increment>
+                                  <output>OBJECT(TEMP.my_bucket).expiration_date</output>
+                                </date_add>
+                                <if>
+                                  <condition>TEMP.cycles eq '0'</condition>
+                                  <then>
+                                    <string_to_date>
+                                      <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+                                      <output>OBJECT(TEMP.my_bucket).expiration_date</output>
+                                    </string_to_date>
+                                  </then>
+                                </if>-->
+          <do>OBJECT(TEMP.my_bucket).expired = '0'</do>
+          <if>
+            <condition>OBJECT(TEMP.my_bucket).prorate_start_date ne ''</condition>
+            <then>
+              <call_proc_for_current_object>
+                <name>'prorate_bucket'</name>
+                <param name='my_bucket'>TEMP.my_bucket</param>
+              </call_proc_for_current_object>
+            </then>
+          </if>
+        </then>
+        <else>
+          <do>TEMP.keep_it = 0</do>
+        </else>
+      </if>
+    </then>
+  </if>
+  
+</proc>

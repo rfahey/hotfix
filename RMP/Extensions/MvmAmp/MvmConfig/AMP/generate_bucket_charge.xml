@@ -1,0 +1,693 @@
+<procs>
+ <proc name='generate_bucket_charge'>
+    <initialize>
+      <!--<print>'init generate_bucket_charge'</print>-->
+
+      <define_memory_index>
+        <index>'PAYMENT_REDIRECTION'</index>
+        <key_field>'id_payee'</key_field>
+        <field>'id_payer'</field>
+        <field>'vt_start'</field>
+        <field>'vt_end'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'OVERLAID_CHARGE_TABLES'</index>
+        <key_field>'id_acc'</key_field>
+        <key_field>'charge_type_id'</key_field>
+        <field>'include_object_id'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'CHARGE_GEN_FIELDS'</index>
+        <key_field>'charge_type_id'</key_field>
+        <field>'charge_qualification_group'</field>
+        <field>'productview_name'</field>
+        <field>'row_num'</field>
+        <field>'include_table_name'</field>
+        <field>'source_value'</field>
+        <field>'target_field'</field>
+        <field>'include_predicate'</field>
+        <field>'included_field_prefix'</field>
+        <field>'field_name'</field>
+        <field>'population_string'</field>
+        <field>'mvm_procedure'</field>
+        <field>'child_charge_id'</field>
+        <field>'filter'</field>
+        <field>'default_value'</field>
+      </define_memory_index>
+
+      <print>'init generate_bucket_charge2'</print>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select lower(charge_type_id) charge_type_id, lower(charge_qualification_group) charge_qualification_group, lower(productview_name) productview_name, row_num, lower(include_table_name) include_table_name, source_value, lower(target_field) target_field, include_predicate, lower(included_field_prefix) included_field_prefix, lower(field_name) field_name, population_string, mvm_procedure, child_charge_id, filter, default_value from agg_charge_definition"
+        </query>
+        <query type="sql">
+          "select lower(charge_type_id) charge_type_id, lower(charge_qualification_group) charge_qualification_group, lower(productview_name) productview_name, row_num, lower(include_table_name) include_table_name, source_value, lower(target_field) target_field, include_predicate, lower(included_field_prefix) included_field_prefix, lower(field_name) field_name, population_string, mvm_procedure, child_charge_id, filter, default_value from agg_charge_definition"
+        </query>
+        <cursor>TEMP.charge_def_rows</cursor>
+        <loop>
+          <call_proc_for_current_object>
+            <name>'replace_enum_strings'</name>
+            <param name='source_string'>OBJECT(TEMP.charge_def_rows).population_string</param>
+            <param name='target_string'>OBJECT(TEMP.charge_def_rows).population_string</param>
+          </call_proc_for_current_object>
+          <call_proc_for_current_object>
+            <name>'replace_enum_strings'</name>
+            <param name='source_string'>OBJECT(TEMP.charge_def_rows).default_value</param>
+            <param name='target_string'>OBJECT(TEMP.charge_def_rows).default_value</param>
+          </call_proc_for_current_object>
+          <call_proc_for_current_object>
+            <name>'replace_enum_strings'</name>
+            <param name='source_string'>OBJECT(TEMP.charge_def_rows).include_predicate</param>
+            <param name='target_string'>OBJECT(TEMP.charge_def_rows).include_predicate</param>
+          </call_proc_for_current_object>
+          <call_proc_for_current_object>
+            <name>'replace_enum_strings'</name>
+            <param name='source_string'>OBJECT(TEMP.charge_def_rows).filter</param>
+            <param name='target_string'>OBJECT(TEMP.charge_def_rows).filter</param>
+          </call_proc_for_current_object>
+          <index_insert>
+            <index>'CHARGE_GEN_FIELDS'</index>
+            <field name='charge_type_id'>OBJECT(TEMP.charge_def_rows).charge_type_id</field>
+            <field name='charge_qualification_group'>OBJECT(TEMP.charge_def_rows).charge_qualification_group</field>
+            <field name='productview_name'>OBJECT(TEMP.charge_def_rows).productview_name</field>
+            <field name='row_num'>OBJECT(TEMP.charge_def_rows).row_num</field>
+            <field name='include_table_name'>OBJECT(TEMP.charge_def_rows).include_table_name</field>
+            <field name='source_value'>OBJECT(TEMP.charge_def_rows).source_value</field>
+            <field name='target_field'>OBJECT(TEMP.charge_def_rows).target_field</field>
+            <field name='include_predicate'>OBJECT(TEMP.charge_def_rows).include_predicate</field>
+            <field name='included_field_prefix'>OBJECT(TEMP.charge_def_rows).included_field_prefix</field>
+            <field name='field_name'>OBJECT(TEMP.charge_def_rows).field_name</field>
+            <field name='population_string'>OBJECT(TEMP.charge_def_rows).population_string</field>
+            <field name='mvm_procedure'>OBJECT(TEMP.charge_def_rows).mvm_procedure</field>
+            <field name='child_charge_id'>OBJECT(TEMP.charge_def_rows).child_charge_id</field>
+            <field name='filter'>OBJECT(TEMP.charge_def_rows).filter</field>
+            <field name='default_value'>OBJECT(TEMP.charge_def_rows).default_value</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <index_select_keys>
+        <index>'CHARGE_GEN_FIELDS'</index>
+        <cursor>TEMP.charge_fields_outer</cursor>
+        <loop>
+
+          <if>
+            <condition>OBJECT(TEMP.charge_fields_outer).charge_type_id ne ''</condition>
+            <then>
+              <do>TEMP.charge_qualification_group = ''</do>
+              <do>TEMP.productview_name = ''</do>
+              <index_select>
+                <index>'CHARGE_GEN_FIELDS'</index>
+                <field name="charge_type_id">OBJECT(TEMP.charge_fields_outer).charge_type_id</field>
+                <cursor>TEMP.charge_fields_master</cursor>
+                <then>
+                  <do>TEMP.charge_qualification_group = OBJECT(TEMP.charge_fields_master).charge_qualification_group</do>
+                  <do>TEMP.productview_name = OBJECT(TEMP.charge_fields_master).productview_name</do>
+                </then>
+              </index_select>
+              
+              <index_select>
+                <index>'CHARGE_GEN_FIELDS'</index>
+                <field name="charge_type_id">''</field>
+                <cursor>TEMP.charge_fields_inner</cursor>
+                <loop>
+                  <if>
+                    <condition>
+                      (OBJECT(TEMP.charge_fields_inner).charge_qualification_group eq TEMP.charge_qualification_group or OBJECT(TEMP.charge_fields_inner).charge_qualification_group eq '')
+                      and (OBJECT(TEMP.charge_fields_inner).productview_name eq TEMP.productview_name or OBJECT(TEMP.charge_fields_inner).productview_name eq '')
+                    </condition>
+                    <then>
+                      <index_insert>
+                        <index>'CHARGE_GEN_FIELDS'</index>
+                        <field name='charge_type_id'>OBJECT(TEMP.charge_fields_outer).charge_type_id</field>
+                        <field name='charge_qualification_group'>TEMP.charge_qualification_group</field>
+                        <field name='productview_name'>TEMP.productview_name</field>
+                        <field name='row_num'>OBJECT(TEMP.charge_fields_inner).row_num</field>
+                        <field name='include_table_name'>OBJECT(TEMP.charge_fields_inner).include_table_name</field>
+                        <field name='source_value'>OBJECT(TEMP.charge_fields_inner).source_value</field>
+                        <field name='target_field'>OBJECT(TEMP.charge_fields_inner).target_field</field>
+                        <field name='include_predicate'>OBJECT(TEMP.charge_fields_inner).include_predicate</field>
+                        <field name='included_field_prefix'>OBJECT(TEMP.charge_fields_inner).included_field_prefix</field>
+                        <field name='field_name'>OBJECT(TEMP.charge_fields_inner).field_name</field>
+                        <field name='population_string'>OBJECT(TEMP.charge_fields_inner).population_string</field>
+                        <field name='mvm_procedure'>OBJECT(TEMP.charge_fields_inner).mvm_procedure</field>
+                        <field name='child_charge_id'>OBJECT(TEMP.charge_fields_inner).child_charge_id</field>
+                        <field name='filter'>OBJECT(TEMP.charge_fields_inner).filter</field>
+                        <field name='default_value'>OBJECT(TEMP.charge_fields_inner).default_value</field>
+                      </index_insert>
+                    </then>
+                  </if>
+                </loop>
+                            </index_select>
+              <print>'Charge type = '~OBJECT(TEMP.charge_fields_outer).charge_type_id~']'</print>
+              <do>
+                TEMP.my_charge_type_proc="<![CDATA[
+<proc name='create_charge_"~OBJECT(TEMP.charge_fields_outer).charge_type_id~"'>
+  <param name='charge_direction'/>
+  <param name='usage_object'/>
+  <param name='bucket_object'/>
+  <param name='parent_object'/>
+  <param name='precalc_amount'/>
+  <param name='charge_object_id' mode='out'/>
+  <!-- <print>'Generating charge ["~OBJECT(TEMP.charge_fields_outer).charge_type_id~"]'</print> -->
+  <spawn>
+    <object_type>'USAGE_CHARGE'</object_type>
+    <object_id>TEMP.charge_object_id</object_id>
+    <delta_tracking_support>1</delta_tracking_support>
+    <delta_tracking_on>1</delta_tracking_on>
+  </spawn>
+  <!--<object_delta_track_originals_set>
+    <object_id>TEMP.charge_object_id</object_id>
+    <value>0</value>
+  </object_delta_track_originals_set>-->
+  
+  <if>
+    <condition>TEMP.charge_direction Ne 'every'</condition>
+    <then>
+      <inherit_object>
+        <source>OBJECT.object_id</source>
+        <target>TEMP.charge_object_id</target>
+      </inherit_object>
+      <if>
+        <condition>TEMP.parent_object ne ''</condition>
+        <then>
+          <do>OBJECT(TEMP.charge_object_id).parent_oid = TEMP.parent_object</do>
+        </then>
+      </if>
+    </then>
+  </if>
+  <do>OBJECT(TEMP.charge_object_id).charge_direction = TEMP.charge_direction</do>
+  
+  <!-- <print>'CHARGE_DIRECTION = ['~TEMP.charge_direction~'] and charge_on_final = ['~OBJECT.charge_on_final~'] current['~OBJECT.qualified_total~'] start['~OBJECT.tier_start~'] end['~OBJECT.tier_end~']'</print> -->
+  
+  <if>
+    <condition>TEMP.charge_direction Eq 'every' and OBJECT.charge_on_every ne ''</condition>
+    <then>
+      <inherit_object>
+        <source>TEMP.usage_object</source>
+        <target>TEMP.charge_object_id</target>
+        <exclude_regex>'^usg_member_of'</exclude_regex>
+        <exclude_regex>'^percent_remaining'</exclude_regex>
+        <exclude_regex>'^agg_tier'</exclude_regex>
+        <exclude_regex>'^agg_applied'</exclude_regex>
+        <exclude_regex>'^last_modified'</exclude_regex>
+        <exclude_regex>'^orig_values_packed$'</exclude_regex>
+      </inherit_object>
+      
+      <inherit_object>
+        <source>OBJECT.object_id</source>
+        <target>TEMP.charge_object_id</target>
+      </inherit_object>
+
+      <if>
+        <condition>TEMP.parent_object ne ''</condition>
+        <then>
+          <do>OBJECT(TEMP.charge_object_id).parent_oid = TEMP.parent_object</do>
+        </then>
+      </if>
+      
+      <do>OBJECT(TEMP.charge_object_id).master_amount = OBJECT.charge_on_every</do>
+      <do>OBJECT(TEMP.charge_object_id).master_units = OBJECT(TEMP.usage_object).master_units</do>
+      <do>OBJECT(TEMP.charge_object_id).master_rate = OBJECT.charge_on_every</do>
+      <if>
+        <condition>OBJECT.charge_type Eq 'proportional' or OBJECT.charge_type Eq 'percentage'</condition>
+        <then>
+          <do>OBJECT(TEMP.charge_object_id).master_amount = OBJECT.charge_on_every * OBJECT(TEMP.usage_object).master_amount</do>
+        </then>
+      </if>
+
+    </then>
+  </if>
+  
+  <if>
+    <condition>TEMP.charge_direction Eq 'final' and OBJECT.charge_on_final ne ''</condition>
+    <then>
+
+      <if>
+        <condition>OBJECT.qualified_total eq ''</condition>
+        <then>
+          <do>OBJECT.qualified_total = '0'</do>
+        </then>
+      </if>
+      <do>TEMP.proportion = '1'</do>
+      
+      <do>TEMP.qualified_total = OBJECT.qualified_total</do>
+      <if>
+        <condition>OBJECT.qualified_total GT OBJECT.tier_end</condition>
+        <then>
+          <do>TEMP.qualified_total = OBJECT.tier_end</do>
+        </then>
+      </if>
+      
+      <if>
+        <condition>OBJECT.charge_type Eq 'flat'</condition>
+        <then>
+          <do>TEMP.proportion = '1'</do>
+        </then>
+      </if>
+      
+      <if>
+        <condition>OBJECT.charge_type Eq 'percentage'</condition>
+        <then>
+          <do>TEMP.proportion = TEMP.qualified_total - OBJECT.tier_start</do>
+        </then>
+      </if>
+      <if>
+        <condition>OBJECT.charge_type Eq 'proportional'</condition>
+        <then>
+          <do>TEMP.proportion = (TEMP.qualified_total - OBJECT.tier_start)/(OBJECT.tier_end - OBJECT.tier_start)</do>
+        </then>
+      </if>
+      <if>
+        <condition>OBJECT.charge_type Eq 'inverse_proportional'</condition>
+        <then>
+          <do>TEMP.proportion = (OBJECT.tier_end - TEMP.qualified_total)/(OBJECT.tier_end - OBJECT.tier_start)</do>
+        </then>
+      </if>
+      <do>OBJECT(TEMP.charge_object_id).master_amount = OBJECT.charge_on_final * TEMP.proportion</do>
+      <!--<print>'GBC1-['~OBJECT(TEMP.charge_object_id).master_amount~']'</print>-->
+      <do>OBJECT(TEMP.charge_object_id).master_units = TEMP.proportion</do>
+      <do>OBJECT(TEMP.charge_object_id).master_rate = OBJECT.charge_on_final</do>
+      <!--<print>'JONAH master rate = ['~OBJECT(TEMP.charge_object_id).master_rate~']'</print>-->
+    </then>
+  </if>
+  
+  <if>
+    <condition>TEMP.charge_direction Eq 'inbound' and OBJECT.charge_on_inbound ne ''</condition>
+    <then>
+      <do>OBJECT(TEMP.charge_object_id).master_amount = OBJECT.charge_on_inbound</do>
+      <!--<print>'GBC2-['~OBJECT(TEMP.charge_object_id).master_amount~']'</print>-->
+      <do>OBJECT(TEMP.charge_object_id).master_units = '1'</do>
+      <do>OBJECT(TEMP.charge_object_id).master_rate = OBJECT.charge_on_inbound</do>
+    </then>
+  </if>
+  
+  <if>
+    <condition>TEMP.charge_direction Eq 'outbound' and OBJECT.charge_on_outbound ne ''</condition>
+    <then>
+      <do>OBJECT(TEMP.charge_object_id).master_amount = OBJECT.charge_on_outbound</do>
+      <!--<print>'GBC3-['~OBJECT(TEMP.charge_object_id).master_amount~']'</print>-->
+      <do>OBJECT(TEMP.charge_object_id).master_units = '1'</do>
+      <do>OBJECT(TEMP.charge_object_id).master_rate = OBJECT.charge_on_outbound</do>
+    </then>
+  </if>
+  
+  <if>
+    <condition>TEMP.precalc_amount ne ''</condition>
+    <then>
+      <do>OBJECT(TEMP.charge_object_id).master_amount = TEMP.precalc_amount</do>
+      <do>OBJECT(TEMP.charge_object_id).master_rate = TEMP.precalc_amount</do>
+    </then>
+  </if>
+  
+  <do>OBJECT(TEMP.bucket_object).total_generated_events = (OBJECT(TEMP.bucket_object).total_generated_events==''?0:OBJECT(TEMP.bucket_object).total_generated_events) + 1</do>
+  <do>OBJECT(TEMP.bucket_object).total_generated_amount = (OBJECT(TEMP.bucket_object).total_generated_amount==''?0:OBJECT(TEMP.bucket_object).total_generated_amount) + OBJECT(TEMP.charge_object_id).master_amount</do>
+
+  <do>OBJECT(TEMP.charge_object_id).id_payee = OBJECT(TEMP.charge_object_id).id_acc</do>
+  <do>OBJECT(TEMP.charge_object_id).id_payer = OBJECT(TEMP.charge_object_id).id_acc</do>
+  <do>OBJECT(TEMP.charge_object_id).is_generated = '1'</do>
+  <do>OBJECT(TEMP.charge_object_id)._generated_priority = OBJECT(TEMP.bucket_object).tier_priority</do>
+  <do>OBJECT(TEMP.charge_object_id)._generated_bucket = TEMP.bucket_object</do>
+  <do>OBJECT(TEMP.charge_object_id).id_prod = OBJECT(TEMP.bucket_object).id_po</do> 
+  
+  <do>OBJECT(TEMP.charge_object_id).dt_session = OBJECT(TEMP.usage_object_id).dt_session</do>
+  <if>
+    <condition>OBJECT(TEMP.charge_object_id).dt_session eq ''</condition>
+    <then>
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).interval_end_date lt OBJECT(TEMP.bucket_object).end_date</condition>
+        <then>
+          <do>OBJECT(TEMP.charge_object_id).dt_session = OBJECT(TEMP.bucket_object).interval_end_date</do>
+        </then>
+        <else>
+          <do>OBJECT(TEMP.charge_object_id).dt_session = OBJECT(TEMP.bucket_object).end_date</do>
+        </else>
+      </if>
+    </then>
+  </if>
+
+  <index_select>
+    <index>'PAYMENT_REDIRECTION'</index>
+    <field name='id_payee'>OBJECT(TEMP.charge_object_id).id_payee</field>
+    <cursor>TEMP.payment_redir_csr</cursor>
+    <loop>
+      <if>
+        <condition>OBJECT(TEMP.charge_object_id).dt_session lte OBJECT(TEMP.payment_redir_csr).vt_end and OBJECT(TEMP.charge_object_id).dt_session gte OBJECT(TEMP.payment_redir_csr).vt_start</condition>
+        <then>
+          <do>OBJECT(TEMP.charge_object_id).id_payer = OBJECT(TEMP.payment_redir_csr).id_payer</do>
+          <do>OBJECT(TEMP.charge_object_id).id_acc = OBJECT(TEMP.payment_redir_csr).id_payer</do>
+        </then>
+      </if>
+    </loop>
+    <else>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>'select * from t_payment_redirection where id_payee = $${OBJECT(TEMP.charge_object_id).id_acc}'</query>
+        <cursor>TEMP.db_payment_redir</cursor>
+        <loop>
+          <index_insert>
+            <index>'PAYMENT_REDIRECTION'</index>
+            <field name='id_payee'>OBJECT(TEMP.db_payment_redir).id_payee</field>
+            <field name='id_payer'>OBJECT(TEMP.db_payment_redir).id_payer</field>
+            <field name='vt_start'>OBJECT(TEMP.db_payment_redir).vt_start</field>
+            <field name='vt_end'>OBJECT(TEMP.db_payment_redir).vt_end</field>
+          </index_insert>
+          <if>
+            <condition>OBJECT(TEMP.charge_object_id).dt_session lte OBJECT(TEMP.db_payment_redir).vt_end and OBJECT(TEMP.charge_object_id).dt_session gte OBJECT(TEMP.db_payment_redir).vt_start</condition>
+            <then>
+              <do>OBJECT(TEMP.charge_object_id).id_payer = OBJECT(TEMP.db_payment_redir).id_payer</do>
+              <do>OBJECT(TEMP.charge_object_id).id_acc = OBJECT(TEMP.db_payment_redir).id_payer</do>
+            </then>
+          </if>
+        </loop>
+        <else>
+          <string_to_date>
+            <input format='YYYYMMDDHH24MISS'>'19700101000000'</input>
+            <output>TEMP.vt_start</output>
+          </string_to_date>
+          <string_to_date>
+            <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+            <output>TEMP.vt_end</output>
+          </string_to_date>
+          <index_insert>
+            <index>'PAYMENT_REDIRECTION'</index>
+            <field name='id_payee'>OBJECT(TEMP.charge_object_id).id_acc</field>
+            <field name='id_payer'>OBJECT(TEMP.charge_object_id).id_acc</field>
+            <field name='vt_start'>TEMP.vt_start</field>
+            <field name='vt_end'>TEMP.vt_end</field>
+          </index_insert>
+        </else>
+      </db_select>
+    </else>
+  </index_select>
+  
+  <do>TEMP.include_object_id = ''</do>
+  <do>TEMP.first_include = '0'</do>
+  <if>
+    <condition>TEMP.include_object_id eq ''</condition>
+    <then>
+      <index_select>
+        <index>'OVERLAID_CHARGE_TABLES'</index>
+        <field name='id_acc'>OBJECT(TEMP.charge_object_id).id_payee</field>
+        <cursor>TEMP.included_csr</cursor>
+        <then>
+          <do>TEMP.include_object_id = OBJECT(TEMP.included_csr).include_object_id</do>
+        </then>
+        <else>
+          <do>TEMP.first_include = '1'</do>
+          <spawn>
+            <object_type>'USAGE_CHARGE'</object_type>
+            <object_id>TEMP.include_object_id</object_id>
+          </spawn>
+        </else>
+      </index_select>
+    </then>
+  </if>
+            ]]>"
+              </do>
+              <index_select>
+                <index>'CHARGE_GEN_FIELDS'</index>
+                <field name="charge_type_id">OBJECT(TEMP.charge_fields_outer).charge_type_id</field>
+                <order_by type="numeric">OBJECT.row_num</order_by>
+                <cursor>TEMP.charge_tables</cursor>
+             
+                <loop>
+                  <if>
+                    <condition>OBJECT(TEMP.charge_tables).filter ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_charge_type_proc~="<![CDATA[  <if>
+    <condition>"~OBJECT(TEMP.charge_tables).filter~"</condition>
+    <then>
+  ]]>"
+                      </do>
+                    </then>
+                  </if>
+                  <if>
+                    <condition>OBJECT(TEMP.charge_tables).include_table_name ne ''</condition>
+                    <then>
+                      <if>
+                        <condition>OBJECT(TEMP.charge_tables).source_value eq ''</condition>
+                        <then>
+                          <do>OBJECT(TEMP.charge_tables).source_value = 'OBJECT.id_acc'</do>
+                        </then>
+                      </if>
+                      <if>
+                        <condition>OBJECT(TEMP.charge_tables).target_field eq ''</condition>
+                        <then>
+                          <do>OBJECT(TEMP.charge_tables).target_field = 'id_acc'</do>
+                        </then>
+                      </if>
+                      <if>
+                        <condition>OBJECT(TEMP.charge_tables).include_predicate eq ''</condition>
+                        <then>
+                          <do>OBJECT(TEMP.charge_tables).include_predicate = '1 = 1'</do>
+                        </then>
+                      </if>
+                      <do>
+                        TEMP.my_charge_type_proc~="<![CDATA[  <if>
+    <condition>TEMP.first_include eq '1'</condition>
+    <then>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>'select * from "~OBJECT(TEMP.charge_tables).include_table_name~" where "~OBJECT(TEMP.charge_tables).include_predicate~" and "~OBJECT(TEMP.charge_tables).target_field~" = $${"~OBJECT(TEMP.charge_tables).source_value~"}'</query>
+        <cursor>TEMP.include_csr</cursor>
+        <then>
+          <inherit_object>
+            <source>TEMP.include_csr</source>
+            <target>TEMP.include_object_id</target>
+           <!-- <prefix>'"~OBJECT(TEMP.charge_tables).included_field_prefix~"'</prefix> -->
+          </inherit_object>
+        </then>
+      </db_select>
+    </then>
+  </if>
+  <inherit_object>
+    <source>TEMP.include_object_id</source>
+    <target>TEMP.charge_object_id</target>
+    <!-- <prefix>'"~OBJECT(TEMP.charge_tables).included_field_prefix~"'</prefix> -->
+  </inherit_object>
+  
+  ]]>"
+                      </do>
+                    </then>
+                  </if>
+                  <if>
+                    <condition>OBJECT(TEMP.charge_tables).population_string ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_charge_type_proc~="<![CDATA[  <do>OBJECT(TEMP.charge_object_id)."~OBJECT(TEMP.charge_tables).field_name~" = "~OBJECT(TEMP.charge_tables).population_string~"</do>
+  ]]>"
+                      </do>
+                    </then>
+                  </if>
+                  <if>
+                    <condition>OBJECT(TEMP.charge_tables).mvm_procedure ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_charge_type_proc~="<![CDATA[  <call_proc_for_object>
+    <name>'"~OBJECT(TEMP.charge_tables).mvm_procedure~"'</name>
+    <object_id>TEMP.charge_object_id</object_id>
+  </call_proc_for_object>
+  ]]>"
+                      </do>
+                    </then>
+                  </if>
+                  <if>
+                    <condition>OBJECT(TEMP.charge_tables).default_value ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_charge_type_proc~="<![CDATA[  <if>
+    <condition>OBJECT(TEMP.charge_object_id)."~OBJECT(TEMP.charge_tables).field_name~" == ''</condition>
+    <then>
+        <do>OBJECT(TEMP.charge_object_id)."~OBJECT(TEMP.charge_tables).field_name~" = '"~OBJECT(TEMP.charge_tables).default_value~"'</do>
+    </then>
+  </if>
+  ]]>"
+                      </do>
+                    </then>
+                  </if>
+                  <if>
+                    <condition>OBJECT(TEMP.charge_tables).child_charge_id ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_charge_type_proc~="<![CDATA[  <call_proc_for_object>
+    <name>'create_charge_"~OBJECT(TEMP.charge_tables).child_charge_id~"'</name>
+    <object_id>TEMP.bucket_object</object_id>
+    <param name='charge_direction'>TEMP.charge_direction</param>
+    <param name='usage_object'>TEMP.usage_object</param>
+    <param name='bucket_object'>TEMP.bucket_object</param>
+    <param name='parent_object'>TEMP.charge_object_id</param>
+    <param name='precalc_amount'>''</param>
+    <param name='charge_object_id'>OBJECT(TEMP.charge_object_id).child_charge_object_id</param>
+  </call_proc_for_object>
+
+  ]]>"
+                      </do>
+                    </then>
+                  </if>
+                  <if>
+                    <condition>OBJECT(TEMP.charge_tables).filter ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_charge_type_proc~="<![CDATA[
+    </then>
+  </if>
+  ]]>"
+                      </do>
+                    </then>
+                  </if>
+                </loop>
+              </index_select>
+              <!--<call_proc_for_current_object>
+                <name>'get_pv_id'</name>
+                <param name='id_view'>TEMP.id_view</param>
+                <param name='table_name'>TEMP.productview_name</param>
+              </call_proc_for_current_object>-->
+              <do>
+                TEMP.my_charge_type_proc~="<![CDATA[
+                
+  <call_proc_for_object>
+    <name>'generated_charge_mapping'</name>
+    <object_id>TEMP.charge_object_id</object_id>
+  </call_proc_for_object>
+
+  <!-- <print>'JONAH HAS ID_VIEW['~OBJECT(TEMP.charge_object_id).id_view~'] and master_amount ['~OBJECT(TEMP.charge_object_id).master_amount~']'</print> -->
+    <!-- <print>'Here1 I have id_sess ['~OBJECT(TEMP.charge_object_id).id_sess~'] and amount ['~OBJECT(TEMP.charge_object_id).amount~']'</print> -->
+  <do>OBJECT(TEMP.charge_object_id).current_denorm = '"~TEMP.charge_qualification_group~"_'~OBJECT(TEMP.charge_object_id).id_view</do>
+  <do>OBJECT(TEMP.charge_object_id).current_denorm_snapshot=get_snapshot()</do>
+  <do>OBJECT(TEMP.charge_object_id).master_amount_pre = 'gen'</do>
+  <do>OBJECT(TEMP.charge_object_id).id_acc = OBJECT(TEMP.charge_object_id).id_payer</do>
+  <!--<object_delta_track_originals_set>
+    <object_id>TEMP.charge_object_id</object_id>
+    <value>1</value>
+  </object_delta_track_originals_set>-->
+    <!--<print>'Here2 I have id_sess ['~OBJECT(TEMP.charge_object_id).id_sess~'] and c_rcamount ['~OBJECT(TEMP.charge_object_id).c_rcamount~']'</print>-->
+  <call_dynamic_proc_for_object>
+    <name>'denormalize_charge_qual_"~TEMP.charge_qualification_group~"_'~OBJECT(TEMP.charge_object_id).id_view</name>
+    <object_id>TEMP.charge_object_id</object_id>
+  </call_dynamic_proc_for_object>
+  <!-- <print>'Here3 I have id_sess ['~OBJECT(TEMP.charge_object_id).id_sess~'] and c_rcamount ['~OBJECT(TEMP.charge_object_id).c_rcamount~']'</print> -->
+  <!--
+  #<usage_hook_add_object>
+  #  <hook_id>GLOBAL.usage_hook_id</hook_id>
+  #  <object_id>TEMP.charge_object_id</object_id>
+  #</usage_hook_add_object>
+  -->
+  
+  <if>
+          <condition>GLOBAL.running_nrt_amp GT '0'</condition>
+          <then>
+            <call_proc_for_object>
+              <name>'persist_record_to_table'</name>
+              <object_id>TEMP.charge_object_id</object_id>
+              <param name='transaction_id'>'not_done_yet'</param>
+              <param name='table_name'>'AGG_CHARGE_AUDIT_TRAIL'</param>
+              <param name='is_update'>0</param>
+            </call_proc_for_object>
+            <do>GLOBAL.gen_charge_counter = (GLOBAL.gen_charge_counter eq '' ? 0 : GLOBAL.gen_charge_counter) + 1</do>
+            <index_insert>
+              <index>'NRT_GENERATED_CHARGES'</index>
+              <field name='gen_charge_counter'>GLOBAL.gen_charge_counter</field>
+              <field name='usage_object'>TEMP.charge_object_id</field>
+            </index_insert>
+          </then>
+          <else>
+            <call_proc_for_current_object>
+              <name>'usage_hook_add_object'</name>
+              <param name='usage_hook_id'>GLOBAL.usage_hook_id</param>
+              <param name='usage_oid'>TEMP.charge_object_id</param>
+            </call_proc_for_current_object>
+          </else>
+        </if>
+
+</proc>
+            ]]>"
+              </do>
+              <do>TEMP.success = '1'</do>
+              <while>
+                <condition>TEMP.success eq '1'</condition>
+                <loop>
+                  <match>
+                    <input>TEMP.my_charge_type_proc</input>
+                    <regex>"DECISION\.(\w+)"</regex>
+                    <success>TEMP.success</success>
+                    <capture>TEMP.my_field</capture>
+                  </match>
+                  <if>
+                    <condition>TEMP.success eq '1'</condition>
+                    <then>
+                      <replace>
+                        <input>TEMP.my_charge_type_proc</input>
+                        <old_value>'DECISION.'~TEMP.my_field</old_value>
+                        <new_value>'OBJECT(TEMP.bucket_object).'~TEMP.my_field</new_value>
+                        <output>TEMP.my_charge_type_proc</output>
+                      </replace>
+                    </then>
+                  </if>
+                </loop>
+              </while>
+              <do>TEMP.success = '1'</do>
+              <while>
+                <condition>TEMP.success eq '1'</condition>
+                <loop>
+                  <match>
+                    <input>TEMP.my_charge_type_proc</input>
+                    <regex>"PARENT\.(\w+)"</regex>
+                    <success>TEMP.success</success>
+                    <capture>TEMP.my_field</capture>
+                  </match>
+                  <if>
+                    <condition>TEMP.success eq '1'</condition>
+                    <then>
+                      <replace>
+                        <input>TEMP.my_charge_type_proc</input>
+                        <old_value>'PARENT.'~TEMP.my_field</old_value>
+                        <new_value>'OBJECT(TEMP.parent_object).'~TEMP.my_field</new_value>
+                        <output>TEMP.my_charge_type_proc</output>
+                      </replace>
+                    </then>
+                  </if>
+                </loop>
+              </while>
+              <do>TEMP.success = '1'</do>
+              <while>
+                <condition>TEMP.success eq '1'</condition>
+                <loop>
+                  <match>
+                    <input>TEMP.my_charge_type_proc</input>
+                    <regex>"USAGE\.(\w+)"</regex>
+                    <success>TEMP.success</success>
+                    <capture>TEMP.my_field</capture>
+                  </match>
+                  <if>
+                    <condition>TEMP.success eq '1'</condition>
+                    <then>
+                      <replace>
+                        <input>TEMP.my_charge_type_proc</input>
+                        <old_value>'USAGE.'~TEMP.my_field</old_value>
+                        <new_value>'OBJECT(TEMP.usage_object).'~TEMP.my_field</new_value>
+                        <output>TEMP.my_charge_type_proc</output>
+                      </replace>
+                    </then>
+                  </if>
+                </loop>
+              </while>
+              <!--<print>TEMP.my_charge_type_proc</print>-->
+              <execute_immediate>TEMP.my_charge_type_proc</execute_immediate>
+            </then>
+          </if>
+        </loop>
+      </index_select_keys>
+      <!--<print>'Done with init generate_bucket_charge'</print>-->
+    </initialize>
+  </proc>
+  
+  <proc name="get_conf_id">
+    <get_guid>OBJECT.c_uniqueconfid</get_guid>
+  </proc>
+  
+</procs>

@@ -1,0 +1,65 @@
+<procs>
+  <proc name='add_decision_to_work'>
+    <param name='my_bucket'/>
+    <if>
+      <condition>OBJECT(TEMP.my_bucket).tier_type Eq 'bulk_aggregate' and GLOBAL.split_bulk ne '1'</condition>
+      <then>
+        
+        <call_proc_for_current_object>
+          <name>'split_bulk_decision'</name>
+          <param name='bucket_object'>TEMP.my_bucket</param>
+          <param name='id_acc'>OBJECT(TEMP.my_bucket).id_acc</param>
+          <param name='is_split_by_acc'>'0'</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+    <index_select>
+      <index>'ACC_QUAL_GROUPS'</index>
+      <field name="id_acc">OBJECT(TEMP.my_bucket).id_acc</field>
+      <field name="group">OBJECT(TEMP.my_bucket).account_qualification_group</field>
+      <cursor>TEMP.child_accs</cursor>
+      <loop>
+        <if>
+          <condition>OBJECT(TEMP.child_accs).child_id_acc ne ''</condition>
+          <then>
+            <index_insert>
+              <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+              <field name="bucket_object">OBJECT(TEMP.my_bucket).object_id</field>
+              <field name="id_acc">OBJECT(TEMP.child_accs).child_id_acc</field>
+            </index_insert>
+            <index_insert>
+              <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+              <field name="bucket_object">OBJECT(TEMP.my_bucket).object_id</field>
+              <field name="id_acc">OBJECT(TEMP.child_accs).child_id_acc</field>
+            </index_insert>
+            <if>
+              <condition>GLOBAL.split_bulk eq '1' and OBJECT(TEMP.my_bucket).tier_type Eq 'bulk_aggregate'</condition>
+              <then>
+                <call_proc_for_current_object>
+                  <name>'split_bulk_decision'</name>
+                  <param name='bucket_object'>TEMP.my_bucket</param>
+                  <param name='id_acc'>OBJECT(TEMP.child_accs).child_id_acc</param>
+                  <param name='is_split_by_acc'>'1'</param>
+                </call_proc_for_current_object>
+              </then>
+            </if>
+          </then>
+        </if>
+      </loop>
+    </index_select>
+    
+    <index_select>
+      <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+      <field name="bucket_object">OBJECT(TEMP.my_bucket).object_id</field>
+      <cursor>TEMP.child_accs</cursor>
+      <then>
+        <index_insert>
+          <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+          <field name="bucket_object">OBJECT(TEMP.my_bucket).object_id</field>
+          <field name="tier_priority">OBJECT(TEMP.my_bucket).tier_priority</field>
+        </index_insert>
+      </then>
+    </index_select>
+  </proc>
+
+</procs>

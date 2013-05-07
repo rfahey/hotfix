@@ -1,0 +1,697 @@
+<procs>
+  <proc name="apply_bucket_to_charge">
+    <param name='bucket_object'/>
+    <param name='usage_object'/>
+
+    <!--<debug>'usage_object.master_amount='~OBJECT(TEMP.usage_object).master_amount</debug>-->
+    <!--<debug>'usage_object.id_sess='~OBJECT(TEMP.usage_object).id_sess</debug>-->
+    <!--<debug>'usage_object.percent_eligible='~OBJECT(TEMP.usage_object).percent_eligible</debug>-->
+    <!--<debug>'usage_object.decision_unique_id='~OBJECT(TEMP.bucket_object).decision_unique_id~</debug>-->
+
+    <if>
+      <condition>OBJECT(TEMP.usage_object).percent_eligible GT '0'</condition>
+      <then>
+        
+        <do>TEMP.master_amount_orig = OBJECT(TEMP.usage_object).master_amount</do>
+        <!--<do>OBJECT(TEMP.usage_object).master_amount_orig = OBJECT(TEMP.usage_object).master_amount</do>-->
+
+        <do>TEMP.converted_units = (OBJECT(TEMP.usage_object).master_units eq ''?'0':OBJECT(TEMP.usage_object).master_units)</do>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).tier_uom ne ''</condition>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.usage_object).master_uom ne ''</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).tier_uom Ne OBJECT(TEMP.usage_object).master_uom and TEMP.converted_units ne '0'</condition>
+                  <then>
+                    <c>Perform uom conversion</c>
+                    <call_proc_for_current_object>
+                      <name>'convert_uom_units'</name>
+                      <param name='source_field'>TEMP.converted_units</param>
+                      <param name='source_currency'>OBJECT(TEMP.usage_object).master_uom</param>
+                      <param name='target_field'>TEMP.converted_units</param>
+                      <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_uom</param>
+                    </call_proc_for_current_object>
+                  </then>
+                  <else>
+                    <c>Skip uom conversion because currencies are the same</c>
+                  </else>
+                </if>
+              </then>
+              <else>
+                <print>'Attempting to convert uom for bucket application but no uom exists on the usage event!'</print>
+              </else>
+            </if>
+          </then>
+        </if>
+        
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).per_unit_rate ne '' and (OBJECT(TEMP.bucket_object).per_event_rate eq '' or OBJECT(TEMP.bucket_object).per_unit_rate ne '0')</condition>
+          <then>
+            <do>TEMP.converted_rate = OBJECT(TEMP.bucket_object).per_unit_rate</do>
+            <do>TEMP.deconverted_orig = OBJECT(TEMP.usage_object).domain_amount_orig</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).tier_currency ne ''</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.usage_object).master_currency ne ''</condition>
+                  <then>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).tier_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                      <then>
+                        <c>Perform currency conversion</c>
+                        <call_proc_for_current_object>
+                          <name>'convert_currency_amount'</name>
+                          <param name='source_field'>TEMP.converted_rate</param>
+                          <param name='source_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                          <param name='target_field'>TEMP.converted_rate</param>
+                          <param name='target_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                          <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                        </call_proc_for_current_object>
+                        <call_proc_for_current_object>
+                          <name>'convert_currency_amount'</name>
+                          <param name='source_field'>TEMP.deconverted_orig</param>
+                          <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                          <param name='target_field'>TEMP.deconverted_orig</param>
+                          <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                          <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                        </call_proc_for_current_object>
+                      </then>
+                      <else>
+                        <c>Skip currency conversion because currencies are the same</c>
+                      </else>
+                    </if>
+                  </then>
+                  <else>
+                    <print>'Attempting to convert currency for per_unit_rating but no currency exists on the usage event!'</print>
+                  </else>
+                </if>
+              </then>
+            </if>
+
+            <if>
+              <condition>OBJECT(TEMP.usage_object).percent_eligible LT '1'</condition>
+              <then>
+		<!-- Since we don't rate the whole call, replace a proportion -->
+		<!-- of the original (pipeline assigned) rate with the new rate -->
+                <print>' MASTER_UNITS='~OBJECT(TEMP.usage_object).master_units~' * '</print>
+                <print>' CONVERTED_UNITS='~TEMP.converted_units~' * '</print>
+                  <print>'PER_UNIT_RATE='~OBJECT(TEMP.bucket_object).per_unit_rate~' * '</print>
+                    <print>' PERCENT_ELIG='~OBJECT(TEMP.usage_object).percent_eligible~' - '</print>
+                <print>'MASTER_AMOUNT='~OBJECT(TEMP.usage_object).master_amount_orig~' * '~OBJECT(TEMP.usage_object).percent_eligible</print>
+		
+		<do>TEMP.rate_amount_delta_usage = ((TEMP.converted_units * TEMP.converted_rate) * OBJECT(TEMP.usage_object).percent_eligible) - (OBJECT(TEMP.usage_object).percent_eligible *OBJECT(TEMP.usage_object).master_amount_orig)</do>
+    <do>TEMP.rate_amount_delta_bucket = ((TEMP.converted_units * OBJECT(TEMP.bucket_object).per_unit_rate) * OBJECT(TEMP.usage_object).percent_eligible) - (OBJECT(TEMP.usage_object).percent_eligible *TEMP.deconverted_orig)</do>
+
+                <print>'usage_object.master_amount prior to applying delta='~OBJECT(TEMP.usage_object).master_amount</print>
+                <do>OBJECT(TEMP.usage_object).master_amount += TEMP.rate_amount_delta_usage</do>
+
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_delta = (OBJECT(TEMP.bucket_object).total_rated_amount_delta==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_delta) + TEMP.rate_amount_delta_bucket</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_units = (OBJECT(TEMP.bucket_object).total_rated_units==''?'0':OBJECT(TEMP.bucket_object).total_rated_units) + (TEMP.converted_units*OBJECT(TEMP.usage_object).percent_eligible)</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_events = (OBJECT(TEMP.bucket_object).total_rated_events==''?'0':OBJECT(TEMP.bucket_object).total_rated_events) + 1</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_after = (OBJECT(TEMP.bucket_object).total_rated_amount_after==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_after) + ((TEMP.converted_units * OBJECT(TEMP.bucket_object).per_unit_rate) * OBJECT(TEMP.usage_object).percent_eligible)</do>
+                <print>'After partial rating usage_object.master_amount='~OBJECT(TEMP.usage_object).master_amount~</print>
+	      </then>
+
+              <else>
+                <!--<debug>' MASTER_UNITS='~OBJECT(TEMP.usage_object).master_units~' * '</debug>-->
+                <!--<debug>' CONVERTED_UNITS='~TEMP.converted_units~' * '</debug>-->
+                <!--<debug>'PER_UNIT_RATE='~OBJECT(TEMP.bucket_object).per_unit_rate~' * '</debug>-->
+                <!--<debug>' PERCENT_ELIG='~OBJECT(TEMP.usage_object).percent_eligible~' - '</debug>-->
+		<!--<debug>'MASTER_AMOUNT='~OBJECT(TEMP.usage_object).master_amount_orig</debug>-->
+
+		<do>OBJECT(TEMP.usage_object).master_amount = TEMP.converted_units * TEMP.converted_rate</do>
+		
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_delta = (OBJECT(TEMP.bucket_object).total_rated_amount_delta==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_delta) + (TEMP.converted_units * OBJECT(TEMP.bucket_object).per_unit_rate) - TEMP.deconverted_orig)</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_units = (OBJECT(TEMP.bucket_object).total_rated_units==''?'0':OBJECT(TEMP.bucket_object).total_rated_units) + (TEMP.converted_units * OBJECT(TEMP.usage_object).percent_eligible)</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_events = (OBJECT(TEMP.bucket_object).total_rated_events==''?'0':OBJECT(TEMP.bucket_object).total_rated_events) + 1</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_after = (OBJECT(TEMP.bucket_object).total_rated_amount_after==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_after) + (TEMP.converted_units * OBJECT(TEMP.bucket_object).per_unit_rate)</do>
+                <!--<debug>'Full (non-partial) rating usage_object.master_amount='~OBJECT(TEMP.usage_object).master_amount</debug>-->
+              </else>
+            </if>
+          </then>
+        </if>
+
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).back_distribute eq '1' and OBJECT(TEMP.bucket_object).back_distribute_unit_amount ne ''</condition>
+          <then>
+            <do>TEMP.bd_per_unit_rate = OBJECT(TEMP.bucket_object).per_unit_amount_remaining/OBJECT(TEMP.bucket_object).per_unit_units_remaining</do>
+
+            <if>
+              <condition>OBJECT(TEMP.usage_object).percent_eligible LT '1'</condition>
+              <then>
+                <do>TEMP.bd_amount = (TEMP.converted_units * TEMP.bd_per_unit_rate) * OBJECT(TEMP.usage_object).percent_eligible</do>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).back_distribute_precision ne '' and OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+                  <then>
+                    <round>
+                      <input>TEMP.bd_amount</input>
+                      <precision>OBJECT(TEMP.bucket_object).back_distribute_precision</precision>
+                      <output>TEMP.bd_amount</output>
+                    </round>
+                  </then>
+                </if>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).back_distribute_currency ne '' and OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+                  <then>
+                    <call_proc_for_current_object>
+                      <name>'round_currency_amount'</name>
+                      <param name='source_field'>TEMP.bd_amount</param>
+                      <param name='target_currency'>OBJECT(TEMP.bucket_object).back_distribute_currency</param>
+                      <param name='target_field'>TEMP.bd_amount</param>
+                    </call_proc_for_current_object>
+                  </then>
+                </if>
+                <do>TEMP.target_bd_amount = TEMP.bd_amount</do>
+                <do>TEMP.converted_master_amount_orig = OBJECT(TEMP.usage_object).master_amount_orig</do>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).back_distribute_currency ne '' and OBJECT(TEMP.usage_object).master_currency ne '' and OBJECT(TEMP.bucket_object).back_distribute_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                  <then>
+                    <c>Perform currency conversion</c>
+                    <call_proc_for_current_object>
+                      <name>'convert_currency_amount'</name>
+                      <param name='source_field'>TEMP.bd_amount</param>
+                      <param name='source_currency'>OBJECT(TEMP.bucket_object).back_distribute_currency</param>
+                      <param name='target_field'>TEMP.target_bd_amount</param>
+                      <param name='target_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                      <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                    </call_proc_for_current_object>
+                    <call_proc_for_current_object>
+                      <name>'convert_currency_amount'</name>
+                      <param name='source_field'>TEMP.converted_master_amount_orig</param>
+                      <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                      <param name='target_field'>TEMP.converted_master_amount_orig</param>
+                      <param name='target_currency'>OBJECT(TEMP.bucket_object).back_distribute_currency</param>
+                      <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                    </call_proc_for_current_object>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+                      <then>
+                        <call_proc_for_current_object>
+                          <name>'round_currency_amount'</name>
+                          <param name='source_field'>TEMP.target_bd_amount</param>
+                          <param name='target_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                          <param name='target_field'>TEMP.target_bd_amount</param>
+                        </call_proc_for_current_object>
+                      </then>
+                    </if>
+                  </then>
+                </if>
+
+                
+                <c>Since we don't rate the whole call, replace a proportion of the original (pipeline assigned) rate with the new rate</c>
+                <do>TEMP.rate_amount_delta_usage = TEMP.target_bd_amount - (OBJECT(TEMP.usage_object).percent_eligible *OBJECT(TEMP.usage_object).master_amount_orig)</do>
+                <do>TEMP.rate_amount_delta_bucket = TEMP.bd_amount - (OBJECT(TEMP.usage_object).percent_eligible *TEMP.converted_master_amount_orig)</do>
+                <do>OBJECT(TEMP.bucket_object).per_unit_amount_remaining = OBJECT(TEMP.bucket_object).per_unit_amount_remaining - TEMP.bd_amount</do>
+                <do>OBJECT(TEMP.usage_object).master_amount += TEMP.rate_amount_delta_usage</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_delta = (OBJECT(TEMP.bucket_object).total_rated_amount_delta==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_delta) + TEMP.rate_amount_delta_bucket</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_units = (OBJECT(TEMP.bucket_object).total_rated_units==''?'0':OBJECT(TEMP.bucket_object).total_rated_units) + (TEMP.converted_units*OBJECT(TEMP.usage_object).percent_eligible)</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_events = (OBJECT(TEMP.bucket_object).total_rated_events==''?'0':OBJECT(TEMP.bucket_object).total_rated_events) + 1</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_after = (OBJECT(TEMP.bucket_object).total_rated_amount_after==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_after) + TEMP.bd_amount</do>
+                <do>OBJECT(TEMP.bucket_object).per_unit_units_remaining = OBJECT(TEMP.bucket_object).per_unit_units_remaining - (TEMP.converted_units*OBJECT(TEMP.usage_object).percent_eligible)</do>
+                <!--<do>TEMP.my_units = TEMP.converted_units*OBJECT(TEMP.usage_object).percent_eligible</do>
+                <print>'BACKDISTRIBUTION: I have ['~OBJECT(TEMP.bucket_object).per_unit_units_remaining~'] units remaining and ['~OBJECT(TEMP.bucket_object).per_unit_amount_remaining~'] amount remaining. I used ['~TEMP.rate_amount_delta~'] dollars for ['~TEMP.my_units~'] units'</print>-->
+              </then>
+              <else>
+                <do>TEMP.bd_amount = TEMP.converted_units * TEMP.bd_per_unit_rate</do>
+                <!--<print>'Pre I have ['~TEMP.bd_amount~'] and precision of ['~OBJECT(TEMP.bucket_object).back_distribute_precision~']'</print>-->
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).back_distribute_precision ne '' and OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+                  <then>
+                    <!--<print>'Rounding!'</print>-->
+                    <round>
+                      <input>TEMP.bd_amount</input>
+                      <precision>OBJECT(TEMP.bucket_object).back_distribute_precision</precision>
+                      <output>TEMP.bd_amount</output>
+                    </round>
+                  </then>
+                </if>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).back_distribute_currency ne '' and OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+                  <then>
+                    <!--<print>'Rounding Currency!'</print>-->
+                    <call_proc_for_current_object>
+                      <name>'round_currency_amount'</name>
+                      <param name='source_field'>TEMP.bd_amount</param>
+                      <param name='target_currency'>OBJECT(TEMP.bucket_object).back_distribute_currency</param>
+                      <param name='target_field'>TEMP.bd_amount</param>
+                    </call_proc_for_current_object>
+                  </then>
+                </if>
+                <do>TEMP.target_bd_amount = TEMP.bd_amount</do>
+                <do>TEMP.converted_master_amount_orig = OBJECT(TEMP.usage_object).master_amount_orig</do>
+                <!--<print>'I have amount of ['~TEMP.target_bd_amount~']'</print>-->
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).back_distribute_currency ne '' and OBJECT(TEMP.usage_object).master_currency ne '' and OBJECT(TEMP.bucket_object).back_distribute_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                  <then>
+                    <c>Perform currency conversion</c>
+                    <call_proc_for_current_object>
+                      <name>'convert_currency_amount'</name>
+                      <param name='source_field'>TEMP.bd_amount</param>
+                      <param name='source_currency'>OBJECT(TEMP.bucket_object).back_distribute_currencyy</param>
+                      <param name='target_field'>TEMP.target_bd_amount</param>
+                      <param name='target_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                      <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                    </call_proc_for_current_object>
+                    <call_proc_for_current_object>
+                      <name>'convert_currency_amount'</name>
+                      <param name='source_field'>TEMP.converted_master_amount_orig</param>
+                      <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                      <param name='target_field'>TEMP.converted_master_amount_orig</param>
+                      <param name='target_currency'>OBJECT(TEMP.bucket_object).back_distribute_currency</param>
+                      <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                    </call_proc_for_current_object>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+                      <then>
+                        <call_proc_for_current_object>
+                          <name>'round_currency_amount'</name>
+                          <param name='source_field'>TEMP.target_bd_amount</param>
+                          <param name='target_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                          <param name='target_field'>TEMP.target_bd_amount</param>
+                        </call_proc_for_current_object>
+                      </then>
+                    </if>
+                  </then>
+                </if>
+                <!--<print>'Now I have amount ['~TEMP.target_bd_amount~'] and main amount ['~TEMP.bd_amount~']'</print>-->
+                <do>OBJECT(TEMP.usage_object).master_amount = TEMP.target_bd_amount</do>
+                <do>OBJECT(TEMP.bucket_object).per_unit_amount_remaining = OBJECT(TEMP.bucket_object).per_unit_amount_remaining - TEMP.bd_amount</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_delta = (OBJECT(TEMP.bucket_object).total_rated_amount_delta==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_delta) + TEMP.bd_amount - TEMP.converted_master_amount_orig)</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_units = (OBJECT(TEMP.bucket_object).total_rated_units==''?'0':OBJECT(TEMP.bucket_object).total_rated_units) + (TEMP.converted_units * OBJECT(TEMP.usage_object).percent_eligible)</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_events = (OBJECT(TEMP.bucket_object).total_rated_events==''?'0':OBJECT(TEMP.bucket_object).total_rated_events) + 1</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_after = (OBJECT(TEMP.bucket_object).total_rated_amount_after==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_after) + TEMP.bd_amount</do>
+                <do>OBJECT(TEMP.bucket_object).per_unit_units_remaining = OBJECT(TEMP.bucket_object).per_unit_units_remaining - TEMP.converted_units</do>
+              <!--<print>'BACKDISTRIBUTION: I have ['~OBJECT(TEMP.bucket_object).per_unit_units_remaining~'] units remaining and ['~OBJECT(TEMP.bucket_object).per_unit_amount_remaining~'] amount remaining. I used ['~TEMP.rate_amount_delta~'] dollars for ['~OBJECT(TEMP.usage_object).master_units~'] units'</print>-->
+              </else>
+            </if>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).per_event_rate ne ''</condition>
+          <then>
+            <do>TEMP.converted_rate = OBJECT(TEMP.bucket_object).per_event_rate</do>
+            <do>OBJECT(TEMP.usage_object).master_amount = (OBJECT(TEMP.usage_object).master_amount eq ''?'0':OBJECT(TEMP.usage_object).master_amount)</do>
+            <do>TEMP.deconvert_master = '0'</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).tier_currency ne ''</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.usage_object).master_currency ne ''</condition>
+                  <then>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).tier_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                      <then>
+                        <c>Perform currency conversion</c>
+                        <call_proc_for_current_object>
+                          <name>'convert_currency_amount'</name>
+                          <param name='source_field'>TEMP.converted_rate</param>
+                          <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                          <param name='target_field'>TEMP.converted_rate</param>
+                          <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                          <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                        </call_proc_for_current_object>
+                        <do>TEMP.deconvert_master = '1'</do>
+                      </then>
+                      <else>
+                        <c>Skip currency conversion because currencies are the same</c>
+                      </else>
+                    </if>
+                  </then>
+                  <else>
+                    <print>'Attempting to convert currency for per_event_rating but no currency exists on the usage event!'</print>
+                  </else>
+                </if>
+              </then>
+            </if>
+            
+            <do>TEMP.master_amount_orig2 = OBJECT(TEMP.usage_object).master_amount</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).per_unit_rate eq '0' or OBJECT(TEMP.bucket_object).per_unit_rate eq ''</condition>
+              <then>
+                <do>OBJECT(TEMP.usage_object).master_amount = '0'</do>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.usage_object).c_proratedonsubscription ne '1' and OBJECT(TEMP.usage_object).c_proratedonunsubscription ne '1'</condition>
+              <then>
+                <do>OBJECT(TEMP.usage_object).master_amount += TEMP.converted_rate</do>
+              </then>
+              <else>
+                <date_diff>
+                  <first_date>OBJECT(TEMP.usage_object).c_rcintervalend</first_date>
+                  <second_date>OBJECT(TEMP.usage_object).c_rcintervalstart</second_date>
+                  <output type="days">TEMP.days_diff</output>
+                </date_diff>
+                <round>
+                  <input>TEMP.days_diff</input>
+                  <precision>0</precision>
+                  <output>TEMP.days_diff</output>
+                </round>
+
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).daily_rc_rounding_precision ne ''</condition>
+                  <then>
+                    <do>TEMP.daily_rate = TEMP.converted_rate/TEMP.days_diff</do>
+                    <round>
+                      <input>TEMP.daily_rate</input>
+                      <precision>OBJECT(TEMP.bucket_object).daily_rc_rounding_precision</precision>
+                      <output>TEMP.daily_rate</output>
+                    </round>
+                    <do>OBJECT(TEMP.usage_object).master_amount += OBJECT(TEMP.usage_object).c_prorateddays * TEMP.daily_rate</do>
+                  </then>
+                  <else>
+                    <do>OBJECT(TEMP.usage_object).master_amount = (OBJECT(TEMP.usage_object).master_amount==''?'0':OBJECT(TEMP.usage_object).master_amount) + TEMP.converted_rate * OBJECT(TEMP.usage_object).c_prorateddays / TEMP.days_diff</do>
+                  </else>
+                </if>
+                <if>
+                  <condition>OBJECT(TEMP.usage_object).c_proratedonunsubscription eq '1' and OBJECT(TEMP.usage_object).c_advance eq '1'</condition>
+                  <then>
+                    <do>OBJECT(TEMP.usage_object).master_amount = 0 - OBJECT(TEMP.usage_object).master_amount</do>
+                  </then>
+                </if>
+              </else>
+            </if>
+            <do>TEMP.deconverted_master = OBJECT(TEMP.usage_object).master_amount</do>
+            <if>
+              <condition>TEMP.deconvert_master eq '1'</condition>
+              <then>
+                <call_proc_for_current_object>
+                  <name>'convert_currency_amount'</name>
+                  <param name='source_field'>OBJECT(TEMP.usage_object).master_amount</param>
+                  <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                  <param name='target_field'>TEMP.deconverted_master</param>
+                  <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                  <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                </call_proc_for_current_object>
+                <call_proc_for_current_object>
+                  <name>'convert_currency_amount'</name>
+                  <param name='source_field'>TEMP.master_amount_orig2</param>
+                  <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                  <param name='target_field'>TEMP.master_amount_orig2</param>
+                  <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                  <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                </call_proc_for_current_object>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).per_unit_rate eq '0' or OBJECT(TEMP.bucket_object).per_unit_rate eq ''</condition>
+              <then>
+                <c>only increment these counters if the record is not a per_unit_rate/per_event_rate combo record. Otherwise we will double count the totals.</c>
+                <!--<print>'TNA 3-['~OBJECT(TEMP.usage_object).master_amount~']'</print>-->
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_after = (OBJECT(TEMP.bucket_object).total_rated_amount_after==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_after) + TEMP.deconverted_master</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_units = (OBJECT(TEMP.bucket_object).total_rated_units==''?'0':OBJECT(TEMP.bucket_object).total_rated_units) + TEMP.converted_units</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_events = (OBJECT(TEMP.bucket_object).total_rated_events==''?'0':OBJECT(TEMP.bucket_object).total_rated_events) + 1</do>
+              </then>
+              <else>
+                <c>Still increment the total_rated_amount_after if there is a per_unit_rate also set, but offset by the master_amount_orig</c>
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_after = (OBJECT(TEMP.bucket_object).total_rated_amount_after==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_after) + OBJECT(TEMP.usage_object).master_amount - TEMP.master_amount_orig2</do>
+              </else>
+            </if>
+            <do>OBJECT(TEMP.bucket_object).total_rated_amount_delta = (OBJECT(TEMP.bucket_object).total_rated_amount_delta==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_delta) + OBJECT(TEMP.usage_object).master_amount - TEMP.master_amount_orig2)</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).back_distribute eq '1' and OBJECT(TEMP.bucket_object).back_distribute_event_amount ne ''</condition>
+          <then>
+            <do>TEMP.bd_amount = OBJECT(TEMP.bucket_object).per_event_amount_remaining/OBJECT(TEMP.bucket_object).per_event_events_remaining</do>
+
+            <if>
+              <condition>OBJECT(TEMP.usage_object).c_proratedonsubscription eq '1' or OBJECT(TEMP.usage_object).c_proratedonunsubscription eq '1'</condition>
+              <then>
+                <date_diff>
+                  <first_date>OBJECT(TEMP.usage_object).c_rcintervalstart</first_date>
+                  <second_date>OBJECT(TEMP.usage_object).c_rcintervalend</second_date>
+                  <output type="days">TEMP.days_diff</output>
+                </date_diff>
+                <round>
+                  <input>TEMP.days_diff</input>
+                  <precision>0</precision>
+                  <output>TEMP.days_diff</output>
+                </round>
+                <do>TEMP.bd_amount = TEMP.bd_per_event_rate * OBJECT(TEMP.usage_object).c_prorateddays / TEMP.days_diff</do>
+                <if>
+                  <condition>OBJECT(TEMP.usage_object).c_proratedonunsubscription eq '1' and OBJECT(TEMP.usage_object).c_advance eq '1'</condition>
+                  <then>
+                    <do>TEMP.bd_amount = 0 - TEMP.bd_amount</do>
+                  </then>
+                </if>
+              </then>
+            </if>
+
+
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).back_distribute_precision ne '' and OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+              <then>
+                <round>
+                  <input>TEMP.bd_amount</input>
+                  <precision>OBJECT(TEMP.bucket_object).back_distribute_precision</precision>
+                  <output>TEMP.bd_amount</output>
+                </round>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).back_distribute_currency ne '' and OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+              <then>
+                <call_proc_for_current_object>
+                  <name>'round_currency_amount'</name>
+                  <param name='source_field'>TEMP.bd_amount</param>
+                  <param name='target_currency'>OBJECT(TEMP.bucket_object).back_distribute_currency</param>
+                  <param name='target_field'>TEMP.bd_amount</param>
+                </call_proc_for_current_object>
+              </then>
+            </if>
+            <do>TEMP.target_bd_amount = TEMP.bd_amount</do>
+            <do>TEMP.converted_master_amount_orig = OBJECT(TEMP.usage_object).master_amount_orig</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).back_distribute_currency ne '' and OBJECT(TEMP.usage_object).master_currency ne '' and OBJECT(TEMP.bucket_object).back_distribute_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+              <then>
+                <c>Perform currency conversion</c>
+                <call_proc_for_current_object>
+                  <name>'convert_currency_amount'</name>
+                  <param name='source_field'>TEMP.bd_amount</param>
+                  <param name='source_currency'>OBJECT(TEMP.bucket_object).back_distribute_currencyy</param>
+                  <param name='target_field'>TEMP.target_bd_amount</param>
+                  <param name='target_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                  <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                </call_proc_for_current_object>
+                <call_proc_for_current_object>
+                  <name>'convert_currency_amount'</name>
+                  <param name='source_field'>TEMP.converted_master_amount_orig</param>
+                  <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                  <param name='target_field'>TEMP.converted_master_amount_orig</param>
+                  <param name='target_currency'>OBJECT(TEMP.bucket_object).back_distribute_currency</param>
+                  <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                </call_proc_for_current_object>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+                  <then>
+                    <call_proc_for_current_object>
+                      <name>'round_currency_amount'</name>
+                      <param name='source_field'>TEMP.target_bd_amount</param>
+                      <param name='target_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                      <param name='target_field'>TEMP.target_bd_amount</param>
+                    </call_proc_for_current_object>
+                  </then>
+                </if>
+              </then>
+            </if>
+
+            
+            
+            
+            <if>
+              <condition>OBJECT(TEMP.usage_object).c_proratedonsubscription ne '1' and OBJECT(TEMP.usage_object).c_proratedonunsubscription ne '1'</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).per_unit_rate ne '' or OBJECT(TEMP.bucket_object).back_distribute_unit_amount ne '' or or OBJECT(TEMP.bucket_object).additive_event_rate eq '1'</condition>
+                  <then>
+                    <do>OBJECT(TEMP.usage_object).master_amount = (OBJECT(TEMP.usage_object).master_amount==''?'0':OBJECT(TEMP.usage_object).master_amount) + TEMP.target_bd_amount</do>
+                  </then>
+                  <else>
+                    <do>OBJECT(TEMP.usage_object).master_amount = TEMP.target_bd_amount</do>
+                  </else>
+                </if>
+              </then>
+              <else>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).per_unit_rate ne '' or OBJECT(TEMP.bucket_object).back_distribute_unit_amount ne '' or or OBJECT(TEMP.bucket_object).additive_event_rate eq '1'</condition>
+                  <then>
+                    <do>OBJECT(TEMP.usage_object).master_amount = (OBJECT(TEMP.usage_object).master_amount==''?'0':OBJECT(TEMP.usage_object).master_amount) + TEMP.target_bd_amount</do>
+                  </then>
+                  <else>
+                    <do>OBJECT(TEMP.usage_object).master_amount = TEMP.target_bd_amount</do>
+                  </else>
+                </if>
+              </else>
+            </if>
+            <do>OBJECT(TEMP.bucket_object).total_rated_amount_after = (OBJECT(TEMP.bucket_object).total_rated_amount_after==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_after) + TEMP.bd_amount</do>
+            <do>OBJECT(TEMP.bucket_object).total_rated_units = (OBJECT(TEMP.bucket_object).total_rated_units==''?'0':OBJECT(TEMP.bucket_object).total_rated_units) + TEMP.converted_units</do>
+            <do>OBJECT(TEMP.bucket_object).total_rated_events = (OBJECT(TEMP.bucket_object).total_rated_events==''?'0':OBJECT(TEMP.bucket_object).total_rated_events) + 1</do>
+            <!--<debug>'After applying perEventRate usage_object.master_amount='~OBJECT(TEMP.usage_object).master_amount</debug>-->
+            <do>OBJECT(TEMP.bucket_object).per_event_amount_remaining = OBJECT(TEMP.bucket_object).per_event_amount_remaining - TEMP.bd_amount</do>
+            <do>OBJECT(TEMP.bucket_object).per_event_events_remaining = OBJECT(TEMP.bucket_object).per_event_events_remaining - 1</do>
+            <do>OBJECT(TEMP.bucket_object).total_rated_amount_delta = (OBJECT(TEMP.bucket_object).total_rated_amount_delta==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_delta) + TEMP.bd_amount - TEMP.converted_master_amount_orig)</do>
+
+          </then>
+        </if>
+
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).tier_discount ne ''</condition>
+          <then>
+            <!--<print>'usage_object.master_amount='~OBJECT(TEMP.usage_object).master_amount</print>-->
+            <!--<print>'bucket_object.tier_discount='~OBJECT(TEMP.bucket_object).tier_discount</print>-->
+	    <!--<print>'usage_object.perc_eligible='~OBJECT(TEMP.usage_object).percent_eligible</print>-->
+
+            <do>TEMP.deconverted_master = OBJECT(TEMP.usage_object).master_amount</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).tier_currency ne ''</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.usage_object).master_currency ne ''</condition>
+                  <then>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).tier_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                      <then>
+                        <c>Perform currency conversion</c>
+                        <call_proc_for_current_object>
+                          <name>'convert_currency_amount'</name>
+                          <param name='source_field'>TEMP.deconverted_master</param>
+                          <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                          <param name='target_field'>TEMP.deconverted_master</param>
+                          <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                          <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                        </call_proc_for_current_object>
+                      </then>
+                      <else>
+                        <c>Skip currency conversion because currencies are the same</c>
+                      </else>
+                    </if>
+                  </then>
+                  <else>
+                    <!--<print>'Attempting to convert currency for discounting but no currency exists on the usage event!'</print>-->
+                  </else>
+                </if>
+              </then>
+            </if>
+
+            <do>TEMP.discount_amount = OBJECT(TEMP.usage_object).master_amount*OBJECT(TEMP.bucket_object).tier_discount/100*OBJECT(TEMP.usage_object).percent_eligible</do>
+			<do>TEMP.discount_amount_bucket = TEMP.deconverted_master*OBJECT(TEMP.bucket_object).tier_discount/100*OBJECT(TEMP.usage_object).percent_eligible</do>
+            <do>OBJECT(TEMP.usage_object).master_amount -= TEMP.discount_amount</do>
+            <!--<print>'After applying tierDiscount usage_object.master_amount='~OBJECT(TEMP.usage_object).master_amount</print>-->
+            <do>OBJECT(TEMP.bucket_object).total_discount_amount = (OBJECT(TEMP.bucket_object).total_discount_amount==''?'0':OBJECT(TEMP.bucket_object).total_discount_amount) + TEMP.discount_amount_bucket</do>
+            <do>OBJECT(TEMP.bucket_object).total_discounted_amount = (OBJECT(TEMP.bucket_object).total_discounted_amount==''?'0':OBJECT(TEMP.bucket_object).total_discounted_amount) + TEMP.deconverted_master*OBJECT(TEMP.usage_object).percent_eligible</do>
+            <do>OBJECT(TEMP.bucket_object).total_discounted_units = (OBJECT(TEMP.bucket_object).total_discounted_units==''?'0':OBJECT(TEMP.bucket_object).total_discounted_units) + TEMP.converted_units*OBJECT(TEMP.usage_object).percent_eligible</do>
+            <do>OBJECT(TEMP.bucket_object).total_discounted_events = (OBJECT(TEMP.bucket_object).total_discounted_events==''?'0':OBJECT(TEMP.bucket_object).total_discounted_events) + 1</do>
+            <do>OBJECT(TEMP.bucket_object).total_rated_amount_delta = (OBJECT(TEMP.bucket_object).total_rated_amount_delta==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_delta) - TEMP.discount_amount_bucket)</do>
+            <!--<print>'bucket_object.total_discounted_units='~OBJECT(TEMP.bucket_object).total_discounted_units~</print>-->
+	    <!--<print>'usage_object.master_units='~OBJECT(TEMP.usage_object).master_units</print>-->
+	    <!--<print>'usage_object.percent_eligible='~OBJECT(TEMP.usage_object).percent_eligible</print>-->
+          </then>
+        </if>
+
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).push_usage_proc ne ''</condition>
+          <then>
+            <call_dynamic_proc_for_object>
+              <name>OBJECT(TEMP.bucket_object).push_usage_proc</name>
+              <object_id>TEMP.usage_object</object_id>
+              <param name='bucket_object'>TEMP.bucket_object</param>
+              <param name='usage_object'>TEMP.usage_object</param>
+            </call_dynamic_proc_for_object>
+          </then>
+        </if>
+
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).usage_modification_proc ne ''</condition>
+          <then>
+            <call_dynamic_proc_for_object>
+              <name>OBJECT(TEMP.bucket_object).usage_modification_proc</name>
+              <object_id>TEMP.usage_object</object_id>
+              <param name='bucket_object'>TEMP.bucket_object</param>
+              <param name='usage_object'>TEMP.usage_object</param>
+            </call_dynamic_proc_for_object>
+          </then>
+        </if>
+        
+        <if> <condition>OBJECT(TEMP.bucket_object).tier_domain_impact ne ''</condition>
+          <then>
+
+            <to_lower>
+              <input>'td_decrement_'~OBJECT(TEMP.bucket_object).tier_domain_impact</input>
+              <output>TEMP.proc_name</output>
+            </to_lower>
+            <call_dynamic_proc_for_object>
+              <name>TEMP.proc_name</name>
+              <object_id>TEMP.usage_object</object_id>
+              <param name='decrement_percent'>OBJECT(TEMP.usage_object).percent_eligible</param>
+            </call_dynamic_proc_for_object>
+          </then>
+        </if>
+
+        <!-- Update TEMP.usage_object with audit trail information -->
+        <if> <condition>OBJECT(TEMP.bucket_object).tier_type Ne 'bulk_source'</condition>
+            <then>
+                <do>OBJECT(TEMP.usage_object).agg_applied_tier_counter = (OBJECT(TEMP.usage_object).agg_applied_tier_counter==''?0:OBJECT(TEMP.usage_object).agg_applied_tier_counter) + 1</do>
+
+            <set_object_field>
+              <input>TEMP.master_amount_orig</input>
+              <object_id>TEMP.usage_object</object_id>
+              <field_name>'agg_tier_'~OBJECT(TEMP.usage_object).agg_applied_tier_counter~'_amount_before'</field_name>
+            </set_object_field>
+
+            <set_object_field>
+              <input>OBJECT(TEMP.usage_object).master_amount</input>
+              <object_id>TEMP.usage_object</object_id>
+              <field_name>'agg_tier_'~OBJECT(TEMP.usage_object).agg_applied_tier_counter~'_amount_after'</field_name>
+            </set_object_field>
+
+            <set_object_field>
+              <input>OBJECT(TEMP.usage_object).percent_eligible</input>
+              <object_id>TEMP.usage_object</object_id>
+              <field_name>'agg_tier_'~OBJECT(TEMP.usage_object).agg_applied_tier_counter~'_perc_elig'</field_name>
+            </set_object_field>
+
+            <set_object_field>
+              <input>OBJECT(TEMP.bucket_object).decision_unique_id</input>
+              <object_id>TEMP.usage_object</object_id>
+              <field_name>'agg_tier_'~OBJECT(TEMP.usage_object).agg_applied_tier_counter~'_id'</field_name>
+            </set_object_field>
+
+
+            <set_object_field>
+              <input>OBJECT(TEMP.bucket_object).last_qualified_total</input>
+              <object_id>TEMP.usage_object</object_id>
+              <field_name>'agg_tier_'~OBJECT(TEMP.usage_object).agg_applied_tier_counter~'_start'</field_name>
+            </set_object_field>
+
+                <if> <condition>OBJECT(TEMP.bucket_object).tier_end LT OBJECT(TEMP.bucket_object).qualified_total</condition>
+                    <then>
+                        <set_object_field>
+                            <input>OBJECT(TEMP.bucket_object).tier_end</input>
+                            <object_id>TEMP.usage_object</object_id>
+                            <field_name>'agg_tier_'~OBJECT(TEMP.usage_object).agg_applied_tier_counter~'_end'</field_name>
+                        </set_object_field>
+                    </then>
+                    <else>
+                        <set_object_field>
+                            <input>OBJECT(TEMP.bucket_object).qualified_total</input>
+                            <object_id>TEMP.usage_object</object_id>
+                            <field_name>'agg_tier_'~OBJECT(TEMP.usage_object).agg_applied_tier_counter~'_end'</field_name>
+                        </set_object_field>
+                    </else>
+                </if>
+
+            <set_object_field>
+              <input>OBJECT(TEMP.bucket_object).charge_qualification_group</input>
+              <object_id>TEMP.usage_object</object_id>
+              <field_name>'agg_tier_'~OBJECT(TEMP.usage_object).agg_applied_tier_counter~'_cqg'</field_name>
+            </set_object_field>
+            </then>
+        </if>
+      </then>
+    </if>
+  </proc>
+
+</procs>

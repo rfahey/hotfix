@@ -1,0 +1,44 @@
+<proc name="bg_lock_boundary_group_for_aqg">
+  <param name='boundary_group_id' mode='in out'/>
+  <param name='id_acc'/>
+  <param name='account_qualification_group'/>
+  <param name='got_lock' mode='out'/>
+  <do>TEMP.got_lock = 0</do>
+  <do>TEMP.orig_boundary_group_id</do>
+  <while>
+    <condition>TEMP.got_lock eq 0</condition>
+    <loop>
+      <do>TEMP.got_lock = '-1'</do>
+      <if>
+        <condition>TEMP.boundary_group_id ne ''</condition>
+        <then>
+          <call_proc_for_current_object>
+            <name>'bg_lock_boundary_group'</name>
+            <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+            <param name='got_lock'>TEMP.got_lock</param>
+          </call_proc_for_current_object>
+          <print>'bg_lock_boundary group returns got lock ['~TEMP.got_lock~']'</print>
+        </then>
+      </if>
+      <if>
+        <condition>TEMP.got_lock eq '-1'</condition>
+        <then>
+          <db_select>
+            <login_object>GLOBAL.target_login</login_object>
+            <query>
+              "select * from agg_boundary_group_aqg_map where id_acc = $${TEMP.id_acc} and account_qualification_group = $${TEMP.account_qualification_group}"
+            </query>
+            <cursor>TEMP.bg_csr</cursor>
+            <then>
+              <do>TEMP.got_lock = 0</do>
+              <do>TEMP.boundary_group_id = OBJECT(TEMP.bg_csr).boundary_group_id</do>
+            </then>
+            <else>
+              <do>TEMP.got_lock = '-1'</do>
+            </else>
+          </db_select>
+        </then>
+      </if>
+    </loop>
+  </while>
+</proc>

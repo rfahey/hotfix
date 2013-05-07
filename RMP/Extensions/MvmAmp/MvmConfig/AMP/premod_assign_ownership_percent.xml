@@ -1,0 +1,66 @@
+<procs>
+  <proc name='premod_assign_ownership_percent'>
+    <param name='bucket_object'/>
+    <param name='usage_object'/>
+
+    <run_once>
+      <define_memory_index>
+        <index>'PREMOD_OWNERSHIP_PERCENT'</index>
+        <key_field>'owner_id_acc'</key_field>
+        <key_field>'payee_id_acc'</key_field>
+        <key_field type='search'>'start_date'</key_field>
+        <field>'ownership_percentage'</field>
+        <field>'end_date'</field>
+      </define_memory_index>
+      
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select id_owner, id_owned, n_percent, vt_start start_date, vt_end end_date from t_acc_ownership where GETDATE() > tt_start and tt_end > GETDATE()"
+        </query>
+        <cursor>TEMP.ownership_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'PREMOD_OWNERSHIP_PERCENT'</index>
+            <field name="owner_id_acc">OBJECT(TEMP.ownership_csr).id_owner</field>
+            <field name="payee_id_acc">OBJECT(TEMP.ownership_csr).id_owned</field>
+            <field name="start_date">OBJECT(TEMP.ownership_csr).start_date</field>
+            <field name="ownership_percentage">OBJECT(TEMP.ownership_csr).n_percent</field>
+            <field name="end_date">OBJECT(TEMP.ownership_csr).end_date</field>
+          </index_insert>
+        </loop>
+      </db_select>
+      
+    </run_once>
+
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).charge_on_every_orig eq ''</condition>
+      <then>
+        <do>OBJECT(TEMP.bucket_object).charge_on_every_orig = OBJECT(TEMP.bucket_object).charge_on_every/100</do>
+      </then>
+    </if>
+    
+    <index_select>
+      <index>'PREMOD_OWNERSHIP_PERCENT'</index>
+      <field name="owner_id_acc">OBJECT(TEMP.bucket_object).id_acc</field>
+      <field name="payee_id_acc">OBJECT(TEMP.usage_object).id_payee</field>
+      <field name="start_date">OBJECT(TEMP.usage_object).dt_session</field>
+      <cursor>TEMP.ownership_csr</cursor>
+      <then>
+        <if>
+          <condition>OBJECT(TEMP.ownership_csr).end_date GT OBJECT(TEMP.usage_object).dt_session</condition>
+          <then>
+            <do>OBJECT(TEMP.bucket_object).charge_on_every = OBJECT(TEMP.ownership_csr).ownership_percentage/100</do>
+          </then>
+          <else>
+            <do>OBJECT(TEMP.bucket_object).charge_on_every = OBJECT(TEMP.bucket_object).charge_on_every_orig</do>
+          </else>
+        </if>
+      </then>
+      <else>
+        <do>OBJECT(TEMP.bucket_object).charge_on_every = OBJECT(TEMP.bucket_object).charge_on_every_orig</do>
+      </else>
+    </index_select>
+  </proc>
+</procs>

@@ -1,0 +1,350 @@
+<procs>
+
+  <proc name="track_changes">
+    <run_once>
+      <do>initialize_change_tracker()</do>
+      <define_memory_index>
+        <index>'CHANGE_TRACKING_TABLES'</index>
+        <key_field>'table'</key_field>
+        <field>'routing_proc'</field>
+        <field>'prerouting_proc'</field>
+        <field>'postrouting_proc'</field>
+        <field>'ins_int_proc'</field>
+        <field>'upd_int_proc'</field>
+        <field>'del_int_proc'</field>
+        <field>'ins_inc_proc'</field>
+        <field>'upd_inc_proc'</field>
+        <field>'del_inc_proc'</field>
+        <field>'operation_field'</field>
+        <field>'table_field'</field>
+        <field>'predicate'</field>
+        <field>'priority'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'CHANGE_TRACKING_TABLE_STATUS'</index>
+        <key_field>'table'</key_field>
+        <field>'postrouting_proc'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'CHANGE_TRACKING_TABLE_PRIORITY'</index>
+        <key_field>'table'</key_field>
+        <key_field>'priority'</key_field>
+      </define_memory_index>
+      <call_proc_for_current_object>
+        <name>'initialize_change_tracking_status'</name>
+      </call_proc_for_current_object>
+    </run_once>
+
+    <print>'Starting change tracking loop'</print>
+
+    <do>TEMP.continue = '1'</do>
+    <while>
+      <condition>TEMP.continue eq '1'</condition>
+      <loop>
+        <call_proc_for_current_object>
+          <name>'track_changes_once'</name>
+        </call_proc_for_current_object>
+        <sleep>1000</sleep>
+      </loop>
+    </while>
+  </proc>
+
+  <proc name="track_changes_once">
+    <!-- This module does all the setup/initialization -->
+    <print>'Before tracked DB select'</print>
+    <tracked_db_select>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <index_insert>
+          <index>'CHANGE_TRACKING_TABLES'</index>
+          <field name="table">OBJECT(TEMP.csr).table</field>
+          <field name="routing_proc">OBJECT(TEMP.csr).routing_proc</field>
+          <field name="prerouting_proc">OBJECT(TEMP.csr).prerouting_proc</field>
+          <field name="postrouting_proc">OBJECT(TEMP.csr).postrouting_proc</field>
+          <field name="ins_int_proc">OBJECT(TEMP.csr).ins_int_proc</field>
+          <field name="upd_int_proc">OBJECT(TEMP.csr).upd_int_proc</field>
+          <field name="del_int_proc">OBJECT(TEMP.csr).del_int_proc</field>
+          <field name="ins_inc_proc">OBJECT(TEMP.csr).ins_inc_proc</field>
+          <field name="upd_inc_proc">OBJECT(TEMP.csr).upd_inc_proc</field>
+          <field name="del_inc_proc">OBJECT(TEMP.csr).del_inc_proc</field>
+          <field name="operation_field">OBJECT(TEMP.csr).operation_field</field>
+          <field name="table_field">OBJECT(TEMP.csr).table_field</field>
+          <field name="predicate">OBJECT(TEMP.csr).predicate</field>
+          <field name="priority">OBJECT(TEMP.csr).priority</field>
+        </index_insert>
+      </loop>
+    </tracked_db_select>
+    <print>'After tracked DB select'</print>
+
+    <print>'Polling for database changes'</print>
+
+    <index_select_keys>
+      <index>'CHANGE_TRACKING_TABLES'</index>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <!--
+        This is a kludge, but since we allow multiple routing procs for a table (but it makes no
+        sense to have multiple predicates for a table), we don't know the database predicate yet,
+        so just do an index_get to find the first one.  Could eventually select from the table
+        multiple times when we see different predicates, but doesn't seem important now.
+        -->
+        <do>TEMP.predicate = ''</do>
+        <do>TEMP.priority = 0</do>
+        <index_get>
+          <index>'CHANGE_TRACKING_TABLES'</index>
+          <field name='table'>OBJECT(TEMP.csr).table</field>
+          <field name='predicate'>TEMP.predicate</field>
+          <field name='priority'>TEMP.priority</field>
+        </index_get>
+        <index_insert>
+          <index>'CHANGE_TRACKING_TABLE_PRIORITY'</index>
+          <field name='table'>OBJECT(TEMP.csr).table</field>
+          <field name='priority'>TEMP.priority</field>
+        </index_insert>
+      </loop>
+    </index_select_keys>
+
+    <do>TEMP.my_batch_id = ''</do>
+    <do>TEMP.total_deltas = 0</do>
+    <index_select_keys>
+      <index>'CHANGE_TRACKING_TABLE_PRIORITY'</index>
+      <order_by direction='desc'>OBJECT(TEMP.csr).priority</order_by>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <tracked_changes_select>
+          <table>OBJECT(TEMP.csr).table</table>
+          <predicate>TEMP.predicate</predicate>
+          <cursor>TEMP.ocsr</cursor>
+          <loop>
+            <index_select>
+              <index>'CHANGE_TRACKING_TABLES'</index>
+              <field name='table'>OBJECT(TEMP.csr).table</field>
+              <cursor>TEMP.rcsr</cursor>
+              <loop>
+                <!-- Figure out the integration proc -->
+                <do>TEMP.int_proc_name = OBJECT(TEMP.rcsr).ins_int_proc</do>
+                <if>
+                  <condition>OBJECT(TEMP.ocsr).__operation Eq 'U'</condition>
+                  <then>
+                    <do>TEMP.int_proc_name = OBJECT(TEMP.rcsr).upd_int_proc</do>
+                  </then>
+                  <condition>OBJECT(TEMP.ocsr).__operation Eq 'D'</condition>
+                  <then>
+                    <do>TEMP.int_proc_name = OBJECT(TEMP.rcsr).del_int_proc</do>
+                  </then>
+                </if>
+
+                <!-- Determine the inclusion proc, and call it first if we have one -->
+                <do>TEMP.inc_proc_name = OBJECT(TEMP.rcsr).ins_inc_proc</do>
+                <if>
+                  <condition>OBJECT(TEMP.ocsr).__operation Eq 'U'</condition>
+                  <then>
+                    <do>TEMP.inc_proc_name = OBJECT(TEMP.rcsr).upd_inc_proc</do>
+                  </then>
+                  <condition>OBJECT(TEMP.ocsr).__operation Eq 'D'</condition>
+                  <then>
+                    <do>TEMP.inc_proc_name = OBJECT(TEMP.rcsr).del_inc_proc</do>
+                  </then>
+                </if>
+                <do>TEMP.call_routing_proc = '1'</do>
+                <if>
+                  <condition>TEMP.inc_proc_name ne ''</condition>
+                  <then>
+                    <do>TEMP.call_routing_proc = ''</do>
+                    <call_dynamic_proc_for_object>
+                      <name>TEMP.inc_proc_name</name>
+                      <object_id>TEMP.ocsr</object_id>
+                      <param name='return_value'>TEMP.call_routing_proc</param>
+                    </call_dynamic_proc_for_object>
+                  </then>
+                </if>
+
+                <!-- Call the routing proc to see where this delta object is going -->
+                <if>
+                  <condition>TEMP.call_routing_proc eq '1'</condition>
+                  <then>
+                    <!-- Call the pre-routing proc first, if we have one and haven't called it yet -->
+                    <index_insert_if_none>
+                      <index>'CHANGE_TRACKING_TABLE_STATUS'</index>
+                      <field name="table">OBJECT(TEMP.csr).table</field>
+                      <field name="postrouting_proc">OBJECT(TEMP.rcsr).postrouting_proc</field>
+                      <result>TEMP.result</result>
+                    </index_insert_if_none>
+                    <if>
+                      <condition>TEMP.result eq '1' and OBJECT(TEMP.rcsr).prerouting_proc ne ''</condition>
+                      <then>
+                        <call_dynamic_proc_for_object>
+                          <name>OBJECT(TEMP.rcsr).prerouting_proc</name>
+                          <object_id>TEMP.ocsr</object_id>
+                        </call_dynamic_proc_for_object>
+                      </then>
+                    </if>
+
+                    <proc_select>
+                      <name>OBJECT(TEMP.rcsr).routing_proc</name>
+                      <param name='object'>TEMP.ocsr</param>
+                      <cursor>TEMP.ncsr</cursor>
+                      <loop>
+                        <!-- Send the delta object to this node via the integration proc -->
+                        <set_object_field>
+                          <input>OBJECT(TEMP.csr).table</input>
+                          <object_id>TEMP.ncsr</object_id>
+                          <field_name>OBJECT(TEMP.rcsr).table_field</field_name>
+                        </set_object_field>
+                        <set_object_field>
+                          <input>OBJECT(TEMP.ocsr).__operation</input>
+                          <object_id>TEMP.ncsr</object_id>
+                          <field_name>OBJECT(TEMP.rcsr).operation_field</field_name>
+                        </set_object_field>
+                        <!--
+                        <remove_object_field>
+                          <object_id>TEMP.ocsr</object_id>
+                          <field_name>'__operation'</field_name>
+                        </remove_object_field>
+                        -->
+
+                        <do>TEMP.success = 1</do>
+                        <if>
+                          <condition>OBJECT(TEMP.ncsr).node_id eq GLOBAL.node_id</condition>
+                          <then>
+                            <call_dynamic_proc_for_object>
+                              <name>TEMP.int_proc_name</name>
+                              <object_id>TEMP.ncsr</object_id>
+                            </call_dynamic_proc_for_object>
+                          </then>
+                          <else>
+                            <!--<remote_queue_proc>
+                              <name>TEMP.int_proc_name</name>
+                              <process_id>OBJECT(TEMP.ncsr).node_id</process_id>
+                              <batch_id>TEMP.my_batch_id</batch_id>
+                              <object_id>TEMP.ncsr</object_id>
+                            </remote_queue_proc>-->
+                            <send_proc_call>
+                              <name>TEMP.int_proc_name</name>
+                              <object_id>TEMP.ncsr</object_id>
+                              <logical_node_id>OBJECT(TEMP.ncsr).node_id</logical_node_id>
+                              <priority>10</priority>
+                            </send_proc_call>
+                          </else>
+                        </if>
+                        <do>TEMP.total_deltas += 1</do>
+                        <if>
+                          <condition>TEMP.success ne '1'</condition>
+                          <then>
+                          </then>
+                        </if>
+                      </loop>
+                    </proc_select>
+                  </then>
+                </if>
+              </loop>
+            </index_select>
+          </loop>
+        </tracked_changes_select>
+      </loop>
+    </index_select_keys>
+
+    <print>'Count of delta objects processed: ' ~ TEMP.total_deltas</print>
+
+    <!--<if>
+      <condition>TEMP.my_batch_id ne ''</condition>
+      <then>
+        <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+        <clear_batch>TEMP.my_batch_id</clear_batch>
+      </then>
+    </if>-->
+
+    <!-- Call any post-routing procs that we found earlier -->
+    <index_select_keys>
+      <index>'CHANGE_TRACKING_TABLE_STATUS'</index>
+      <cursor>TEMP.scsr</cursor>
+      <loop>
+        <index_select>
+          <index>'CHANGE_TRACKING_TABLE_STATUS'</index>
+          <field name='table'>OBJECT(TEMP.scsr).table</field>
+          <cursor>TEMP.tcsr</cursor>
+          <loop>
+            <if>
+              <condition>OBJECT(TEMP.tcsr).postrouting_proc ne ''</condition>
+              <then>
+                <call_dynamic_proc_for_current_object>
+                  <name>OBJECT(TEMP.tcsr).postrouting_proc</name>
+                </call_dynamic_proc_for_current_object>
+              </then>
+            </if>
+          </loop>
+        </index_select>
+      </loop>
+    </index_select_keys>
+
+    <!-- Update the database with our current status -->
+    <call_proc_for_current_object>
+      <name>'update_change_tracking_status'</name>
+    </call_proc_for_current_object>
+
+    <index_clear>
+      <index>'CHANGE_TRACKING_TABLES'</index>
+    </index_clear>
+    <index_clear>
+      <index>'CHANGE_TRACKING_TABLE_STATUS'</index>
+    </index_clear>
+    <index_clear>
+      <index>'CHANGE_TRACKING_TABLE_PRIORITY'</index>
+    </index_clear>
+  </proc>
+
+  <proc name="update_change_tracking_status">
+    <do>TEMP.max_trans_id = max_transaction_id()</do>
+    <db_execute>
+      <login_object>GLOBAL.target_login</login_object>
+      <statement type="oracle">
+        'update mvm_change_tracking_status set last_transaction_date = sysdate, last_transaction_id = $${TEMP.max_trans_id}'
+      </statement>
+      <statement type="sql">
+        'update mvm_change_tracking_status set last_transaction_date = getdate(), last_transaction_id = $${TEMP.max_trans_id}'
+      </statement>
+      <num_rows>TEMP.num_rows</num_rows>
+    </db_execute>
+  </proc>
+
+  <proc name="initialize_change_tracking_status">
+    <!-- Make sure we have a row in the table -->
+    <do>TEMP.num_rows = 0</do>
+    <db_execute>
+      <login_object>GLOBAL.target_login</login_object>
+      <statement type="oracle">
+        "insert into mvm_change_tracking_status
+        (logical_cluster_name, last_transaction_id, last_transaction_date)
+        select $${GLOBAL.logical_cluster}, null, null
+        from dual
+        where not exists (select 1 from mvm_change_tracking_status where logical_cluster_name = $${GLOBAL.logical_cluster})"
+      </statement>
+      <statement type="sql">
+        "insert into mvm_change_tracking_status
+        (logical_cluster_name, last_transaction_id, last_transaction_date)
+        select $${GLOBAL.logical_cluster}, null, null
+        where not exists (select 1 from mvm_change_tracking_status where logical_cluster_name = $${GLOBAL.logical_cluster})"
+      </statement>
+      <num_rows>TEMP.num_rows</num_rows>
+    </db_execute>
+
+    <!-- If a row was already there, use it to pick up where we left off last time -->
+    <if>
+      <condition>TEMP.num_rows EQ 0</condition>
+      <then>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select last_transaction_id, last_transaction_date from mvm_change_tracking_status
+            where logical_cluster_name = $${GLOBAL.logical_cluster}"
+          </query>
+          <cursor>TEMP.csr</cursor>
+          <then>
+            <do>TEMP.set_trans_id = set_transaction_id(OBJECT(TEMP.csr).last_transaction_id)</do>
+          </then>
+        </db_select>
+      </then>
+    </if>
+  </proc>
+
+</procs>

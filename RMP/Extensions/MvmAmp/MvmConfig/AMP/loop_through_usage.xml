@@ -1,0 +1,39 @@
+<procs>
+  <proc name='loop_through_usage'>
+    <param name='id_acc'/>
+
+    <stopwatch name='cache_pt' ms='TEMP.loop_time' total_ms='GLOBAL.loop_time'>
+      <debug>"Attempting to cache usage for account ["~TEMP.id_acc~"]"</debug>
+      <do>TEMP.loop_counter = 0</do>
+      <db_select_dynamic>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select * from t_acc_usage a
+          inner join t_pv_confconn b on a.id_sess = b.id_sess and a.id_usage_interval = b.id_usage_interval
+          and a.id_acc = "~TEMP.id_acc
+        </query>
+        <query type="sql">
+          "select top 40000 * from t_acc_usage a
+          inner join t_pv_confconn b on a.id_sess = b.id_sess and a.id_usage_interval = b.id_usage_interval
+          and a.id_acc = "~TEMP.id_acc
+        </query>
+        <cursor>TEMP.usage_csr</cursor>
+        <loop>
+          <stopwatch name='row_pt' ms='TEMP.row_time' total_ms='GLOBAL.row_time'>
+            <spawn>
+              <object_type>'USAGE_ROW'</object_type>
+              <object_id>TEMP.usage_row_oid</object_id>
+            </spawn>
+            <inherit_object>
+              <source>TEMP.usage_csr</source>
+              <target>TEMP.usage_row_oid</target>
+            </inherit_object>
+          </stopwatch>
+          <do>TEMP.loop_counter = TEMP.loop_counter + 1</do>
+        </loop>
+      </db_select_dynamic>
+    </stopwatch>
+    <info>'Outer pt cache time for ['~TEMP.loop_counter~'] is ['~TEMP.loop_time~'] and row ['~GLOBAL.row_time~']'</info>
+  </proc>
+
+</procs>

@@ -1,0 +1,57 @@
+<procs>
+
+  <proc name="get_sub_agg_decisions_wrapper">
+
+    <initialize>
+      <if>
+        <condition>GLOBAL.running_nrt_amp eq '1'</condition>
+        <then>
+          <define_data_routing>
+            <table_name>'T_SUB'</table_name>
+            <routing_procedure>'determine_cluster_node'</routing_procedure>
+            <integration_procedure>'get_sub_agg_decisions_wrapper'</integration_procedure>
+            <included_column>'id_po'</included_column>
+            <included_column>'id_acc'</included_column>
+            <included_column>'vt_start'</included_column>
+            <included_column>'vt_end'</included_column>
+            <inclusion_expression>'index_get(index => "AGG_BUNDLE_POS", id_po=>OBJECT.id_po) ne "" or index_get(index => "AGG_BUNDLE_POS", id_po=>object_delta_get_original(OBJECT.object_id,"id_po")) ne ""'</inclusion_expression>
+            <operation_type_field>'operation_type'</operation_type_field>
+            <table_name_field>'table_name'</table_name_field>
+          </define_data_routing>
+        </then>
+      </if>
+    </initialize>
+
+    <do>TEMP.my_old_id_acc = object_delta_get_original(OBJECT.object_id,'id_acc')</do>
+    <if>
+      <condition>OBJECT.id_acc eq ''</condition>
+      <then>
+        <do>OBJECT.id_acc = TEMP.my_old_id_acc</do>
+      </then>
+    </if>
+
+    <if>
+      <condition>OBJECT.id_acc ne ''</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'get_sub_agg_decisions'</name>
+          <param name='id_acc'>OBJECT.id_acc</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+    
+
+    <if>
+      <condition>OBJECT.id_acc ne TEMP.my_old_id_acc and TEMP.my_old_id_acc ne ''</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'get_sub_agg_decisions'</name>
+          <param name='id_acc'>TEMP.my_old_id_acc</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+
+  </proc>
+
+</procs>
+

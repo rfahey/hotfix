@@ -1,0 +1,267 @@
+<procs>
+  <proc name='incorporate_decision'>
+    <param name='priority'/>
+    <param name='attempt_lock'/>
+    <param name='original_priority'/>
+    <param name='bucket_object'/>
+    <param name='incorporation_status' mode='out'/>
+    <param name='incorporated_work' mode='out'/>
+    <param name='incorporated_accounts' mode='out'/>
+
+    <initialize>
+      <define_memory_index>
+        <index>'RECURSIVE_DECISIONS'</index>
+        <key_field>'bucket_object'</key_field>
+      </define_memory_index>
+      
+        <spawn>
+          <object_type>'BOGUS'</object_type>
+          <object_id>GLOBAL.bogus_object</object_id>
+          <!--<no_cluster>1</no_cluster>-->
+        </spawn>
+      <index_insert>
+        <index>'GLOBAL_OBJECTS'</index>
+        <field name="object_id">GLOBAL.bogus_object</field>
+      </index_insert>
+    </initialize>
+
+    <debug switch='log_scheduling'>'Incorporating decision ['~TEMP.bucket_object~'] with priority ['~OBJECT(TEMP.bucket_object).tier_priority~'] attempt lock ['~TEMP.attempt_lock~']'</debug>
+    <do>TEMP.incorporation_status = '0'</do>
+    <do>TEMP.incorporated_work = '0'</do>
+    <do>TEMP.incorporated_accounts = '0'</do>
+
+    <c>Check to see if this work is already scheduled</c>
+    <index_select>
+      <index>'CURRENT_WORK'</index>
+      <field name="bucket_object">TEMP.bucket_object</field>
+      <cursor>TEMP.curr_work</cursor>
+      <then>
+        <!--<print>'Already scheduled, so no need to include'</print>-->
+        <do>TEMP.incorporation_status = '1'</do>
+        <return></return>
+      </then>
+    </index_select>
+
+    <c>Guaranteed to be completed already since it is lower priority than the very first piece of work passed from the scheduler</c>
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).tier_priority LT TEMP.original_priority</condition>
+      <then>
+        <!--<print>'Lower priority than initial piece of work so no need to do'</print>-->
+        <do>TEMP.incorporation_status = '1'</do>
+        <return></return>
+      </then>
+    </if>
+
+    <c>Do not need to consider this work since it is higher priority than the current priority being included</c>
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).tier_priority GT TEMP.priority</condition>
+      <then>
+        <!--<print>'Higher priority than the current work so no need to include'</print>-->
+        <do>TEMP.incorporation_status = '1'</do>
+        <return></return>
+      </then>
+    </if>
+
+
+    <c>Check to see if this work has already been completed by this work batch</c>
+    <index_select>
+      <index>'CURRENT_COMPLETED_WORK'</index>
+      <field name="bucket_object">TEMP.bucket_object</field>
+      <cursor>TEMP.completed_work</cursor>
+      <then>
+        <!--<print>'Already completed, so no need to include'</print>-->
+        <do>TEMP.incorporation_status = '1'</do>
+        <return></return>
+      </then>
+    </index_select>
+
+
+
+    <c>Check to see if this work is already on the candidate list of new work</c>
+    <index_select>
+      <index>'NEW_DECISIONS'</index>
+      <field name="bucket_object">TEMP.bucket_object</field>
+      <cursor>TEMP.dec_csr</cursor>
+      <then>
+        <!--<print>'Already a candidate so no need to include'</print>-->
+        <do>TEMP.incorporation_status = '1'</do>
+        <return></return>
+      </then>
+    </index_select>
+
+
+    <c>Check globally to see if the decision is already completed</c>
+    <call_proc_for_object>
+      <name>'request_decision_status'</name>
+      <object_id>GLOBAL.bogus_object</object_id>
+      <param name='bucket_object'>TEMP.bucket_object</param>
+      <param name='decision_status'>TEMP.decision_status</param>
+    </call_proc_for_object>
+    <!--<remove_object_from_cache>TEMP.bogus_object</remove_object_from_cache>-->
+    <debug switch='log_scheduling'>'Requested decision_status for ['~TEMP.bucket_object).decision_unique_id~'] and got decision_status ['~TEMP.decision_status~']'</debug>
+    <if>
+      <condition>TEMP.decision_status eq '1'</condition>
+      <then>
+        <debug switch='log_scheduling'>'Decision already completed, so no need to include'</debug>
+        <do>TEMP.incorporation_status = '1'</do>
+        <return></return>
+      </then>
+    </if>
+
+    <!--<c>Check to see if this decision requires an audit point and is lower priority than my current priority. If so, cannot include.</c>
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).tier_priority LT TEMP.priority and (OBJECT(TEMP.my_bucket_obj).charge_on_final ne '' or OBJECT(TEMP.my_bucket_obj).tier_type Eq 'bulk' or OBJECT(TEMP.my_bucket_obj).tier_type Eq 'bulk_source' or OBJECT(TEMP.my_bucket_obj).tier_type Eq 'bulk_aggregate')</condition>
+      <then>
+        <print>'Found audit point so cannot include'</print>
+        <do>TEMP.incorporation_status = '0'</do>
+        <return></return>
+      </then>
+    </if>-->
+
+    <c>Attempt to get an account lock on all accounts in the decision that we do not already have locked. </c>
+    <c>Any account we get a lock on, we must recursively attempt to incorporate all decisions on the account.</c>
+    <c>If at any point a decision cannot be included, immediately return failure.</c>
+    <do>TEMP.master_lock_granted = '1'</do>
+
+    <debug switch='log_scheduling'>'Looping through accounts'</debug>
+    <index_select>
+      <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+      <field name="bucket_object">TEMP.bucket_object</field>
+      <cursor>TEMP.agg_bucket_accs</cursor>
+      <loop>
+        <debug switch='log_scheduling'>'Trying account ['~OBJECT(TEMP.agg_bucket_accs).id_acc~']'</debug>
+        <c>Every account in the decision</c>
+        <index_select>
+          <index>'CURRENT_ACCOUNTS'</index>
+          <field name="id_acc">OBJECT(TEMP.agg_bucket_accs).id_acc</field>
+          <cursor>TEMP.dummy_curr_acc</cursor>
+          <else>
+            <debug switch='log_scheduling'>'Account is not currently locked'</debug>
+            <c>Account is not currently locked</c>
+            <index_select>
+              <index>'NEW_DECISION_ACCOUNTS'</index>
+              <field name="id_acc">OBJECT(TEMP.agg_bucket_accs).id_acc</field>
+              <cursor>TEMP.curr_acc</cursor>
+              <else>
+                <debug switch='log_scheduling'>'Account is not on candidate list'</debug>
+                <c>Account is not currently on the candidate list</c>
+                <do>TEMP.lock_granted = '0'</do>
+                <c>If we're not attempting account locks and we need one, return failure</c>
+                <if>
+                  <condition>TEMP.attempt_lock ne '1'</condition>
+                  <then>
+                    <debug switch='log_scheduling'>'Could not request account lock so cannot include'</debug>
+                    <do>TEMP.incorporation_status = '0'</do>
+                    <return></return>
+                  </then>
+                </if>
+                <c>Check to see if the account is locked</c>
+                <!--<spawn>
+                  <object_type>'BOGUS'</object_type>
+                  <object_id>TEMP.bogus_object</object_id>
+                </spawn>-->
+                <call_proc_for_object>
+                  <name>'request_account_lock'</name>
+                  <object_id>GLOBAL.bogus_object</object_id>
+                  <param name='id_acc'>OBJECT(TEMP.agg_bucket_accs).id_acc</param>
+                  <param name='lock_granted'>TEMP.lock_granted</param>
+                </call_proc_for_object>
+                <!--<remove_object_from_cache>TEMP.bogus_object</remove_object_from_cache>-->
+                <debug switch='log_scheduling'>'Requested account lock for ['~OBJECT(TEMP.agg_bucket_accs).id_acc~'] and granted ['~TEMP.lock_granted~']'</debug>
+                <if>
+                  <condition>TEMP.lock_granted eq '0'</condition>
+                  <then>
+                    <debug switch='log_scheduling'>'Could not get account lock so cannot include'</debug>
+                    <do>TEMP.incorporation_status = '0'</do>
+                    <return></return>
+                  </then>
+                </if>
+
+                <debug switch='log_scheduling'>'Account ['~OBJECT(TEMP.agg_bucket_accs).id_acc~'] is now locked'</debug>
+                <do>TEMP.incorporated_accounts += '1'</do>
+                <c>Account is now locked</c>
+                <index_insert>
+                  <index>'NEW_DECISION_ACCOUNTS'</index>
+                  <field name="id_acc">OBJECT(TEMP.agg_bucket_accs).id_acc</field>
+                </index_insert>
+                <debug switch='log_scheduling'>'Incorporating decisions for account ['~OBJECT(TEMP.agg_bucket_accs).id_acc~']'</debug>
+                <index_select>
+                  <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+                  <field name="id_acc">OBJECT(TEMP.agg_bucket_accs).id_acc</field>
+                  <cursor>TEMP.acc_agg_buckets</cursor>
+                  <loop>
+                    <debug switch='log_scheduling'>'Incorporating decision ['~OBJECT(TEMP.acc_agg_buckets).bucket_object~'] for id_acc ['~OBJECT(TEMP.agg_bucket_accs).id_acc~']'</debug>
+                    <c>Loop through every decision on the account</c>
+                    <c>Make sure I'm not currently attempting to include this decision above me in the recursive path</c>
+                    <if>
+                      <condition>TEMP.bucket_object ne OBJECT(TEMP.acc_agg_buckets).bucket_object</condition>
+                      <then>
+                        
+
+                    <index_select>
+                      <index>'RECURSIVE_DECISIONS'</index>
+                      <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+                      <cursor>TEMP.recursive_dec</cursor>
+                      <else>
+                        <c>Add this decision to the worklist so no recursive children will attempt to include this decision</c>
+                        <index_insert>
+                          <index>'RECURSIVE_DECISIONS'</index>
+                          <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+                        </index_insert>
+                        <c>Recursively include the decision</c>
+                        <call_proc_for_current_object>
+                          <name>'incorporate_decision'</name>
+                          <param name='priority'>TEMP.priority</param>
+                          <param name='attempt_lock'>TEMP.attempt_lock</param>
+                          <param name='original_priority'>TEMP.original_priority</param>
+                          <param name='bucket_object'>OBJECT(TEMP.acc_agg_buckets).bucket_object</param>
+                          <param name='incorporation_status'>TEMP.incorporation_status</param>
+                          <param name='incorporated_work'>TEMP.tmp_incorporated_work</param>
+                          <param name='incorporated_accounts'>TEMP.tmp_incorporated_accounts</param>
+                        </call_proc_for_current_object>
+                        <c>Remove this decision from the recursive decision list</c>
+                        <index_remove>
+                          <index>'RECURSIVE_DECISIONS'</index>
+                          <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+                        </index_remove>
+                        <c>If incorporating the decision failed, this decision also fails, so propagate failure up</c>
+                        <if>
+                          <condition>TEMP.incorporation_status eq '0'</condition>
+                          <then>
+                            <debug switch='log_scheduling'>'Could not include dependent decisions so not including'</debug>
+                            <return></return>
+                          </then>
+                        </if>
+                        <c>If incorporating the decision succeeds, then add the decision to the decision candidates list</c>
+                        <do>TEMP.incorporated_work += TEMP.tmp_incorporated_work</do>
+                        <do>TEMP.incorporated_accounts += TEMP.tmp_incorporated_accounts</do>
+                      </else>
+                    </index_select>
+                      </then>
+                    </if>
+                  </loop>
+                </index_select>
+              </else>
+            </index_select>
+          </else>
+        </index_select>
+      </loop>
+    </index_select>
+    <debug switch='log_scheduling'>'Never returned so incorporating decision ['~TEMP.bucket_object~'] with priority ['~OBJECT(TEMP.bucket_object).tier_priority~']'</debug>
+    <do>TEMP.incorporation_status = '1'</do>
+    <do>TEMP.incorporated_work += '1'</do>
+    <do>TEMP.incorporated_accounts += '1'</do>
+    <index_insert>
+      <index>'NEW_DECISIONS'</index>
+      <field name="bucket_object">TEMP.bucket_object</field>
+    </index_insert>
+    <if>
+      <condition> OBJECT(TEMP.bucket_object).hard_audit_point eq '1' and OBJECT(TEMP.bucket_object).tier_priority LT GLOBAL.hard_stop_priority</condition>
+      <then>
+        <debug switch='log_scheduling'>'Found a hard audit point in newly scheduled work ['~OBJECT(TEMP.bucket_object).tier_priority~'], so forcing work to return to parent after this pass'</debug>
+        <do>GLOBAL.hard_stop_priority = OBJECT(TEMP.bucket_object).tier_priority</do>
+      </then>
+    </if>
+  </proc>
+
+</procs>

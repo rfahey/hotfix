@@ -1,0 +1,106 @@
+<procs>
+  <proc name='qualify_bulk_children'>
+    <param name='bucket_object'/>
+
+    <if>
+      <condition>GLOBAL.aggregate_targets eq '1' and OBJECT(TEMP.bucket_object).split_bulk ne '0'</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'request_object_copy'</name>
+          <param name='object_id'>TEMP.bucket_object</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+
+    <call_proc_for_current_object>
+      <name>'localize_dimension_refs'</name>
+      <param name='root_bucket_object'>TEMP.bucket_object</param>
+      <param name='bucket_object'>TEMP.bucket_object</param>
+    </call_proc_for_current_object>
+
+    <do>OBJECT(TEMP.bucket_object).qualified_total = OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).qualified_total</do>
+    <do>OBJECT(TEMP.bucket_object).qualified_units = OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).qualified_units</do>
+    <do>OBJECT(TEMP.bucket_object).qualified_amount = OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).qualified_amount</do>
+    <do>OBJECT(TEMP.bucket_object).qualified_events = OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).qualified_events</do>
+
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).back_distribute_unit_amount ne '' and GLOBAL.aggregate_targets ne '1'</condition>
+      <then>
+        <do>OBJECT(TEMP.bucket_object).split_bulk = OBJECT(TEMP.bucket_object).split_bulk==''?(GLOBAL.split_bulk==''?0:GLOBAL.split_bulk):OBJECT(TEMP.bucket_object).split_bulk</do>
+        <print>'I have back distribute amount of ['~OBJECT(TEMP.bucket_object).back_distribute_unit_amount~'] and split bulk of ['~OBJECT(TEMP.bucket_object).split_bulk~'] and units of ['~OBJECT(TEMP.bucket_object).qualified_units~']'</print>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).back_distribute_unit_amount eq '-1'</condition>
+          <then>
+            <do>OBJECT(TEMP.bucket_object).back_distribute_unit_amount = OBJECT(TEMP.bucket_object).qualified_amount</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).split_bulk ne '0'</condition>
+          <then>
+            <!--<do>OBJECT(TEMP.bucket_object).per_unit_rate = OBJECT(TEMP.bucket_object).back_distribute_unit_amount/OBJECT(TEMP.bucket_object).qualified_units</do>-->
+            <call_proc_for_current_object>
+              <name>'localize_ref'</name>
+              <param name='bucket_object'>OBJECT(TEMP.bucket_object).bulk_source_obj_id</param>
+            </call_proc_for_current_object>
+            <do>OBJECT(TEMP.bucket_object).back_distribute = '1'</do>
+            <do>OBJECT(TEMP.bucket_object).per_unit_amount_remaining = OBJECT(TEMP.bucket_object).back_distribute_unit_amount*(OBJECT(OBJECT(TEMP.bucket_object).bulk_source_obj_id).qualified_units eq ''?0:OBJECT(OBJECT(TEMP.bucket_object).bulk_source_obj_id).qualified_units)/OBJECT(TEMP.bucket_object).qualified_units</do>
+            <do>OBJECT(TEMP.bucket_object).per_unit_units_remaining = (OBJECT(OBJECT(TEMP.bucket_object).bulk_source_obj_id).qualified_units eq ''?0:OBJECT(OBJECT(TEMP.bucket_object).bulk_source_obj_id).qualified_units)</do>
+            <print>'For this slice, I have amount remaining ['~OBJECT(TEMP.bucket_object).per_unit_amount_remaining~'] and units remaining ['~OBJECT(TEMP.bucket_object).per_unit_units_remaining~']'</print>
+          </then>
+          <else>
+            <do>OBJECT(TEMP.bucket_object).back_distribute = '1'</do>
+            <do>OBJECT(TEMP.bucket_object).per_unit_amount_remaining = OBJECT(TEMP.bucket_object).back_distribute_unit_amount</do>
+            <do>OBJECT(TEMP.bucket_object).per_unit_units_remaining = OBJECT(TEMP.bucket_object).qualified_units</do>
+          </else>
+        </if>
+      </then>
+    </if>
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).back_distribute_event_amount ne '' and GLOBAL.aggregate_targets ne '1'</condition>
+      <then>
+        <do>OBJECT(TEMP.bucket_object).split_bulk = OBJECT(TEMP.bucket_object).split_bulk==''?(GLOBAL.split_bulk==''?0:GLOBAL.split_bulk):OBJECT(TEMP.bucket_object).split_bulk</do>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).back_distribute_event_amount eq '-1'</condition>
+          <then>
+            <do>OBJECT(TEMP.bucket_object).back_distribute_event_amount = OBJECT(TEMP.bucket_object).qualified_amount</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).split_bulk ne '0'</condition>
+          <then>
+            <do>OBJECT(TEMP.bucket_object).per_event_rate = OBJECT(TEMP.bucket_object).back_distribute_event_amount/OBJECT(TEMP.bucket_object).qualified_events</do>
+          </then>
+          <else>
+            <do>OBJECT(TEMP.bucket_object).back_distribute = '1'</do>
+            <do>OBJECT(TEMP.bucket_object).per_event_amount_remaining = OBJECT(TEMP.bucket_object).back_distribute_event_amount</do>
+            <do>OBJECT(TEMP.bucket_object).per_event_events_remaining = OBJECT(TEMP.bucket_object).qualified_events</do>
+          </else>
+        </if>
+      </then>
+    </if>
+
+    <print>'Trying to qualify bucket ['~OBJECT(TEMP.bucket_object).decision_unique_id~'] ['~OBJECT(TEMP.bucket_object).tier_start~'] and ['~OBJECT(TEMP.bucket_object).tier_end~'] with ['~OBJECT(TEMP.bucket_object).qualified_total~']'</print>
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).skip_work eq '1' or  ((OBJECT(TEMP.bucket_object).qualified_total LT OBJECT(TEMP.bucket_object).tier_start or OBJECT(TEMP.bucket_object).qualified_total GT OBJECT(TEMP.bucket_object).tier_end) or (OBJECT(TEMP.bucket_object).qualified_total eq '' and OBJECT(TEMP.bucket_object).tier_start GT 0) or OBJECT(TEMP.bucket_object).tier_start eq '')</condition>
+      <then>
+        <do>OBJECT(TEMP.bucket_object).tier_start = '2'</do>
+        <do>OBJECT(TEMP.bucket_object).tier_end = '1'</do>
+        <do>OBJECT(TEMP.bucket_object).skip_work = '1'</do>
+      </then>
+      <else>
+        <do>OBJECT(TEMP.bucket_object).tier_start = '0'</do>
+        <do>OBJECT(TEMP.bucket_object).tier_end = '999999999999'</do>
+        <do>OBJECT(TEMP.bucket_object).skip_work = '0'</do>
+      </else>
+    </if>
+
+    <do>OBJECT(TEMP.bucket_object).qualified_total = '0'</do>
+    <do>OBJECT(TEMP.bucket_object).qualified_units = '0'</do>
+    <do>OBJECT(TEMP.bucket_object).qualified_amount = '0'</do>
+    <do>OBJECT(TEMP.bucket_object).qualified_events = '0'</do>
+
+  </proc>
+
+</procs>

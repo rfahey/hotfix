@@ -1,0 +1,70 @@
+<procs>
+  <proc name="get_counter_object">
+    <param name='id_acc'/>
+    <param name='usage_qualification_group'/>
+    <param name='account_qualification_group'/>
+    <param name='lowest_included_priority'/>
+    <param name='counter_object' mode='out'/>
+
+    <initialize>
+      <define_memory_index>
+        <index>'COUNTER_CACHE'</index>
+        <key_field>'id_acc'</key_field>
+        <key_field>'usage_qualification_group'</key_field>
+        <key_field>'account_qualification_group'</key_field>
+        <key_field>'lowest_included_priority'</key_field>
+        <field>'counter_object'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'COUNTER_CACHE_GLOBAL'</index>
+        <key_field>'id_acc'</key_field>
+        <key_field>'usage_qualification_group'</key_field>
+        <key_field>'account_qualification_group'</key_field>
+        <field>'lowest_included_priority'</field>
+        <field>'counter_object'</field>
+      </define_memory_index>
+
+    </initialize>
+
+    <do>TEMP.counter_object = ''</do>
+    <index_select>
+      <index>'COUNTER_CACHE'</index>
+      <field name='id_acc'>TEMP.id_acc</field>
+      <field name='usage_qualification_group'>TEMP.usage_qualification_group</field>
+      <field name='account_qualification_group'>TEMP.account_qualification_group</field>
+      <field name='lowest_included_priority'>TEMP.lowest_included_priority</field>
+      <cursor>TEMP.counter_lookup</cursor>
+      <then>
+        <do>TEMP.counter_object = OBJECT(TEMP.counter_lookup).counter_object</do>
+      </then>
+      <else>
+        <spawn>
+          <object_type>'COUNTER'</object_type>
+          <object_id>TEMP.counter_object</object_id>
+        </spawn>
+        <do>OBJECT(TEMP.counter_object).id_acc = TEMP.id_acc</do>
+        <do>OBJECT(TEMP.counter_object).usage_qualification_group = TEMP.usage_qualification_group</do>
+        <do>OBJECT(TEMP.counter_object).account_qualification_group = TEMP.account_qualification_group</do>
+        <do>OBJECT(TEMP.counter_object).lowest_included_priority = TEMP.lowest_included_priority</do>
+        <index_insert>
+          <index>'COUNTER_CACHE'</index>
+          <field name='id_acc'>TEMP.id_acc</field>
+          <field name='usage_qualification_group'>TEMP.usage_qualification_group</field>
+          <field name='account_qualification_group'>TEMP.account_qualification_group</field>
+          <field name='lowest_included_priority'>TEMP.lowest_included_priority</field>
+          <field name='counter_object'>TEMP.counter_object</field>
+        </index_insert>
+        <index_insert>
+          <index>'COUNTER_CACHE_GLOBAL'</index>
+          <field name='id_acc'>TEMP.id_acc</field>
+          <field name='usage_qualification_group'>TEMP.usage_qualification_group</field>
+          <field name='account_qualification_group'>TEMP.account_qualification_group</field>
+          <field name='lowest_included_priority'>TEMP.lowest_included_priority</field>
+          <field name='counter_object'>TEMP.counter_object</field>
+        </index_insert>
+      </else>
+    </index_select>
+  </proc>
+
+</procs>

@@ -1,0 +1,1306 @@
+<procs>
+
+  <!-- ===================================================================== -->
+  <!-- Inputs:                                                               -->
+  <!--     id_acc             The account to process                         -->
+  <!--     id_usage_interval  The interval we are interested in              -->
+  <!--                                                                       -->
+  <!-- This proc instantiates all the decisions that we are interested       -->
+  <!-- in. The term "BUCKET" means decision instance.                        -->
+  <!--                                                                       -->
+  <!-- Results:                                                              -->
+  <!--     AGG_BUCKETS_BY_ACCOUNT                                            -->
+  <!--     AGG_BUCKETS_BY_PRIORITY                                           -->
+  <!--     BUCKET_CHILDREN                                                   -->
+  <!--     ACCOUNTS_BY_AGG_BUCKET                                            -->
+  <!-- ===================================================================== -->
+
+  <proc name="get_agg_decisions">
+    <param name='id_acc'/>
+    <param name='id_usage_interval'/>
+
+    <!-- Set up some structures that we need in the rest of the structure -->
+
+    <initialize>
+      <call_proc>'initialize_core_procs'</call_proc>
+
+      <print>'init get_agg_decisions'</print>
+      <run_once>
+        <do>GLOBAL.split_bulk = '1'</do>
+        <do>GLOBAL.split_bulk_threshold = '50000'</do>
+      </run_once>
+
+      <!-- A map of parameter table name to parameter table ID. -->
+      <define_memory_index>
+        <index>'AGG_PT_NAME_TO_ID'</index>
+        <key_field>'paramtable_name'</key_field>
+        <field>'id_paramtable'</field>
+      </define_memory_index>
+
+      <!-- A map of parameter table ID to parameter table name. -->
+      <define_memory_index>
+        <index>'AGG_PT_ID_TO_NAME'</index>
+        <key_field>'id_paramtable'</key_field>
+        <field>'paramtable_name'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'AGG_SCHEDS'</index>
+        <key_field>'id_paramtable'</key_field>
+        <field>'id_sched'</field>
+        <field>'row_priority'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'NAMES_BY_SUB'</index>
+        <key_field>'id_sub'</key_field>
+        <key_field>'id_pi_instance'</key_field>
+        <key_field>'tier_name'</key_field>
+        <field>'id_sched'</field>
+        <field>'n_order'</field>
+        <field>'start_date'</field>
+        <field>'end_date'</field>
+      </define_memory_index>
+
+      <define_memory_index synchronized='true'>
+        <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+        <key_field>'tier_priority'</key_field>
+        <field>'bucket_object'</field>
+      </define_memory_index>
+
+      <define_memory_index synchronized='true'>
+        <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+        <key_field type='object_id'>'bucket_object'</key_field>
+        <field>'id_acc'</field>
+      </define_memory_index>
+
+      <!-- Map of accounts that this slave has determined must -->
+      <!-- be considered in the running of decisions. -->
+      <define_memory_index synchronized='true'>
+        <index>'ACCOUNTS_ADDED'</index>
+        <key_field>'id_acc'</key_field>
+      </define_memory_index>
+
+      <define_memory_index synchronized='true'>
+        <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+        <key_field>'id_acc'</key_field>
+        <field>'bucket_object'</field>
+      </define_memory_index>
+
+      <!--<define_memory_index synchronized='true'>
+        <index>'AGG_BUCKET_MAP'</index>
+        <key_field>'bucket_object'</key_field>
+        <field type='object_id'>'bucket_object'</field>
+      </define_memory_index>-->
+
+      <!-- Map of the details of previous decisions. -->
+      <define_memory_index>
+        <index>'PREVIOUS_DECISION_INFO'</index>
+        <key_field>'decision_unique_id'</key_field>
+        <key_field>'start_date'</key_field>
+        <key_field>'end_date'</key_field>
+        <field>'decision_object_id'</field>
+        <field>'intervals_remaining'</field>
+        <field>'expiration_date'</field>
+        <field>'expired'</field>
+        <field>'pre_qualified_amount'</field>
+        <field>'pre_qualified_units'</field>
+        <field>'pre_qualified_events'</field>
+        <field>'pre_total_generated_events'</field>
+        <field>'pre_total_generated_amount'</field>
+        <field>'pre_total_rated_amount_delta'</field>
+        <field>'pre_total_rated_units'</field>
+        <field>'pre_total_rated_amount_after'</field>
+        <field>'pre_total_rated_events'</field>
+        <field>'pre_total_discount_amount'</field>
+        <field>'pre_total_discounted_amount'</field>
+        <field>'pre_total_discounted_units'</field>
+        <field>'pre_total_discounted_events'</field>
+      </define_memory_index>
+
+      <!-- Map of prior decisions: PREVIOUS_DECISIONS -->
+      <!--    decision_unique_id  - decision ID -->
+      <!--    start_date          - start date of decision -->
+      <!--    end_date            - end date of decision -->
+      <!--    intervals_remaining - how many more intervals are needed to -->
+      <!--                          complete this decision. This only has -->
+      <!--                          meaning if the dec. cycle type is interval -->
+      <define_memory_index>
+        <index>'PREVIOUS_DECISIONS'</index>
+        <key_field>'decision_unique_id'</key_field>
+        <field>'start_date'</field>
+        <field>'end_date'</field>
+        <field>'intervals_remaining'</field>
+      </define_memory_index>
+
+      <!-- Map of all non-hard closed intervals on the system. -->
+      <define_memory_index>
+        <index>'VALID_INTERVALS'</index>
+        <key_field>'interval_id'</key_field>
+        <field>'start_date'</field>
+        <field>'end_date'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'PREVIOUS_DECISION_MAX'</index>
+        <key_field>'decision_unique_id'</key_field>
+        <field>'start_date'</field>
+        <field>'end_date'</field>
+        <field>'intervals_remaining'</field>
+      </define_memory_index>
+
+      <do>TEMP.my_counter = 0</do>
+      <do>TEMP.my_pt_list = ''</do>
+
+      <!-- Fill in our map of parameter table name to parameter table ID. -->
+      <!-- Fill in our map of parameter table ID to parameter table name. -->
+      <!-- Create a list of parameter table IDs. -->
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "SELECT DISTINCT lower(paramtable_name) paramtable_name, id_paramtable FROM agg_param_table_col_map a
+          INNER JOIN t_rulesetdefinition b ON lower(a.paramtable_name) = lower(b.nm_instance_tablename)"
+        </query>
+        <query type="sql">
+          "SELECT DISTINCT lower(paramtable_name) paramtable_name, id_paramtable FROM agg_param_table_col_map a
+          INNER JOIN t_rulesetdefinition b ON a.paramtable_name = b.nm_instance_tablename"
+        </query>
+        <cursor>TEMP.pt_csr</cursor>
+        <loop>
+          <do>TEMP.my_counter += 1</do>
+          <if>
+            <condition>TEMP.my_counter eq '1'</condition>
+            <then>
+              <do>GLOBAL.my_pt_list=OBJECT(TEMP.pt_csr).id_paramtable</do>
+            </then>
+            <else>
+              <do>GLOBAL.my_pt_list~=','~OBJECT(TEMP.pt_csr).id_paramtable</do>
+            </else>
+          </if>
+
+          <index_insert>
+            <index>'AGG_PT_NAME_TO_ID'</index>
+            <field name="paramtable_name">OBJECT(TEMP.pt_csr).paramtable_name</field>
+            <field name="id_paramtable">OBJECT(TEMP.pt_csr).id_paramtable</field>
+          </index_insert>
+          <index_insert>
+            <index>'AGG_PT_ID_TO_NAME'</index>
+            <field name="paramtable_name">OBJECT(TEMP.pt_csr).paramtable_name</field>
+            <field name="id_paramtable">OBJECT(TEMP.pt_csr).id_paramtable</field>
+          </index_insert>
+
+        </loop>
+      </db_select>
+
+      <spawn>
+        <object_type>'BUCKET_OVERLAY'</object_type>
+        <object_id>GLOBAL.bulk_nosplit_object_id</object_id>
+        <!--<no_cluster>'1'</no_cluster>-->
+      </spawn>
+      <index_insert>
+        <index>'GLOBAL_OBJECTS'</index>
+        <field name="object_id">GLOBAL.bulk_nosplit_object_id</field>
+      </index_insert>
+      <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_start = '2'</do>
+      <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_end = '1'</do>
+      <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_type = 'bulk_source'</do>
+
+      <spawn>
+        <object_type>'BUCKET_OVERLAY'</object_type>
+        <object_id>GLOBAL.bulk_target_nosplit_object_id</object_id>
+        <!--<no_cluster>'1'</no_cluster>-->
+      </spawn>
+      <index_insert>
+        <index>'GLOBAL_OBJECTS'</index>
+        <field name="object_id">GLOBAL.bulk_target_nosplit_object_id</field>
+      </index_insert>
+      <do>OBJECT(GLOBAL.bulk_target_nosplit_object_id).tier_type = 'bulk_target'</do>
+
+
+
+      <spawn>
+        <object_type>'BUCKET_OVERLAY'</object_type>
+        <object_id>GLOBAL.bulk_overlay_object_id</object_id>
+        <!--<no_cluster>'1'</no_cluster>-->
+      </spawn>
+      <index_insert>
+        <index>'GLOBAL_OBJECTS'</index>
+        <field name="object_id">GLOBAL.bulk_overlay_object_id</field>
+      </index_insert>
+      <do>OBJECT(GLOBAL.bulk_overlay_object_id).account_qualification_group = 'self'</do>
+      <do>OBJECT(GLOBAL.bulk_overlay_object_id).tier_start = '2'</do>
+      <do>OBJECT(GLOBAL.bulk_overlay_object_id).tier_end = '1'</do>
+      <do>OBJECT(GLOBAL.bulk_overlay_object_id).tier_type = 'bulk_source'</do>
+
+      <spawn>
+        <object_type>'BUCKET_OVERLAY'</object_type>
+        <object_id>GLOBAL.calendar_overlay_object_id</object_id>
+        <!--<no_cluster>'1'</no_cluster>-->
+      </spawn>
+      <index_insert>
+        <index>'GLOBAL_OBJECTS'</index>
+        <field name="object_id">GLOBAL.calendar_overlay_object_id</field>
+      </index_insert>
+      <spawn>
+        <object_type>'BUCKET_OVERLAY'</object_type>
+        <object_id>GLOBAL.bulk_target_overlay_object_id</object_id>
+        <!--<no_cluster>'1'</no_cluster>-->
+      </spawn>
+      <index_insert>
+        <index>'GLOBAL_OBJECTS'</index>
+        <field name="object_id">GLOBAL.bulk_target_overlay_object_id</field>
+      </index_insert>
+      <do>OBJECT(GLOBAL.bulk_target_overlay_object_id).account_qualification_group = 'self'</do>
+      <do>OBJECT(GLOBAL.bulk_target_overlay_object_id).tier_type = 'bulk_target'</do>
+
+      <spawn>
+        <object_type>'BUCKET_OVERLAY'</object_type>
+        <object_id>GLOBAL.target_overlay_object_id</object_id>
+        <!--<no_cluster>1</no_cluster>-->
+      </spawn>
+      <index_insert>
+        <index>'GLOBAL_OBJECTS'</index>
+        <field name="object_id">GLOBAL.target_overlay_object_id</field>
+      </index_insert>
+      <do>OBJECT(GLOBAL.target_overlay_object_id).tier_type = 'bulk_target'</do>
+
+
+    </initialize>
+
+    <debug switch="log_materialize_decisions">'Instantiating all decisions needed for account '~TEMP.id_acc~', interval '~TEMP.id_usage_interval</debug>
+
+    <index_clear>
+      <index>'NAMES_BY_SUB'</index>
+    </index_clear>
+    <index_clear>
+      <index>'PREVIOUS_DECISION_INFO'</index>
+    </index_clear>
+    <index_clear>
+      <index>'PREVIOUS_DECISIONS'</index>
+    </index_clear>
+    <index_clear>
+      <index>'PREVIOUS_DECISION_MAX'</index>
+    </index_clear>
+
+    <!-- We are going to instantiate all the decisions for the given interval -->
+    <!-- for the given account.   For example, if the interval is a month     -->
+    <!-- and the cycle unit type is daily, then there will be 31 decisions -->
+    <!-- to instantiate.  These instantiated instances are called "buckets" -->
+
+    <!-- Fill VALID_INTERVALS with all intervals in the database that aren't -->
+    <!-- hard closed. -->
+    <index_select>
+      <index>'VALID_INTERVALS'</index>
+      <field name="interval_id">TEMP.id_usage_interval</field>
+      <cursor>TEMP.interval_cache</cursor>
+      <then>
+        <do>GLOBAL.id_usage_interval = OBJECT(TEMP.interval_cache).interval_id</do>
+        <do>GLOBAL.interval_start_date = OBJECT(TEMP.interval_cache).start_date</do>
+        <do>GLOBAL.interval_end_date = OBJECT(TEMP.interval_cache).end_date</do>
+      </then>
+      <else>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "SELECT a.* FROM t_usage_interval a
+            WHERE a.id_interval = $${TEMP.id_usage_interval} and tx_interval_status != 'H'"
+          </query>
+          <cursor>TEMP.interval_csr</cursor>
+          <then>
+            <do>GLOBAL.id_usage_interval = OBJECT(TEMP.interval_csr).id_interval</do>
+            <do>GLOBAL.interval_start_date = OBJECT(TEMP.interval_csr).dt_start</do>
+            <do>GLOBAL.interval_end_date = OBJECT(TEMP.interval_csr).dt_end</do>
+            <index_insert>
+              <index>'VALID_INTERVALS'</index>
+              <field name="interval_id">OBJECT(TEMP.interval_csr).id_interval</field>
+              <field name="start_date">OBJECT(TEMP.interval_csr).dt_start</field>
+              <field name="end_date">OBJECT(TEMP.interval_csr).dt_end</field>
+            </index_insert>
+          </then>
+          <else>
+              <severe>'Unable to find open interval '~TEMP.id_usage_interval</severe>
+	      <fatal>'Shutting down.'</fatal>
+          </else>
+        </db_select>
+      </else>
+    </index_select>
+
+    <!-- In order to create the decisions, we need to know where our last -->
+    <!-- decision from the previous interval left off.  For example, if our -->
+    <!-- decision cycle is every 4 days, we'd need to know what was the ending -->
+    <!-- date of the last decision in the previous interval.  We figure this out -->
+    <!-- by looking in audit information. -->
+    <debug>'We need to determine where our last decisions from the previous interval left off.'</debug>
+    <debug>'This gives us the ending date of the last decision in the previous interval.'</debug>
+    <debug>'This is important in scenarios such as: the decision is 4 days long, but the interval is a month.'</debug>
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query type="sql">
+        "SELECT c.* FROM t_usage_interval a
+        INNER JOIN t_usage_interval b on DATEADD(ss,-1,a.dt_start) = b.dt_end
+        AND a.id_usage_cycle = b.id_usage_cycle
+        INNER JOIN agg_decision_audit_trail c on b.id_interval = c.id_usage_interval and c.id_acc = $${TEMP.id_acc} and (c.expired != '1' or c.expired IS NULL)
+        WHERE a.id_interval = $${TEMP.id_usage_interval}"
+      </query>
+      <query type="oracle">
+        "SELECT c.* FROM t_usage_interval a
+        INNER JOIN t_usage_interval b on sysdate - 1/86400 = b.dt_end
+        AND a.id_usage_cycle = b.id_usage_cycle
+        INNER JOIN agg_decision_audit_trail c on b.id_interval = c.id_usage_interval and c.id_acc = $${TEMP.id_acc} and (c.expired != '1' or c.expired IS NULL)
+        WHERE a.id_interval = $${TEMP.id_usage_interval}"
+      </query>
+      <cursor>TEMP.decision_history_csr</cursor>
+      <loop>
+        <if>
+          <condition>OBJECT(TEMP.decision_history_csr).audit_only ne '1'</condition>
+          <then>
+            <!--<print>'INSERTING P_D_I: ['~OBJECT(TEMP.decision_history_csr).decision_unique_id~']['~OBJECT(TEMP.decision_history_csr).qualified_amount~']['~OBJECT(TEMP.decision_history_csr).end_date~']['~OBJECT(TEMP.decision_history_csr).qualified_amount~']'</print>-->
+            <index_insert>
+              <index>'PREVIOUS_DECISION_INFO'</index>
+              <field name="decision_object_id">OBJECT(TEMP.decision_history_csr).decision_object_id</field>
+              <field name="decision_unique_id">OBJECT(TEMP.decision_history_csr).decision_unique_id</field>
+              <field name="start_date">OBJECT(TEMP.decision_history_csr).start_date</field>
+              <field name="end_date">OBJECT(TEMP.decision_history_csr).end_date</field>
+              <field name="intervals_remaining">OBJECT(TEMP.decision_history_csr).intervals_remaining</field>
+              <field name="expiration_date">OBJECT(TEMP.decision_history_csr).expiration_date</field>
+              <field name="expired">OBJECT(TEMP.decision_history_csr).expired</field>
+              <field name="pre_qualified_amount">OBJECT(TEMP.decision_history_csr).qualified_amount</field>
+              <field name="pre_qualified_units">OBJECT(TEMP.decision_history_csr).qualified_units</field>
+              <field name="pre_qualified_events">OBJECT(TEMP.decision_history_csr).qualified_events</field>
+              <field name="pre_total_generated_events">OBJECT(TEMP.decision_history_csr).total_generated_events</field>
+              <field name="pre_total_generated_amount">OBJECT(TEMP.decision_history_csr).total_generated_amount</field>
+              <field name="pre_total_rated_amount_delta">OBJECT(TEMP.decision_history_csr).total_rated_amount_delta</field>
+              <field name="pre_total_rated_units">OBJECT(TEMP.decision_history_csr).total_rated_units</field>
+              <field name="pre_total_rated_amount_after">OBJECT(TEMP.decision_history_csr).total_rated_amount_after</field>
+              <field name="pre_total_rated_events">OBJECT(TEMP.decision_history_csr).total_rated_events</field>
+              <field name="pre_total_discount_amount">OBJECT(TEMP.decision_history_csr).total_discount_amount</field>
+              <field name="pre_total_discounted_amount">OBJECT(TEMP.decision_history_csr).total_discounted_amount</field>
+              <field name="pre_total_discounted_units">OBJECT(TEMP.decision_history_csr).total_discounted_units</field>
+              <field name="pre_total_discounted_events">OBJECT(TEMP.decision_history_csr).total_discounted_events</field>
+            </index_insert>
+            <index_insert>
+              <index>'PREVIOUS_DECISIONS'</index>
+              <field name="decision_unique_id">OBJECT(TEMP.decision_history_csr).decision_unique_id</field>
+              <field name="start_date">OBJECT(TEMP.decision_history_csr).start_date</field>
+              <field name="end_date">OBJECT(TEMP.decision_history_csr).end_date</field>
+              <field name="intervals_remaining">OBJECT(TEMP.decision_history_csr).intervals_remaining</field>
+            </index_insert>
+          </then>
+        </if>
+
+        <!-- Figure out the decision with the latest end date. -->
+        <do>TEMP.replace = '0'</do>
+        <index_select>
+          <index>'PREVIOUS_DECISION_MAX'</index>
+          <field name="decision_unique_id">OBJECT(TEMP.decision_history_csr).decision_unique_id</field>
+          <cursor>TEMP.decision_max</cursor>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.decision_history_csr).end_date gt OBJECT(TEMP.decision_max).end_date</condition>
+              <then>
+                <do>TEMP.replace = 1</do>
+              </then>
+            </if>
+          </then>
+          <else>
+            <do>TEMP.replace = 1</do>
+          </else>
+        </index_select>
+        <if>
+          <condition>TEMP.replace == '1'</condition>
+          <then>
+            <index_remove>
+              <index>'PREVIOUS_DECISION_MAX'</index>
+              <field name="decision_unique_id">OBJECT(TEMP.decision_history_csr).decision_unique_id</field>
+            </index_remove>
+            <index_insert>
+              <index>'PREVIOUS_DECISION_MAX'</index>
+              <field name="decision_unique_id">OBJECT(TEMP.decision_history_csr).decision_unique_id</field>
+              <field name="start_date">OBJECT(TEMP.decision_history_csr).start_date</field>
+              <field name="end_date">OBJECT(TEMP.decision_history_csr).end_date</field>
+              <field name="intervals_remaining">OBJECT(TEMP.decision_history_csr).intervals_remaining</field>
+            </index_insert>
+          </then>
+        </if>
+      </loop>
+    </db_select>
+
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query type="sql">
+        "select sub.id_sub, sub.id_group, 1 row_priority, sub.id_po id_po, gsub.vt_start gsub_start, gsub.vt_end gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_gsubmember gsub
+        inner join t_sub sub on sub.id_group = gsub.id_group
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_sub = plm.id_sub
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and gsub.id_acc = $${TEMP.id_acc}
+        and CAST($${GLOBAL.interval_end_date} AS DATETIME) >= gsub.vt_start
+        and gsub.vt_end > CAST($${GLOBAL.interval_start_date} AS DATETIME)
+        and gsub.vt_end >= dateadd(dd,1,gsub.vt_start)
+        and sub.vt_end >= dateadd(dd,1,sub.vt_start)
+        and (rs_f_dt.dt_end > CAST($${GLOBAL.interval_start_date} AS DATETIME) or rs_f_dt.dt_end IS NULL)
+        and (CAST($${GLOBAL.interval_end_date} AS DATETIME)  > rs_f_dt.dt_start or rs_f_dt.dt_start IS NULL)
+        union all
+        select sub.id_sub, sub.id_group, 2 row_priority, sub.id_po id_po, NULL gsub_start, NULL gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_sub sub
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_sub = plm.id_sub
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and sub.id_acc = $${TEMP.id_acc}
+        and CAST($${GLOBAL.interval_end_date} AS DATETIME) >= sub.vt_start
+        and sub.vt_end > CAST($${GLOBAL.interval_start_date} AS DATETIME)
+        and sub.vt_end >= dateadd(dd,1,sub.vt_start)
+        and (rs_f_dt.dt_end > CAST($${GLOBAL.interval_start_date} AS DATETIME) or rs_f_dt.dt_end IS NULL)
+        and (CAST($${GLOBAL.interval_end_date} AS DATETIME)  > rs_f_dt.dt_start or rs_f_dt.dt_start IS NULL)
+        union all
+        select sub.id_sub, sub.id_group, 3 row_priority, sub.id_po id_po, gsub.vt_start gsub_start, gsub.vt_end gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_gsubmember gsub
+        inner join t_sub sub on sub.id_group = gsub.id_group
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_po = plm.id_po and plm.id_sub IS NULL and plm.id_acc IS NULL
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and gsub.id_acc = $${TEMP.id_acc}
+        and CAST($${GLOBAL.interval_end_date} AS DATETIME) >= gsub.vt_start
+        and gsub.vt_end > CAST($${GLOBAL.interval_start_date} AS DATETIME)
+        and gsub.vt_end >= dateadd(dd,1,gsub.vt_start)
+        and sub.vt_end >= dateadd(dd,1,sub.vt_start)
+        and (rs_f_dt.dt_end > CAST($${GLOBAL.interval_start_date} AS DATETIME) or rs_f_dt.dt_end IS NULL)
+        and (CAST($${GLOBAL.interval_end_date} AS DATETIME)  > rs_f_dt.dt_start or rs_f_dt.dt_start IS NULL)
+        union all
+        select sub.id_sub, sub.id_group, 4 row_priority, sub.id_po id_po, NULL gsub_start, NULL gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_sub sub
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_po = plm.id_po and plm.id_sub IS NULL and plm.id_acc IS NULL
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and
+        sub.id_acc = $${TEMP.id_acc}
+        and CAST($${GLOBAL.interval_end_date} AS DATETIME) >= sub.vt_start
+        and sub.vt_end > CAST($${GLOBAL.interval_start_date} AS DATETIME)
+        and sub.vt_end >= dateadd(dd,1,sub.vt_start)
+        and (rs_f_dt.dt_end > CAST($${GLOBAL.interval_start_date} AS DATETIME) or rs_f_dt.dt_end IS NULL)
+        and (CAST($${GLOBAL.interval_end_date} AS DATETIME)  > rs_f_dt.dt_start or rs_f_dt.dt_start IS NULL)
+        order by row_priority, sub_start desc"
+      </query>
+      <query type="oracle">
+        "select /*+ ORDERED */ sub.id_sub, sub.id_group, 1 row_priority, sub.id_po id_po, gsub.vt_start gsub_start, gsub.vt_end gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_gsubmember gsub
+        inner join t_sub sub on sub.id_group = gsub.id_group
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_sub = plm.id_sub
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and gsub.id_acc = $${TEMP.id_acc}
+        and to_date($${GLOBAL.interval_end_date},'YYYYMMDDHH24MISS') >= gsub.vt_start
+        and gsub.vt_end > to_date($${GLOBAL.interval_start_date},'YYYYMMDDHH24MISS')
+        and gsub.vt_end >= (gsub.vt_start + 1)
+        and sub.vt_end >= (sub.vt_start + 1)
+        and (rs_f_dt.dt_end > to_date($${GLOBAL.interval_start_date},'YYYYMMDDHH24MISS')or rs_f_dt.dt_end IS NULL)
+        and (to_date($${GLOBAL.interval_end_date},'YYYYMMDDHH24MISS') > rs_f_dt.dt_start or rs_f_dt.dt_start IS NULL)
+        union all
+        select /*+ ORDERED */ sub.id_sub, sub.id_group, 2 row_priority, sub.id_po id_po, NULL gsub_start, NULL gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_sub sub
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_sub = plm.id_sub
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and sub.id_acc = $${TEMP.id_acc}
+        and to_date($${GLOBAL.interval_end_date},'YYYYMMDDHH24MISS') >= sub.vt_start
+        and sub.vt_end > to_date($${GLOBAL.interval_start_date},'YYYYMMDDHH24MISS')
+        and sub.vt_end >= (sub.vt_start + 1)
+        and (rs_f_dt.dt_end > to_date($${GLOBAL.interval_start_date},'YYYYMMDDHH24MISS') or rs_f_dt.dt_end IS NULL)
+        and (to_date($${GLOBAL.interval_end_date},'YYYYMMDDHH24MISS') > rs_f_dt.dt_start or rs_f_dt.dt_start IS NULL)
+        union all
+        select /*+ ORDERED */ sub.id_sub, sub.id_group, 3 row_priority, sub.id_po id_po, gsub.vt_start gsub_start, gsub.vt_end gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_gsubmember gsub
+        inner join t_sub sub on sub.id_group = gsub.id_group
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_po = plm.id_po and NVL2(plm.id_sub,NULL,0) = 0 and plm.id_acc IS NULL
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and gsub.id_acc = $${TEMP.id_acc}
+        and to_date($${GLOBAL.interval_end_date},'YYYYMMDDHH24MISS') >= gsub.vt_start
+        and gsub.vt_end > to_date($${GLOBAL.interval_start_date},'YYYYMMDDHH24MISS')
+        and gsub.vt_end >= (gsub.vt_start + 1)
+        and sub.vt_end >= (sub.vt_start + 1)
+        and (rs_f_dt.dt_end > to_date($${GLOBAL.interval_start_date},'YYYYMMDDHH24MISS') or rs_f_dt.dt_end IS NULL)
+        and (to_date($${GLOBAL.interval_end_date},'YYYYMMDDHH24MISS') > rs_f_dt.dt_start or rs_f_dt.dt_start IS NULL)
+        union all
+        select /*+ ORDERED */ sub.id_sub, sub.id_group, 4 row_priority, sub.id_po id_po, NULL gsub_start, NULL gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_sub sub
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_po = plm.id_po and NVL2(plm.id_sub,NULL,0) = 0 and plm.id_acc IS NULL
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and
+        sub.id_acc = $${TEMP.id_acc}
+        and to_date($${GLOBAL.interval_end_date},'YYYYMMDDHH24MISS') >= sub.vt_start
+        and sub.vt_end > to_date($${GLOBAL.interval_start_date},'YYYYMMDDHH24MISS')
+        and sub.vt_end >= (sub.vt_start + 1)
+        and (rs_f_dt.dt_end > to_date($${GLOBAL.interval_start_date},'YYYYMMDDHH24MISS') or rs_f_dt.dt_end IS NULL)
+        and (to_date($${GLOBAL.interval_end_date},'YYYYMMDDHH24MISS') > rs_f_dt.dt_start or rs_f_dt.dt_start IS NULL)
+        order by row_priority, sub_start desc"
+      </query>
+      <!--<query>
+        'select '~TEMP.id_acc~' id_acc, 3 row_priority, sub.id_po id_po, gsub.vt_start gsub_start, gsub.vt_end gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched
+        from t_gsubmember gsub
+        inner join t_sub sub on sub.id_group = gsub.id_group
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_po = plm.id_po and plm.id_sub IS NULL and plm.id_acc IS NULL
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in('~GLOBAL.my_pt_list~') and gsub.id_acc = '~ TEMP.id_acc ~'
+        order by row_priority, sub_start desc
+        option (force order)'
+      </query>-->
+      <!--<query>
+        'select '~TEMP.id_acc~' id_acc, * from jonah_junk_test where 1=2'
+      </query>-->
+      <!--<query>
+        'exec jonah_test_proc '~TEMP.id_acc
+      </query>-->
+      <!--<query>
+        'select 1 where 1 = 2'
+      </query>-->
+      <!--<query>
+        'select '~TEMP.id_acc~' id_acc, * from agg_sched_view where id_acc = '~TEMP.id_acc~' order by row_priority, sub_start desc'
+      </query>-->
+      <cursor>TEMP.rsched_csr</cursor>
+      <loop>
+        <do>OBJECT(TEMP.rsched_csr).id_acc = TEMP.id_acc</do>
+        <do>OBJECT(TEMP.rsched_csr).start_date = OBJECT(TEMP.rsched_csr).rsched_start</do>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).start_date eq ''</condition>
+          <then>
+            <string_to_date>
+              <input format='YYYYMMDDHH24MISS'>'19700101000000'</input>
+              <output>OBJECT(TEMP.rsched_csr).start_date</output>
+            </string_to_date>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).sub_start ne '' and OBJECT(TEMP.rsched_csr).sub_start gt OBJECT(TEMP.rsched_csr).start_date</condition>
+          <then>
+            <do>OBJECT(TEMP.rsched_csr).start_date = OBJECT(TEMP.rsched_csr).sub_start</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).gsub_start ne '' and OBJECT(TEMP.rsched_csr).gsub_start gt OBJECT(TEMP.rsched_csr).start_date</condition>
+          <then>
+            <do>OBJECT(TEMP.rsched_csr).start_date = OBJECT(TEMP.rsched_csr).gsub_start</do>
+          </then>
+        </if>
+        <do>OBJECT(TEMP.rsched_csr).end_date = OBJECT(TEMP.rsched_csr).rsched_end</do>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).end_date eq ''</condition>
+          <then>
+            <string_to_date>
+              <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+              <output>OBJECT(TEMP.rsched_csr).end_date</output>
+            </string_to_date>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).sub_end ne '' and OBJECT(TEMP.rsched_csr).sub_end lt OBJECT(TEMP.rsched_csr).end_date</condition>
+          <then>
+            <do>OBJECT(TEMP.rsched_csr).end_date = OBJECT(TEMP.rsched_csr).sub_end</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).gsub_end ne '' and OBJECT(TEMP.rsched_csr).gsub_end lt OBJECT(TEMP.rsched_csr).end_date</condition>
+          <then>
+            <do>OBJECT(TEMP.rsched_csr).end_date = OBJECT(TEMP.rsched_csr).gsub_end</do>
+          </then>
+        </if>
+
+        <index_select>
+          <index>'AGG_PT_ID_TO_NAME'</index>
+          <field name="id_paramtable">OBJECT(TEMP.rsched_csr).id_paramtable</field>
+          <cursor>TEMP.pt_name</cursor>
+          <then>
+            <db_select_dynamic>
+              <login_object>GLOBAL.target_login</login_object>
+              <query type="oracle">
+                'select * from ' ~OBJECT(TEMP.pt_name).paramtable_name~' where id_sched = $${OBJECT(TEMP.rsched_csr).id_sched}
+                and tt_end = mtmaxdate() order by n_order'
+              </query>
+              <query type="sql">
+                'select * from ' ~OBJECT(TEMP.pt_name).paramtable_name~' where id_sched = $${OBJECT(TEMP.rsched_csr).id_sched}
+                and tt_end = dbo.mtmaxdate() order by n_order'
+              </query>
+              <cursor>TEMP.pt_row_csr</cursor>
+              <loop>
+                <debug switch="log_materialize_decisions">'I have n_order ['~OBJECT(TEMP.pt_row_csr).n_order~'] for id_sched ['~OBJECT(TEMP.pt_row_csr).id_sched~']'</debug>
+
+                <do>OBJECT(TEMP.pt_row_csr).id_acc = TEMP.id_acc</do>
+                <do>OBJECT(TEMP.pt_row_csr).start_date = OBJECT(TEMP.rsched_csr).start_date</do>
+                <do>OBJECT(TEMP.pt_row_csr).end_date = OBJECT(TEMP.rsched_csr).end_date</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_sched = OBJECT(TEMP.rsched_csr).id_sched</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_sub = OBJECT(TEMP.rsched_csr).id_sub</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_po = OBJECT(TEMP.rsched_csr).id_po</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_group = OBJECT(TEMP.rsched_csr).id_group</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_pi_template = OBJECT(TEMP.rsched_csr).id_pi_template</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_pi_instance = OBJECT(TEMP.rsched_csr).id_pi_instance</do>
+                <index_clear>
+                  <index>'TEMP_AGG_BUCKETS'</index>
+                </index_clear>
+                <call_dynamic_proc_for_object>
+                  <name>'generate_tiers_'~OBJECT(TEMP.pt_name).paramtable_name</name>
+                  <object_id>TEMP.pt_row_csr</object_id>
+                </call_dynamic_proc_for_object>
+                <index_select>
+                  <index>'TEMP_AGG_BUCKETS'</index>
+                  <field name="id_acc">TEMP.id_acc</field>
+                  <cursor>TEMP.agg_buckets</cursor>
+                  <loop>
+                    <do>TEMP.my_bucket = OBJECT(TEMP.agg_buckets).bucket_object</do>
+
+                    <!--<print>'DUMPING my_bucket'</print>
+                    <call_proc_for_current_object>
+                      <name>'print_object'</name>
+                      <param name="object_id">TEMP.my_bucket</param>
+                    </call_proc_for_current_object>-->
+                    
+                    <do>OBJECT(TEMP.my_bucket).id_acc = OBJECT(TEMP.pt_row_csr).id_acc</do>
+                    <if>
+                      <condition>OBJECT(TEMP.my_bucket).start_date eq ''</condition>
+                      <then>
+                        <do>OBJECT(TEMP.my_bucket).start_date = OBJECT(TEMP.rsched_csr).start_date</do>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.my_bucket).end_date eq ''</condition>
+                      <then>
+                        <do>OBJECT(TEMP.my_bucket).end_date = OBJECT(TEMP.rsched_csr).end_date</do>
+                      </then>
+                    </if>
+                    <do>OBJECT(TEMP.my_bucket).id_sched = OBJECT(TEMP.rsched_csr).id_sched</do>
+                    <do>OBJECT(TEMP.my_bucket).id_sub = OBJECT(TEMP.rsched_csr).id_sub</do>
+                    <do>OBJECT(TEMP.my_bucket).id_group = OBJECT(TEMP.rsched_csr).id_group</do>
+                    <do>OBJECT(TEMP.my_bucket).id_po = OBJECT(TEMP.rsched_csr).id_po</do>
+                    <do>OBJECT(TEMP.my_bucket).n_order = OBJECT(TEMP.pt_row_csr).n_order</do>
+                    <do>OBJECT(TEMP.my_bucket).tt_start = OBJECT(TEMP.pt_row_csr).tt_start</do>
+                    <do>TEMP.keep_it = '1'</do>
+                    <if>
+                      <condition>OBJECT(TEMP.my_bucket).tier_name ne ''</condition>
+                      <then>
+                        <do>TEMP.keep_it = '0'</do>
+                        <index_select>
+                          <index>'NAMES_BY_SUB'</index>
+                          <field name="id_sub">OBJECT(TEMP.rsched_csr).id_sub</field>
+                          <field name="id_pi_instance">OBJECT(TEMP.rsched_csr).id_pi_instance</field>
+                          <field name="tier_name">OBJECT(TEMP.my_bucket).tier_name</field>
+                          <cursor>TEMP.named_buckets</cursor>
+                          <loop>
+                            <debug switch="log_materialize_decisions">'I already have this name!!!!!'</debug>
+                            <if>
+                              <condition>OBJECT(TEMP.named_buckets).id_sched ne OBJECT(TEMP.my_bucket).id_sched and TEMP.keep_it ne '-1' and (OBJECT(TEMP.my_bucket).start_date gte OBJECT(TEMP.named_buckets).end_date or OBJECT(TEMP.my_bucket).end_date lte OBJECT(TEMP.named_buckets).start_date)</condition>
+                              <then>
+                                <debug switch="log_materialize_decisions">'But I am keeping it so far!!!!!'</debug>
+                                <do>TEMP.keep_it = '1'</do>
+                              </then>
+                              <else>
+                                <if>
+                                  <condition>OBJECT(TEMP.named_buckets).id_sched eq OBJECT(TEMP.my_bucket).id_sched and TEMP.keep_it ne '-1'</condition>
+                                  <then>
+
+                                    <do>TEMP.keep_it = '1'</do>
+                                  </then>
+                                  <else>
+                                    <debug switch="log_materialize_decisions">'And I am not keeping it!!!!!'</debug>
+                                    <do>TEMP.keep_it = '-1'</do>
+                                  </else>
+                                </if>
+                              </else>
+                            </if>
+                          </loop>
+                          <else>
+                            <do>TEMP.keep_it = '1'</do>
+                          </else>
+                        </index_select>
+                      </then>
+                    </if>
+
+                    <if>
+                      <condition>OBJECT(TEMP.my_bucket).eop_only eq '1' and GLOBAL.eop_mode ne '1'</condition>
+                      <then>
+                        <do>OBJECT(TEMP.my_bucket).discard_decision = '1'</do>
+                      </then>
+                    </if>
+
+                    <if>
+                      <condition>TEMP.keep_it eq '1' and OBJECT(TEMP.my_bucket).discard_decision ne '1'</condition>
+                      <then>
+                        <!--<get_guid>OBJECT(TEMP.my_bucket).bucket_guid</get_guid>-->
+                        <!--<do>OBJECT(TEMP.my_bucket).bucket_guid = OBJECT(TEMP.my_bucket).object_id</do>-->
+                        <!--<print>'Also setting decision unique id column_group to ['~OBJECT(TEMP.my_bucket).tier_column_group~']'</print>-->
+                        <!--<do>OBJECT(TEMP.my_bucket).decision_unique_id = OBJECT(TEMP.my_bucket).id_acc~'|'~OBJECT(TEMP.my_bucket).id_sub~'|'~OBJECT(TEMP.my_bucket).start_date~'|'~OBJECT(TEMP.my_bucket).id_po~'|'~OBJECT(TEMP.my_bucket).id_sched~'|'~OBJECT(TEMP.my_bucket).n_order~'|'~OBJECT(TEMP.my_bucket).tt_start~'|'~OBJECT(TEMP.my_bucket).tier_column_group~'|'~OBJECT(TEMP.my_bucket).tier_priority</do>-->
+                        <call_proc_for_object>
+                          <name>'set_decision_unique_id'</name>
+                          <object_id>TEMP.my_bucket</object_id>
+                        </call_proc_for_object>
+                        <do>OBJECT(TEMP.my_bucket).id_acc = TEMP.id_acc</do>
+                        <do>OBJECT(TEMP.my_bucket).id_usage_interval = TEMP.id_usage_interval</do>
+                        <do>OBJECT(TEMP.my_bucket).interval_start_date = GLOBAL.interval_start_date</do>
+                        <do>OBJECT(TEMP.my_bucket).interval_end_date = GLOBAL.interval_end_date</do>
+                        <if>
+                          <condition>OBJECT(TEMP.my_bucket).tier_type Eq 'bulk'</condition>
+                          <then>
+                            <!--<do>OBJECT(TEMP.my_bucket).tier_priority += 1</do>-->
+                            <do>OBJECT(TEMP.my_bucket).tier_type = 'bulk_aggregate'</do>
+                          </then>
+                        </if>
+                        <!--<print>'JONAH ['~OBJECT(TEMP.my_bucket).cycle_unit_type~'] here starting to add the interval logic/date logic for multiple instances of the same counter'</print>-->
+                        <if>
+                          <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'interval' </condition>
+                          <then>
+                            <do>OBJECT(TEMP.my_bucket).orig_start_date = OBJECT(TEMP.my_bucket).start_date</do>
+                            <do>OBJECT(TEMP.my_bucket).orig_end_date = OBJECT(TEMP.my_bucket).end_date</do>
+                            <string_to_date>
+                              <input format='YYYYMMDDHH24MISS'>'19700101000000'</input>
+                              <output>OBJECT(TEMP.my_bucket).start_date</output>
+                            </string_to_date>
+                            <string_to_date>
+                              <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+                              <output>OBJECT(TEMP.my_bucket).end_date</output>
+                            </string_to_date>
+                            <string_to_date>
+                              <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+                              <output>OBJECT(TEMP.my_bucket).expiration_date</output>
+                            </string_to_date>
+                            <do>OBJECT(TEMP.my_bucket).id_usage_interval = TEMP.id_usage_interval</do>
+                            <!--<print>'Trying to overlay decision history with ['~OBJECT(TEMP.my_bucket).cycle_units_per_tier~']'</print>-->
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).cycle_units_per_tier GT '1'</condition>
+                              <then>
+                                <do>OBJECT(TEMP.my_bucket).intervals_remaining = OBJECT(TEMP.my_bucket).cycle_units_per_tier - 1</do>
+                                <call_proc_for_current_object>
+                                  <name>'overlay_decision_history'</name>
+                                  <param name='my_bucket'>TEMP.my_bucket</param>
+                                </call_proc_for_current_object>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).orig_start_date gt GLOBAL.interval_start_date</condition>
+                              <then>
+                                <do>OBJECT(TEMP.my_bucket).prorate_start_date = GLOBAL.interval_start_date</do>
+                                <do>OBJECT(TEMP.my_bucket).prorate_end_date = GLOBAL.interval_end_date</do>
+                                <do>OBJECT(TEMP.my_bucket).start_date = OBJECT(TEMP.my_bucket).orig_start_date</do>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).orig_end_date lt GLOBAL.interval_end_date</condition>
+                              <then>
+                                <do>OBJECT(TEMP.my_bucket).prorate_start_date = GLOBAL.interval_start_date</do>
+                                <do>OBJECT(TEMP.my_bucket).prorate_end_date = GLOBAL.interval_end_date</do>
+                                <do>OBJECT(TEMP.my_bucket).end_date = OBJECT(TEMP.my_bucket).orig_end_date</do>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).prorate_start_date ne ''</condition>
+                              <then>
+                                <call_proc_for_current_object>
+                                  <name>'prorate_bucket'</name>
+                                  <param name='my_bucket'>TEMP.my_bucket</param>
+                                </call_proc_for_current_object>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).cycles gt '0'</condition>
+                              <then>
+                                <run_once>
+                                  <define_memory_index>
+                                    <index>'INTERVAL_GAPS'</index>
+                                    <key_field>'id_usage_interval'</key_field>
+                                    <key_field type='search'>'start_date'</key_field>
+                                    <field>'intervals_between'</field>
+                                  </define_memory_index>
+                                </run_once>
+                                <index_select>
+                                  <index>'INTERVAL_GAPS'</index>
+                                  <field name="id_usage_interval">TEMP.id_usage_interval</field>
+                                  <field name="start_date">OBJECT(TEMP.my_bucket).orig_start_date</field>
+                                  <cursor>TEMP.gaps_cur</cursor>
+                                  <then>
+                                    <do>TEMP.intervals_between = OBJECT(TEMP.gaps_cur).intervals_between</do>
+                                  </then>
+                                  <else>
+                                    <db_select>
+                                      <login_object>GLOBAL.target_login</login_object>
+                                      <query>
+                                        "select a.id_interval, b.dt_start, count(*) intervals_between from
+                                        t_usage_interval a
+                                        inner join t_usage_interval b on a.id_usage_cycle = b.id_usage_cycle and a.dt_start >= b.dt_start
+                                        inner join t_usage_interval c on b.id_usage_cycle = c.id_usage_cycle and c.dt_start >= b.dt_start and a.dt_start >= c.dt_start
+                                        where a.id_interval = $${TEMP.id_usage_interval}
+                                        group by a.id_interval, b.dt_start"
+                                      </query>
+                                      <cursor>TEMP.interval_gaps</cursor>
+                                      <loop>
+                                        <index_insert>
+                                          <index>'INTERVAL_GAPS'</index>
+                                          <field name='id_usage_interval'>OBJECT(TEMP.interval_gaps).id_interval</field>
+                                          <field name='start_date'>OBJECT(TEMP.interval_gaps).dt_start</field>
+                                          <field name='intervals_between'>OBJECT(TEMP.interval_gaps).intervals_between</field>
+                                        </index_insert>
+                                      </loop>
+                                    </db_select>
+                                    <index_select>
+                                      <index>'INTERVAL_GAPS'</index>
+                                      <field name="id_usage_interval">TEMP.id_usage_interval</field>
+                                      <field name="start_date">OBJECT(TEMP.my_bucket).orig_start_date</field>
+                                      <cursor>TEMP.inner_gaps_cur</cursor>
+                                      <then>
+                                        <do>TEMP.intervals_between = OBJECT(TEMP.inner_gaps_cur).intervals_between</do>
+                                      </then>
+                                    </index_select>
+                                  </else>
+                                </index_select>
+                                <do>TEMP.max_intervals_possible = OBJECT(TEMP.my_bucket).cycles * OBJECT(TEMP.my_bucket).cycle_units_per_tier + OBJECT(TEMP.my_bucket).cycle_unit_offset</do>
+                                <if>
+                                  <condition>TEMP.max_intervals_possible LT TEMP.intervals_between</condition>
+                                  <then>
+                                    <do>TEMP.keep_it = '0'</do>
+                                  </then>
+                                </if>
+                              </then>
+                            </if>
+                          </then>
+                        </if>
+                        <if>
+                          <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'monthly' or OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'weekly' or OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'daily' or OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'quarterly' or OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'annually'</condition>
+                          <then>
+                            <do>OBJECT(TEMP.my_bucket).id_usage_interval = TEMP.id_usage_interval</do>
+                            <do>OBJECT(TEMP.my_bucket).orig_start_date = OBJECT(TEMP.my_bucket).start_date</do>
+                            <do>OBJECT(TEMP.my_bucket).orig_end_date = OBJECT(TEMP.my_bucket).end_date</do>
+                            <do>TEMP.cycles_back = 0 - OBJECT(TEMP.my_bucket).cycles</do>
+                            <do>TEMP.cycles = OBJECT(TEMP.my_bucket).cycles</do>
+                            <do>TEMP.cycle_units_per_tier = OBJECT(TEMP.my_bucket).cycle_units_per_tier</do>
+                            <do>TEMP.cycle_unit_offset = OBJECT(TEMP.my_bucket).cycle_unit_offset</do>
+                            <do>TEMP.unit = 'MM'</do>
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'quarterly'</condition>
+                              <then>
+                                <do>TEMP.cycles_back = TEMP.cycles_back * 3</do>
+                                <do>TEMP.cycles = TEMP.cycles * 3</do>
+                                <do>TEMP.cycle_units_per_tier = TEMP.cycle_units_per_tier * 3</do>
+                                <do>TEMP.cycle_unit_offset = TEMP.cycle_unit_offset * 3</do>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'annually'</condition>
+                              <then>
+                                <do>TEMP.cycles_back = TEMP.cycles_back * 12</do>
+                                <do>TEMP.cycles = TEMP.cycles * 12</do>
+                                <do>TEMP.cycle_units_per_tier = TEMP.cycle_units_per_tier * 12</do>
+                                <do>TEMP.cycle_unit_offset = TEMP.cycle_unit_offset * 12</do>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'daily'</condition>
+                              <then>
+                                <do>TEMP.unit = 'DD'</do>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'weekly'</condition>
+                              <then>
+                                <do>TEMP.unit = 'DD'</do>
+                                <do>TEMP.cycles_back = TEMP.cycles_back * 7</do>
+                                <do>TEMP.cycles = TEMP.cycles * 7</do>
+                                <do>TEMP.cycle_units_per_tier = TEMP.cycle_units_per_tier * 7</do>
+                                <do>TEMP.cycle_unit_offset = TEMP.cycle_unit_offset * 7</do>
+                              </then>
+                            </if>
+                            <date_add>
+                              <input>GLOBAL.interval_start_date</input>
+                              <unit>TEMP.unit</unit>
+                              <increment>TEMP.cycles_back</increment>
+                              <output>TEMP.earliest_possible_start</output>
+                            </date_add>
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).cycles eq '0'</condition>
+                              <then>
+                                <string_to_date>
+                                  <input format='YYYYMMDDHH24MISS'>'19700101000000'</input>
+                                  <output>TEMP.earliest_possible_start</output>
+                                </string_to_date>
+                                <string_to_date>
+                                  <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+                                  <output>TEMP.latest_possible_end</output>
+                                </string_to_date>
+                              </then>
+                              <else>
+                                <do>TEMP.cycle_multiplier = TEMP.cycles * TEMP.cycle_units_per_tier + TEMP.cycle_unit_offset</do>
+                                <date_add>
+                                  <input>OBJECT(TEMP.my_bucket).start_date</input>
+                                  <unit>TEMP.unit</unit>
+                                  <increment>TEMP.cycle_multiplier</increment>
+                                  <output>TEMP.latest_possible_end</output>
+                                </date_add>
+                              </else>
+                            </if>
+                            
+                            <index_select>
+                              <index>'PREVIOUS_DECISION_MAX'</index>
+                              <field name="decision_unique_id">OBJECT(TEMP.my_bucket).decision_unique_id</field>
+                              <cursor>TEMP.prev_decisions</cursor>
+                              <then>
+                                <do>OBJECT(TEMP.my_bucket).start_date = OBJECT(TEMP.prev_decisions).end_date</do>
+                              </then>
+                              <else>
+                                <date_add>
+                                  <input>OBJECT(TEMP.my_bucket).start_date</input>
+                                  <unit>TEMP.unit</unit>
+                                  <increment>TEMP.cycle_unit_offset</increment>
+                                  <output>OBJECT(TEMP.my_bucket).start_date</output>
+                                </date_add>
+                                <c>If I have no previous decision and the latest end date is prior to my interval and  </c>
+                                <c>the tt_start is prior to the interval start date then I assume the decision has run its course so prevent any spawning of decisions</c>
+                                <if>
+                                  <condition>TEMP.latest_possible_end lt GLOBAL.interval_start_date and OBJECT(TEMP.my_bucket).tt_start lt GLOBAL.interval_start_date</condition>
+                                  <then>
+                                    <string_to_date>
+                                      <input format='YYYYMMDDHH24MISS'>'19700101000000'</input>
+                                      <output>TEMP.latest_possible_end</output>
+                                    </string_to_date>
+                                  </then>
+                                </if>
+                              </else>
+                            </index_select>
+                            <!--<print>'Checking for previous decisions for ['~OBJECT(TEMP.my_bucket).decision_unique_id~']'</print>-->
+                            <index_select>
+                              <index>'PREVIOUS_DECISIONS'</index>
+                              <field name="decision_unique_id">OBJECT(TEMP.my_bucket).decision_unique_id</field>
+                              <cursor>TEMP.prev_decisions</cursor>
+                              <loop>
+                                <debug switch="log_materialize_decisions">'Creating pre-existing child for ['~OBJECT(TEMP.prev_decisions).decision_unique_id~']['~OBJECT(TEMP.prev_decisions).start_date~']['~OBJECT(TEMP.prev_decisions).end_date~']'</debug>
+                                <call_proc_for_current_object>
+                                  <name>'generate_acc_qual_group_proc'</name>
+                                  <param name='account_qualification_group'>OBJECT(TEMP.my_bucket).account_qualification_group</param>
+                                </call_proc_for_current_object>
+                                <print>'CALLING1 CREATE CHILD DECISION FOR id_acc ['~TEMP.id_acc~']'</print>
+                                <call_proc_for_current_object>
+                                  <name>'create_child_decision'</name>
+                                  <param name='bucket_object'>TEMP.my_bucket</param>
+                                  <param name='bucket_overlay'>GLOBAL.calendar_overlay_object_id</param>
+                                  <param name='new_bucket_object'>TEMP.my_new_bucket</param>
+                                  <param name='delta_tracking_available'>0</param>
+                                  <param name='delta_tracking_on'>0</param>
+                                </call_proc_for_current_object>
+                                <print>'CALLING2 CREATE CHILD DECISION FOR id_acc ['~TEMP.id_acc~']'</print>
+                                <do>OBJECT(TEMP.my_new_bucket).start_date = OBJECT(TEMP.prev_decisions).start_date</do>
+                                <do>OBJECT(TEMP.my_new_bucket).end_date = OBJECT(TEMP.prev_decisions).end_date</do>
+                                <do>OBJECT(TEMP.my_new_bucket).decision_unique_id = OBJECT(TEMP.prev_decisions).decision_unique_id</do>
+                                <!--<print>'Trying to overlay decision history calendar!'</print>-->
+
+                                <!--<print>'NOW Creating pre-existing child for ['~OBJECT(TEMP.prev_decisions).decision_unique_id~']['~OBJECT(TEMP.prev_decisions).start_date~']['~OBJECT(TEMP.prev_decisions).end_date~']'</print>-->
+                                <call_proc_for_current_object>
+                                  <name>'overlay_decision_history'</name>
+                                  <param name='my_bucket'>TEMP.my_new_bucket</param>
+                                </call_proc_for_current_object>
+                                <if>
+                                  <condition>OBJECT(TEMP.my_new_bucket).end_date gt OBJECT(TEMP.my_bucket).orig_end_date</condition>
+                                  <then>
+                                    <do>OBJECT(TEMP.my_new_bucket).prorate_start_date = OBJECT(TEMP.my_new_bucket).start_date</do>
+                                    <do>OBJECT(TEMP.my_new_bucket).prorate_end_date = OBJECT(TEMP.my_new_bucket).end_date</do>
+                                    <do>OBJECT(TEMP.my_new_bucket).end_date = OBJECT(TEMP.my_bucket).orig_end_date</do>
+                                    <call_proc_for_current_object>
+                                      <name>'prorate_bucket'</name>
+                                      <param name='my_bucket'>TEMP.my_new_bucket</param>
+                                    </call_proc_for_current_object>
+                                  </then>
+                                </if>
+                              </loop>
+                            </index_select>
+                            <date_add>
+                              <input>OBJECT(TEMP.my_bucket).start_date</input>
+                              <unit>TEMP.unit</unit>
+                              <increment>TEMP.cycle_units_per_tier</increment>
+                              <output>OBJECT(TEMP.my_bucket).end_date</output>
+                            </date_add>
+                            <do>TEMP.start_date_to_keep = ''</do>
+                            <do>TEMP.end_date_to_keep = ''</do>
+                            <do>TEMP.current_matches = 0</do>
+                            <while>
+                              <condition>OBJECT(TEMP.my_bucket).end_date lte TEMP.latest_possible_end and OBJECT(TEMP.my_bucket).start_date lte GLOBAL.interval_end_date and OBJECT(TEMP.my_bucket).start_date lt OBJECT(TEMP.my_bucket).orig_end_date</condition>
+                              <loop>
+                                <if>
+                                  <condition>OBJECT(TEMP.my_bucket).end_date gt TEMP.earliest_possible_start</condition>
+                                  <then>
+                                    <do>OBJECT(TEMP.my_bucket).prorate_start_date = ''</do>
+                                    <do>OBJECT(TEMP.my_bucket).prorate_end_date = ''</do>
+                                    <if>
+                                      <condition>OBJECT(TEMP.my_bucket).start_date lt OBJECT(TEMP.my_bucket).orig_start_date</condition>
+                                      <then>
+                                        <do>OBJECT(TEMP.my_bucket).prorate_start_date = OBJECT(TEMP.my_bucket).start_date</do>
+                                        <do>OBJECT(TEMP.my_bucket).prorate_end_date = OBJECT(TEMP.my_bucket).end_date</do>
+                                        <do>OBJECT(TEMP.my_bucket).start_date = OBJECT(TEMP.my_bucket).orig_start_date</do>
+                                      </then>
+                                    </if>
+                                    <if>
+                                      <condition>OBJECT(TEMP.my_bucket).end_date gt OBJECT(TEMP.my_bucket).orig_end_date</condition>
+                                      <then>
+                                        <do>OBJECT(TEMP.my_bucket).prorate_start_date = OBJECT(TEMP.my_bucket).start_date</do>
+                                        <do>OBJECT(TEMP.my_bucket).prorate_end_date = OBJECT(TEMP.my_bucket).end_date</do>
+                                        <do>OBJECT(TEMP.my_bucket).end_date = OBJECT(TEMP.my_bucket).orig_end_date</do>
+                                      </then>
+                                    </if>
+                                    <if>
+                                      <condition>TEMP.current_matches == 0</condition>
+                                      <then>
+                                        <call_proc_for_current_object>
+                                          <name>'generate_acc_qual_group_proc'</name>
+                                          <param name='account_qualification_group'>OBJECT(TEMP.my_bucket).account_qualification_group</param>
+                                        </call_proc_for_current_object>
+                                        <do>TEMP.start_date_to_keep = OBJECT(TEMP.my_bucket).start_date</do>
+                                        <do>TEMP.end_date_to_keep = OBJECT(TEMP.my_bucket).end_date</do>
+                                        <do>TEMP.prorate_start_date_to_keep = OBJECT(TEMP.my_bucket).prorate_start_date</do>
+                                        <do>TEMP.prorate_end_date_to_keep = OBJECT(TEMP.my_bucket).prorate_end_date</do>
+                                      </then>
+                                      <else>
+                                        <!--<debug>'Creating child for ['~OBJECT(TEMP.my_bucket).start_date~']['~OBJECT(TEMP.my_bucket).end_date~']'</debug>-->
+
+                                        <print>'CALLING3 CREATE CHILD DECISION FOR id_acc ['~TEMP.id_acc~']'</print>
+                                        <call_proc_for_current_object>
+                                          <name>'create_child_decision'</name>
+                                          <param name='bucket_object'>TEMP.my_bucket</param>
+                                          <param name='bucket_overlay'>GLOBAL.calendar_overlay_object_id</param>
+                                          <param name='new_bucket_object'>TEMP.my_new_bucket</param>
+                                          <param name='delta_tracking_available'>0</param>
+                                          <param name='delta_tracking_on'>0</param>
+                                        </call_proc_for_current_object>
+                                        <print>'CALLING4 CREATE CHILD DECISION FOR id_acc ['~TEMP.id_acc~']'</print>
+                                        <if>
+                                          <condition>OBJECT(TEMP.my_new_bucket).prorate_start_date ne ''</condition>
+                                          <then>
+                                            <call_proc_for_current_object>
+                                              <name>'prorate_bucket'</name>
+                                              <param name='my_bucket'>TEMP.my_new_bucket</param>
+                                            </call_proc_for_current_object>
+                                          </then>
+                                        </if>
+                                        <do>OBJECT(TEMP.my_new_bucket).expiration_date = OBJECT(TEMP.my_new_bucket).end_date</do>
+                                        <!-- commenting this out because we want the decisions to expire on the end date until proven otherwise -->
+                                        <!--<date_add>
+                                          <input>OBJECT(TEMP.my_new_bucket).end_date</input>
+                                          <unit>TEMP.unit</unit>
+                                          <increment>TEMP.cycles</increment>
+                                          <increment>0</increment>
+                                          <output>OBJECT(TEMP.my_new_bucket).expiration_date</output>
+                                        </date_add>
+                                        <if>
+                                          <condition>TEMP.cycles eq '0'</condition>
+                                          <then>
+                                            <string_to_date>
+                                              <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+                                              <output>OBJECT(TEMP.my_new_bucket).expiration_date</output>
+                                            </string_to_date>
+                                          </then>
+                                        </if>-->
+                                        <do>OBJECT(TEMP.my_new_bucket).expired = '0'</do>
+                                      </else>
+                                    </if>
+                                    <do>TEMP.current_matches += 1</do>
+                                  </then>
+                                </if>
+                                <do>OBJECT(TEMP.my_bucket).start_date = OBJECT(TEMP.my_bucket).end_date</do>
+                                <date_add>
+                                  <input>OBJECT(TEMP.my_bucket).start_date</input>
+                                  <unit>TEMP.unit</unit>
+                                  <increment>TEMP.cycle_units_per_tier</increment>
+                                  <output>OBJECT(TEMP.my_bucket).end_date</output>
+                                </date_add>
+                              </loop>
+                            </while>
+
+                            <if>
+                              <condition>TEMP.current_matches GT 0</condition>
+                              <then>
+                                <do>OBJECT(TEMP.my_bucket).start_date = TEMP.start_date_to_keep</do>
+                                <do>OBJECT(TEMP.my_bucket).end_date = TEMP.end_date_to_keep</do>
+                                <do>OBJECT(TEMP.my_bucket).prorate_start_date = TEMP.prorate_start_date_to_keep</do>
+                                <do>OBJECT(TEMP.my_bucket).prorate_end_date = TEMP.prorate_end_date_to_keep</do>
+                                <do>OBJECT(TEMP.my_bucket).expiration_date = OBJECT(TEMP.my_bucket).end_date</do>
+                                <!-- commenting this out because we want the decisions to expire on the end date until proven otherwise -->
+                                <!--<date_add>
+                                  <input>OBJECT(TEMP.my_bucket).end_date</input>
+                                  <unit>TEMP.unit</unit>
+                                  <increment>TEMP.cycles</increment>
+                                  <output>OBJECT(TEMP.my_bucket).expiration_date</output>
+                                </date_add>
+                                <if>
+                                  <condition>TEMP.cycles eq '0'</condition>
+                                  <then>
+                                    <string_to_date>
+                                      <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+                                      <output>OBJECT(TEMP.my_bucket).expiration_date</output>
+                                    </string_to_date>
+                                  </then>
+                                </if>-->
+                                <do>OBJECT(TEMP.my_bucket).expired = '0'</do>
+                                <if>
+                                  <condition>OBJECT(TEMP.my_bucket).prorate_start_date ne ''</condition>
+                                  <then>
+                                    <call_proc_for_current_object>
+                                      <name>'prorate_bucket'</name>
+                                      <param name='my_bucket'>TEMP.my_bucket</param>
+                                    </call_proc_for_current_object>
+                                  </then>
+                                </if>
+                              </then>
+                              <else>
+                                <do>TEMP.keep_it = 0</do>
+                              </else>
+                            </if>
+                          </then>
+                        </if>
+
+                        <if>
+                          <condition>TEMP.keep_it == 1</condition>
+                          <then>
+
+
+                            <!--<index_insert>
+                              <index>'AGG_BUCKET_MAP'</index>
+                              <field name="bucket_object">OBJECT(TEMP.my_bucket).bucket_guid</field>
+                              <field name="bucket_object">TEMP.my_bucket</field>
+                            </index_insert>-->
+                            <index_insert>
+                              <index>'NAMES_BY_SUB'</index>
+                              <field name="id_sub">OBJECT(TEMP.rsched_csr).id_sub</field>
+                              <field name="id_pi_instance">OBJECT(TEMP.rsched_csr).id_pi_instance</field>
+                              <field name="tier_name">OBJECT(TEMP.my_bucket).tier_name</field>
+                              <field name="id_sched">OBJECT(TEMP.pt_row_csr).id_sched</field>
+                              <field name="n_order">OBJECT(TEMP.pt_row_csr).n_order</field>
+                              <field name="start_date">OBJECT(TEMP.my_bucket).start_date</field>
+                              <field name="end_date">OBJECT(TEMP.my_bucket).end_date</field>
+                            </index_insert>
+                            <call_proc_for_current_object>
+                              <name>'generate_acc_qual_group_proc'</name>
+                              <param name='account_qualification_group'>OBJECT(TEMP.my_bucket).account_qualification_group</param>
+                            </call_proc_for_current_object>
+                            <!--<print>'JONAH CALLING generate_acc_qual ['~OBJECT(TEMP.my_bucket).account_qualification_group~'] for id_acc ['~OBJECT(TEMP.my_bucket).id_acc~']'</print>-->
+                            <call_dynamic_proc_for_current_object>
+                              <name>'generate_acc_qual_'~OBJECT(TEMP.my_bucket).account_qualification_group</name>
+                              <param name='id_acc'>OBJECT(TEMP.my_bucket).id_acc</param>
+                              <param name='curr_decision'>TEMP.my_bucket</param>
+                            </call_dynamic_proc_for_current_object>
+
+                            <!--<print>'JONAH CALLING create_decision_dimension for  ['~OBJECT(TEMP.my_bucket).decision_unique_id~'] for priority ['~OBJECT(TEMP.my_bucket).tier_priority~']'</print>-->
+                            <call_proc_for_current_object>
+                              <name>'create_decision_dimension'</name>
+                              <param name='my_parent_bucket'>TEMP.my_bucket</param>
+                            </call_proc_for_current_object>
+
+                                        <!--<info>'1: ACCOUNTS_BY_AGG_BUCKET.insert('~OBJECT(TEMP.my_new_bucket).object_id~','~OBJECT(TEMP.child_accs).child_id_acc~')'</info>-->
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).tier_type Eq 'bulk_aggregate' and ((GLOBAL.split_bulk ne '1' and OBJECT(TEMP.my_bucket).split_bulk ne '1') or OBJECT(TEMP.my_bucket).split_bulk eq '0')</condition>
+                              <then>
+                                <do>TEMP.split_bulk_counter = ''</do>
+                                <!--<print>'BulkSplit 1'</print>-->
+                                <call_proc_for_current_object>
+                                  <name>'split_bulk_decision'</name>
+                                  <param name='bucket_object'>TEMP.my_bucket</param>
+                                  <param name='node_source_bucket_object'>TEMP.node_source_bucket_object</param>
+                                  <param name='node_target_bucket_object'>TEMP.node_target_bucket_object</param>
+                                  <param name='id_acc'>OBJECT(TEMP.my_bucket).id_acc</param>
+                                  <param name='node_id_acc'>OBJECT(TEMP.my_bucket).id_acc</param>
+                                  <param name='is_split_by_acc'>'0'</param>
+                                  <param name='split_bulk_counter'>TEMP.split_bulk_counter</param>
+                                </call_proc_for_current_object>
+                              </then>
+                            </if>
+                            
+                            <do>TEMP.split_bulk_counter = ''</do>
+                            <do>TEMP.node_target_bucket_object = ''</do>
+                            <do>TEMP.node_source_bucket_object = ''</do>
+                            <do>TEMP.node_id_acc = '-1'</do>
+                            <!--<print>'Looping through idacc ['~OBJECT(TEMP.my_bucket).id_acc~'] aqg ['~OBJECT(TEMP.my_bucket).account_qualification_group~']'</print>-->
+                            <index_select>
+                              <index>'ACC_QUAL_GROUPS'</index>
+                              <field name="id_acc">OBJECT(TEMP.my_bucket).id_acc</field>
+                              <field name="group">OBJECT(TEMP.my_bucket).account_qualification_group</field>
+                              <cursor>TEMP.child_accs</cursor>
+                              <loop>
+                                <!--<print>'With child id_acc ['~OBJECT(TEMP.child_accs).child_id_acc~']'</print>-->
+                                <if>
+                                  <condition>OBJECT(TEMP.child_accs).child_id_acc ne ''</condition>
+                                  <then>
+                                    <!--<info>'2:ACCOUNTS_BY_AGG_BUCKET.insert('~OBJECT(TEMP.my_bucket).object_id~','~OBJECT(TEMP.child_accs).child_id_acc~'), TEMP.my_bucket='~TEMP.my_bucket</info>-->
+
+                                    <if>
+                                      <condition>TEMP.node_id_acc eq '-1'</condition>
+                                      <then>
+                                        <do>TEMP.node_id_acc = OBJECT(TEMP.child_accs).child_id_acc</do>
+                                      </then>
+                                    </if>
+                                    <index_insert>
+                                      <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+                                      <field name="bucket_object">OBJECT(TEMP.my_bucket).object_id</field>
+                                      <field name="id_acc">OBJECT(TEMP.child_accs).child_id_acc</field>
+                                    </index_insert>
+                                    <!--<print>'Inserting child acc ['~OBJECT(TEMP.child_accs).child_id_acc~'] for decision ['~OBJECT(TEMP.my_bucket).decision_unique_id~']'</print>-->
+                                    <index_insert>
+                                      <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+                                      <field name="bucket_object">OBJECT(TEMP.my_bucket).object_id</field>
+                                      <field name="id_acc">OBJECT(TEMP.child_accs).child_id_acc</field>
+                                    </index_insert>
+                                    <if>
+                                      <condition>((GLOBAL.split_bulk eq '1' and OBJECT(TEMP.my_bucket).split_bulk ne '0') or OBJECT(TEMP.my_bucket).split_bulk eq '1') and OBJECT(TEMP.my_bucket).tier_type Eq 'bulk_aggregate'</condition>
+                                      <then>
+                                        <!--<print>'BulkSplit 2'</print>-->
+                                        <call_proc_for_current_object>
+                                          <name>'split_bulk_decision'</name>
+                                          <param name='bucket_object'>TEMP.my_bucket</param>
+                                          <param name='node_source_bucket_object'>TEMP.node_source_bucket_object</param>
+                                          <param name='node_target_bucket_object'>TEMP.node_target_bucket_object</param>
+                                          <param name='id_acc'>OBJECT(TEMP.child_accs).child_id_acc</param>
+                                          <param name='node_id_acc'>TEMP.node_id_acc</param>
+                                          <param name='is_split_by_acc'>'1'</param>
+                                          <param name='split_bulk_counter'>TEMP.split_bulk_counter</param>
+                                        </call_proc_for_current_object>
+                                      </then>
+                                    </if>
+                                  </then>
+                                </if>
+                              </loop>
+                            </index_select>
+                            
+                            <!--<do>OBJECT(TEMP.my_bucket).decision_unique_id = OBJECT(TEMP.my_bucket).id_acc~'|'~OBJECT(TEMP.my_bucket).id_sub~'|'~OBJECT(TEMP.my_bucket).start_date~'|'~OBJECT(TEMP.my_bucket).id_po~'|'~OBJECT(TEMP.my_bucket).id_sched~'|'~OBJECT(TEMP.my_bucket).n_order~'|'~OBJECT(TEMP.my_bucket).tt_start~'|'~OBJECT(TEMP.my_bucket).tier_column_group~'|'~OBJECT(TEMP.my_bucket).tier_priority</do>-->
+                            <call_proc_for_object>
+                              <name>'set_decision_unique_id'</name>
+                              <object_id>TEMP.my_bucket</object_id>
+                            </call_proc_for_object>
+                            <!--<print>'DONE with idacc ['~OBJECT(TEMP.my_bucket).id_acc~'] aqg ['~OBJECT(TEMP.my_bucket).account_qualification_group~']'</print>-->
+                            <index_select>
+                              <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+                              <field name="bucket_object">OBJECT(TEMP.my_bucket).object_id</field>
+                              <cursor>TEMP.child_accs</cursor>
+                              <then>
+                                <index_insert>
+                                  <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+                                  <field name="bucket_object">OBJECT(TEMP.my_bucket).object_id</field>
+                                  <field name="tier_priority">OBJECT(TEMP.my_bucket).tier_priority</field>
+                                </index_insert>
+                              </then>
+                            </index_select>
+                          </then>
+                        </if>
+                      </then>
+                    </if>
+                  </loop>
+                </index_select>
+              </loop>
+            </db_select_dynamic>
+          </then>
+        </index_select>
+      </loop>
+    </db_select>
+  </proc>
+
+</procs>

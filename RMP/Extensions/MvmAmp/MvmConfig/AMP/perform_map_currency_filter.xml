@@ -1,0 +1,79 @@
+<procs>
+  <proc name='perform_map_currency_filter'>
+
+    <if>
+      <condition>OBJECT.tier_currency ne ''</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'convert_to_enum'</name>
+          <param name='value'>OBJECT.tier_currency</param>
+          <param name='namespace'>''</param>
+          <param name='success'>TEMP.enum_success</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+
+    <if>
+      <condition>OBJECT.back_distribute_currency ne ''</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'convert_to_enum'</name>
+          <param name='value'>OBJECT.back_distribute_currency</param>
+          <param name='namespace'>''</param>
+          <param name='success'>TEMP.enum_success</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+    
+    <if>
+      <condition>OBJECT.decision_currency ne ''</condition>
+      <then>
+
+        <call_proc_for_current_object>
+          <name>'convert_to_enum'</name>
+          <param name='value'>OBJECT.decision_currency</param>
+          <param name='namespace'>''</param>
+          <param name='success'>TEMP.enum_success</param>
+        </call_proc_for_current_object>
+
+        <call_proc_for_current_object>
+          <name>'get_id_acc_object'</name>
+          <param name='id_acc'>OBJECT.id_acc</param>
+          <param name='id_acc_object'>TEMP.my_account</param>
+        </call_proc_for_current_object>
+        <if>
+          <condition>OBJECT(TEMP.my_account).overlay_t_av_internal eq ''</condition>
+          <then>
+            <db_select>
+              <login_object>GLOBAL.target_login</login_object>
+              <query>
+  "select a.c_currency 
+                from t_av_internal a 
+                /*inner join t_description c on c.id_desc = a.c_Currency and c.id_lang_code = 840*/
+                where a.id_acc = $${OBJECT.id_acc}"
+              </query>
+              <cursor>TEMP.output_csr</cursor>
+              <loop>
+                <do>OBJECT(TEMP.my_account).overlay_t_av_internal = '1'</do>
+                <inherit_object>
+                  <source>TEMP.output_csr</source>
+                  <target>TEMP.my_account</target>
+                </inherit_object>
+              </loop>
+            </db_select>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT.decision_currency ne '' and OBJECT(TEMP.my_account).c_currency ne '' and OBJECT.decision_currency Ne OBJECT(TEMP.my_account).c_currency</condition>
+          <then>
+		    <print>'Mismatched currencies: '~OBJECT.decision_currency~' AND '~OBJECT(TEMP.my_account).c_currency</print>
+            <do>OBJECT.discard_decision = 1</do>
+          </then>
+		  <else>
+		    <print>'Matched currencies: '~OBJECT.decision_currency~' AND '~OBJECT(TEMP.my_account).c_currency</print>
+		  </else>
+        </if>
+      </then>
+    </if>
+  </proc>
+</procs>

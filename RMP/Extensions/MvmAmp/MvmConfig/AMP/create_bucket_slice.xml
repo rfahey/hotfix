@@ -1,0 +1,51 @@
+<proc name="create_bucket_slice">
+  <param name="bucket_object"/>
+  <param name="bucket_slice_object" mode="out"/>
+  <param name="usage_object"/>
+
+
+      <spawn>
+        <internal_type>'format_array_delta'</internal_type>
+        <object_type>'TIER_BUCKET'</object_type>
+        <object_id>TEMP.bucket_slice_object</object_id>
+        <delta_tracking_support>'1'</delta_tracking_support>
+        <delta_tracking_on>'1'</delta_tracking_on>
+      </spawn>
+      <do>object_delta_set_state(TEMP.bucket_slice_object,'SettingNew')</do>
+      <object_delta_add_table>
+        <object_id>TEMP.bucket_slice_object</object_id>
+        <table_name>'AGG_DECISION_AUDIT_TRAIL'</table_name>
+      </object_delta_add_table>
+      <inherit_object>
+        <source>TEMP.bucket_object</source>
+        <target>TEMP.bucket_slice_object</target>
+      </inherit_object>
+  <print>"Bucket info object ["~dump_object(TEMP.bucket_object)~"] created ["~dump_object(TEMP.bucket_slice_object)~"]"</print>
+
+          <call_proc_for_current_object>
+            <name>'find_bucket_dates'</name>
+            <param name='bucket_object'>TEMP.bucket_slice_object</param>
+            <param name='usage_object'>TEMP.usage_object</param>
+            <param name='found_bucket'>TEMP.found_bucket</param>
+          </call_proc_for_current_object>
+  <if>
+    <condition>TEMP.found_bucket eq '1'</condition>
+    <then>
+      <index_insert>
+        <index>'CACHED_BUCKET_SLICES'</index>
+        <field name="bucket_object">TEMP.bucket_object</field>
+        <field name="start_date">TEMP.start_date</field>
+        <field name="bucket_object_slice">TEMP.bucket_slice_object</field>
+      </index_insert>
+    </then>
+    <else>
+      <!--<print>'May need to clear out the slice object here!'</print>-->
+      <do>TEMP.bucket_slice_object = ''</do>
+    </else>
+  </if>
+
+  <print>"Bucket slice object created ["~dump_object(TEMP.bucket_slice_object)~"]"</print>
+
+  
+  
+</proc>

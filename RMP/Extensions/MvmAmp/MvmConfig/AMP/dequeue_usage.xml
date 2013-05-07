@@ -1,0 +1,170 @@
+<proc name="dequeue_usage">
+  <param name='do_dequeue' default='1'/>
+
+  <run_once>
+    <if>
+      <condition>GLOBAL.usage_queue eq ''</condition>
+      <then>
+
+        <print>'Lookup usage_queue in database...'</print>
+
+        <spawn>
+          <object_type>'USAGE_QUEUE'</object_type>
+          <object_id>GLOBAL.usage_queue</object_id>
+        </spawn>
+        <index_insert>
+          <index>'GLOBAL_OBJECTS'</index>
+          <field name="object_id">GLOBAL.usage_queue</field>
+        </index_insert>
+
+        <do>OBJECT(GLOBAL.usage_queue).prefetch_count='100'</do>
+        <do>OBJECT(GLOBAL.usage_queue).auto_ack='0'</do>
+        <do>OBJECT(GLOBAL.usage_queue).dequeue_auto_ack='1'</do>
+        <do>OBJECT(GLOBAL.usage_queue).dequeue_timeout_ms='100'</do>
+
+        <!--<print>'GLOBAL.logical_cluster='~GLOBAL.logical_cluster</print>-->
+
+        <do>
+          TEMP.query= "select q.queue, n.rabbitmq_nodename,n.username,n.password,n.server,n.port,n.vhost
+          from mvm_rabbitmq_map m
+          inner join t_rabbitmq_queues q on m.queue=q.queue
+          inner join t_rabbitmq_nodes n on q.rabbitmq_nodename=n.rabbitmq_nodename
+          where m.queue_type='usage' and m.logical_cluster=$${GLOBAL.logical_cluster}
+          "
+        </do>
+        <db_select>
+          <query>TEMP.query</query>
+          <cursor>TEMP.csr</cursor>
+          <then>
+            <do>TEMP.rabbitmq_nodename=OBJECT(TEMP.csr).rabbitmq_nodename</do>
+            <do>TEMP.username=nvl(OBJECT(TEMP.csr).username,'guest')</do>
+            <do>TEMP.password=nvl(OBJECT(TEMP.csr).password,'guest')</do>
+            <!--<print>'got password='~TEMP.password</print>
+            <print>'got rabbitmq_nodename='~TEMP.rabbitmq_nodename</print>-->
+            <if>
+              <condition>starts_with(TEMP.password,'encrypted:')</condition>
+              <then>
+                <do>TEMP.encrypted=substr(TEMP.password,10)</do>
+                <!--<print>'got encrypted=['~TEMP.encrypted~']'</print>-->
+                <do>TEMP.password=decrypt(TEMP.encrypted)</do>
+                <!--<print>'got decrypted=['~TEMP.password~']'</print>-->
+              </then>
+              <else>
+                <do>TEMP.encrypted='encrypted:'~encrypt(TEMP.password)</do>
+                <!--<print>'got encrypted=['~TEMP.encrypted~']'</print>-->
+                <db_execute>
+                  <statement>
+                    'update t_rabbitmq_nodes set password=$${TEMP.encrypted} where rabbitmq_nodename=$${TEMP.rabbitmq_nodename} and password=$${TEMP.password}'
+                  </statement>
+                  <num_rows>TEMP.num_rows</num_rows>
+                </db_execute>
+                <if>
+                  <condition>TEMP.num_rows</condition>
+                  <then>
+                    <print>'Looks like we encrypted the queue password.'</print>
+                  </then>
+                </if>
+              </else>
+            </if>
+
+            <do>TEMP.server=nvl(OBJECT(TEMP.csr).server,'localhost')</do>
+            <do>TEMP.port=nvl(OBJECT(TEMP.csr).port,'5672')</do>
+            <do>TEMP.vhost=nvl(OBJECT(TEMP.csr).vhost,'%2f')</do>
+            <do>OBJECT(GLOBAL.usage_queue).queue=OBJECT(TEMP.csr).queue</do>
+            <do>
+              OBJECT(GLOBAL.usage_queue).uri=
+              'amqp://'
+              ~ TEMP.username
+              ~ ':' ~TEMP.password
+              ~ '@' ~TEMP.server
+              ~ ':' ~TEMP.port
+              ~ '/' ~TEMP.vhost
+            </do>
+          </then>
+          <else>
+            <fatal>'Error, could not find entry for queue_type=[usage] query=['~TEMP.query~'] logical_cluster=['~GLOBAL.logical_cluster~']'</fatal>
+          </else>
+        </db_select>
+
+      </then>
+      <else>
+        <print>'Using preset usage_queue...'</print>
+      </else>
+    </if>
+
+    <print>'usage queue:'~dump_object(GLOBAL.usage_queue)</print>
+
+  </run_once>
+
+  <while>
+    <condition>TEMP.do_dequeue</condition>
+    <loop>
+
+      <rabbitmq_dequeue>
+        <rabbitmq_object>GLOBAL.usage_queue</rabbitmq_object>
+        <got_message>TEMP.got_message</got_message>
+        <using_mvm_format_id>
+          <internal_type>'format_array_delta'</internal_type>
+          <!--<feedback_name>OBJECT(TEMP.tau_csr).id_view</feedback_name> // this is a problem... for now you can use no feedback name.-->
+          <object_type>'USAGE_EVENT'</object_type>
+          <object_id>TEMP.usg</object_id>
+        </using_mvm_format_id>
+      </rabbitmq_dequeue>
+
+
+      <if>
+        <condition>TEMP.got_message</condition>
+        <then>
+          <!--<print>'dequeued ['~dump_object(TEMP.usg)~']'</print>-->
+
+          <if>
+            <condition>OBJECT(TEMP.usg).id_se eq ''</condition>
+            <then>
+              <do>OBJECT(TEMP.usg).id_se = OBJECT(TEMP.usg).id_payee</do>
+            </then>
+          </if>
+
+          <if>
+            <condition>OBJECT(TEMP.usg).id_sess eq ''</condition>
+            <then>
+              <call_proc_for_current_object>
+                <name>'next_id_sess'</name>
+                <param name="batch_size">100</param>
+                <param name="id_sess">OBJECT(TEMP.usg).id_sess</param>
+              </call_proc_for_current_object>
+              <!--<print>'Assigned new id_sess=['~OBJECT(TEMP.usg).id_sess~']'</print>-->
+            </then>
+          </if>
+
+          <do>object_delta_set_state(TEMP.usg,'SettingNew')</do>
+          <call_proc_for_current_object>
+            <name>'determine_account_resolution_node'</name>
+            <param name='id_acc'>OBJECT(TEMP.usg).id_acc</param>
+            <param name='logical_instance_id'>TEMP.logical_instance_id</param>
+          </call_proc_for_current_object>
+          <!--<print>'My logical instance is ['~TEMP.logical_instance_id~']'</print>-->
+          <send_proc_call>
+            <name>'resolve_account_and_route_to_logical_node'</name>
+            <object_id>TEMP.usg</object_id>
+            <logical_node_id>TEMP.logical_instance_id</logical_node_id>
+            <priority>50</priority>
+          </send_proc_call>
+          <!--<print>'My logical instance is now ['~TEMP.logical_instance_id~']'</print>-->
+          <yield_to_higher_priority_work>
+            <did_yield>TEMP.junk</did_yield>
+          </yield_to_higher_priority_work>
+
+        </then>
+        <else>
+          <yield_to_higher_priority_work>
+            <did_yield>TEMP.junk</did_yield>
+          </yield_to_higher_priority_work>
+          <print>'rabbit queue empty'</print>
+          <sleep>100</sleep>
+        </else>
+      </if>
+    </loop>
+  </while>
+
+
+</proc>

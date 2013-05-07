@@ -1,0 +1,29 @@
+<procs>
+  <proc name ='persist_field_formats_to_db'>
+    <index_select_keys>
+      <index>'FIELD_FORMATS'</index>
+      <cursor>TEMP.my_field_audits</cursor>
+      <loop>
+        <index_select>
+          <index>'FIELD_FORMATS'</index>
+          <field name='field_audit'>OBJECT(TEMP.my_field_audits).field_audit</field>
+          <cursor>TEMP.format_csr</cursor>
+          <loop>
+            <if>
+              <condition>OBJECT(TEMP.format_csr).is_persisted == '0'</condition>
+              <then>
+                <db_bulk_insert>
+                  <login_object>GLOBAL.target_login</login_object>
+                  <name>'AGG_FIELD_FORMATS'</name>
+                  <object_id>TEMP.format_csr</object_id>
+                </db_bulk_insert>
+              </then>
+            </if>
+          </loop>
+        </index_select>
+      </loop>
+    </index_select_keys>
+    <db_bulk_insert_flush_all/>
+  </proc>
+
+</procs>

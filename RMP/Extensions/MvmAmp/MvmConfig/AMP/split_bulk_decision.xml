@@ -1,0 +1,149 @@
+<procs>
+  <proc name='split_bulk_decision'>
+    <param name='bucket_object'/>
+    <param name='node_target_bucket_object'  mode='in out'/>
+    <param name='node_source_bucket_object'  mode='in out'/>
+    <param name='id_acc'/>
+    <param name='node_id_acc' mode='in out'/>
+    <param name='is_split_by_acc'/>
+    <param name='split_bulk_counter' mode='in out'/>
+    
+    
+    <do>TEMP.spawn_decision = 0</do>
+    <do>TEMP.optional_split = 0</do>
+    <!--<print>'Splitting bulk decision id_acc ['~TEMP.id_acc~'], node acc ['~TEMP.node_id_acc~'], counter ['~TEMP.split_bulk_counter~'], bucket ['~TEMP.bucket_object~'], source ['~TEMP.node_source_bucket_object~'], is_split ['~TEMP.is_split_by_acc~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+    <if>
+      <condition>TEMP.node_id_acc eq ''</condition>
+      <then>
+        <do>TEMP.node_id_acc = TEMP.id_acc</do>
+        <do>TEMP.spawn_decision = 1</do>
+      </then>
+    </if>
+
+    <if>
+      <condition>TEMP.split_bulk_counter eq ''</condition>
+      <then>
+        <print>'Starting bulk counter ['~TEMP.split_bulk_counter~']'</print>
+        <do>TEMP.split_bulk_counter = 0</do>
+        <do>TEMP.node_id_acc = TEMP.id_acc</do>
+        <do>TEMP.spawn_decision = 1</do>
+      </then>
+    </if>
+
+    <do>TEMP.split_bulk_counter += 1</do>
+    <if>
+      <condition>TEMP.split_bulk_counter GTE GLOBAL.split_bulk_threshold</condition>
+      <then>
+        <print>'Flipping bulk counter ['~TEMP.split_bulk_counter~']'</print>
+        <do>TEMP.node_id_acc = TEMP.id_acc</do>
+        <do>TEMP.spawn_decision = 1</do>
+        <do>TEMP.optional_split = 1</do>
+        <do>OBJECT(TEMP.node_source_bucket_object).hard_audit_point = '1'</do>
+        <do>OBJECT(TEMP.bucket_object).hard_audit_point = '1'</do>
+      </then>
+    </if>
+
+	<do>OBJECT(TEMP.bucket_object).orig_tier_start = OBJECT(TEMP.bucket_object).tier_start</do>
+	<do>OBJECT(TEMP.bucket_object).orig_tier_end = OBJECT(TEMP.bucket_object).tier_end</do>
+
+    <if>
+      <condition>TEMP.spawn_decision eq '1'</condition>
+      <then>
+        <print>'Creating new bulk decision!'</print>
+        <do>OBJECT(TEMP.bucket_object).orig_tier_priority = (OBJECT(TEMP.bucket_object).orig_tier_priority==''?OBJECT(TEMP.bucket_object).tier_priority:OBJECT(TEMP.bucket_object).orig_tier_priority)</do>
+        <do>OBJECT(TEMP.bucket_object).tier_priority = OBJECT(TEMP.bucket_object).orig_tier_priority - 0.0000001</do>
+        
+    <do>OBJECT(GLOBAL.bulk_overlay_object_id).tier_priority = OBJECT(TEMP.bucket_object).orig_tier_priority - 0.0000002</do>
+    <do>OBJECT(GLOBAL.bulk_overlay_object_id).id_acc = TEMP.node_id_acc</do>
+    <do>OBJECT(GLOBAL.bulk_overlay_object_id).account_qualification_group = OBJECT(TEMP.bucket_object).account_qualification_group</do>
+    <if>
+      <condition>TEMP.is_split_by_acc eq '1'</condition>
+      <then>
+        <do>OBJECT(GLOBAL.bulk_overlay_object_id).account_qualification_group = 'bulk_node'</do>
+        <do>OBJECT(GLOBAL.bulk_target_overlay_object_id).account_qualification_group = 'bulk_node'</do>
+      </then>
+      <else>
+        <do>OBJECT(GLOBAL.bulk_overlay_object_id).account_qualification_group = OBJECT(TEMP.bucket_object).account_qualification_group</do>
+        <do>OBJECT(GLOBAL.bulk_target_overlay_object_id).account_qualification_group = OBJECT(TEMP.bucket_object).account_qualification_group</do>
+      </else>
+    </if>
+        <do>OBJECT(GLOBAL.bulk_overlay_object_id).tier_category = 'b'</do>
+    
+    <call_proc_for_current_object>
+      <name>'create_child_decision'</name>
+      <param name='bucket_object'>TEMP.bucket_object</param>
+      <param name='bucket_overlay'>GLOBAL.bulk_overlay_object_id</param>
+      <param name='new_bucket_object'>TEMP.my_newer_bucket</param>
+      <param name='delta_tracking_available'>1</param>
+      <param name='delta_tracking_on'>0</param>
+    </call_proc_for_current_object>
+    <do>OBJECT(TEMP.my_newer_bucket).next_dimension = TEMP.bucket_object</do>
+    <do>OBJECT(TEMP.my_newer_bucket).aggregate_to_parent = '1'</do>
+	<do>OBJECT(TEMP.my_newer_bucket).orig_tier_start = OBJECT(TEMP.bucket_object).orig_tier_start</do>
+	<do>OBJECT(TEMP.my_newer_bucket).orig_tier_end = OBJECT(TEMP.bucket_object).orig_tier_end</do>
+        
+
+
+        <do>TEMP.node_source_bucket_object = TEMP.my_newer_bucket</do>
+        <if>
+          <condition>TEMP.optional_split eq '1'</condition>
+          <then>
+            <do>TEMP.split_bulk_counter = 0</do>
+            <do>OBJECT(TEMP.node_source_bucket_object).hard_audit_point = '1'</do>
+            <do>OBJECT(TEMP.bucket_object).hard_audit_point = '1'</do>
+          </then>
+        </if>
+
+    <do>OBJECT(GLOBAL.bulk_target_overlay_object_id).id_acc = TEMP.id_acc</do>
+    <do>OBJECT(GLOBAL.bulk_target_overlay_object_id).tier_priority = OBJECT(TEMP.bucket_object).orig_tier_priority</do>
+    <do>OBJECT(GLOBAL.bulk_target_overlay_object_id).tier_category = 'a'</do>
+    <call_proc_for_current_object>
+      <name>'create_child_decision'</name>
+      <param name='bucket_object'>TEMP.bucket_object</param>
+      <param name='bucket_overlay'>GLOBAL.bulk_target_overlay_object_id</param>
+      <param name='new_bucket_object'>TEMP.my_newer_bucket</param>
+      <param name='delta_tracking_available'>1</param>
+      <param name='delta_tracking_on'>0</param>
+    </call_proc_for_current_object>
+        <do>OBJECT(TEMP.my_newer_bucket).hard_audit_point = '0'</do>
+    <do>OBJECT(TEMP.my_newer_bucket).previous_dimension = TEMP.bucket_object</do>
+        <do>OBJECT(TEMP.my_newer_bucket).bulk_source_obj_id = TEMP.node_source_bucket_object</do>
+        <do>OBJECT(TEMP.node_source_bucket_object).bulk_target_obj_id = TEMP.my_newer_bucket</do>
+		<do>OBJECT(TEMP.my_newer_bucket).orig_tier_start = OBJECT(TEMP.bucket_object).orig_tier_start</do>
+	<do>OBJECT(TEMP.my_newer_bucket).orig_tier_end = OBJECT(TEMP.bucket_object).orig_tier_end</do>
+
+        <do>TEMP.node_target_bucket_object = TEMP.my_newer_bucket</do>
+    
+      </then>
+      <else>
+        <c>Just adding an id_acc to an existing bulk_node</c>
+        <index_insert>
+          <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          <field name="bucket_object">TEMP.node_source_bucket_object</field>
+          <field name="id_acc">TEMP.id_acc</field>
+        </index_insert>
+        <index_insert>
+          <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+          <field name="bucket_object">TEMP.node_source_bucket_object</field>
+          <field name="id_acc">TEMP.id_acc</field>
+        </index_insert>
+
+        <index_insert>
+          <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          <field name="bucket_object">TEMP.node_target_bucket_object</field>
+          <field name="id_acc">TEMP.id_acc</field>
+        </index_insert>
+        <index_insert>
+          <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+          <field name="bucket_object">TEMP.node_target_bucket_object</field>
+          <field name="id_acc">TEMP.id_acc</field>
+        </index_insert>
+      </else>
+    </if>
+
+    <!--<print>'DONE Splitting bulk decision id_acc ['~TEMP.id_acc~'], node acc ['~TEMP.node_id_acc~'], counter ['~TEMP.split_bulk_counter~'], bucket ['~TEMP.bucket_object~'], source ['~TEMP.node_source_bucket_object~'], is_split ['~TEMP.is_split_by_acc~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+
+
+  </proc>
+
+</procs>

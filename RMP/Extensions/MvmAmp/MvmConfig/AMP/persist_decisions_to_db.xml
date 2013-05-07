@@ -1,0 +1,136 @@
+<procs>
+  <proc name ='persist_decisions_to_db'>
+    <initialize>
+      <define_memory_index>
+        <index>'CURRENT_DECISIONS'</index>
+        <key_field>'decision_unique_id'</key_field>
+        <field>'start_date'</field>
+        <field>'end_date'</field>
+      </define_memory_index>
+    </initialize>
+
+    <index_clear>
+      <index>'CURRENT_DECISIONS'</index>
+    </index_clear>
+    
+    <index_select_keys>
+      <index>'CURRENT_WORK'</index>
+      <cursor>TEMP.my_curr_work_csr</cursor>
+      <loop>
+        <do>TEMP.my_curr_work = OBJECT(TEMP.my_curr_work_csr).bucket_object</do>
+
+        <index_select>
+          <index>'CURRENT_DECISIONS'</index>
+          <field name='decision_unique_id'>OBJECT(TEMP.my_curr_work).decision_unique_id</field>
+          <cursor>TEMP.dec_csr</cursor>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.dec_csr).end_date lt OBJECT(TEMP.my_curr_work).end_date</condition>
+              <then>
+                <index_remove>
+                  <index>'CURRENT_DECISIONS'</index>
+                  <field name='decision_unique_id'>OBJECT(TEMP.my_curr_work).decision_unique_id</field>
+                </index_remove>
+                <index_insert>
+                  <index>'CURRENT_DECISIONS'</index>
+                  <field name='decision_unique_id'>OBJECT(TEMP.my_curr_work).decision_unique_id</field>
+                  <field name='start_date'>OBJECT(TEMP.my_curr_work).start_date</field>
+                  <field name='end_date'>OBJECT(TEMP.my_curr_work).end_date</field>
+                </index_insert>
+              </then>
+            </if>
+          </then>
+          <else>
+            <index_insert>
+              <index>'CURRENT_DECISIONS'</index>
+              <field name='decision_unique_id'>OBJECT(TEMP.my_curr_work).decision_unique_id</field>
+              <field name='start_date'>OBJECT(TEMP.my_curr_work).start_date</field>
+              <field name='end_date'>OBJECT(TEMP.my_curr_work).end_date</field>
+            </index_insert>
+          </else>
+        </index_select>
+      </loop>
+    </index_select_keys>
+
+    <index_select_keys>
+      <index>'CURRENT_WORK'</index>
+      <cursor>TEMP.my_curr_work_csr</cursor>
+      <loop>
+        <do>TEMP.my_curr_work = OBJECT(TEMP.my_curr_work_csr).bucket_object</do>
+        <if>
+          <condition>OBJECT(TEMP.my_curr_work).expiration_date lte GLOBAL.interval_end_date</condition>
+          <then>
+            <do>OBJECT(TEMP.my_curr_work).expired = '1'</do>
+          </then>
+        </if>
+        <if>
+          <condition>(OBJECT(TEMP.my_curr_work).intervals_remaining eq '0' or OBJECT(TEMP.my_curr_work).intervals_remaining eq '') and OBJECT(TEMP.my_curr_work).cycle_unit_type Eq 'interval'</condition>
+          <then>
+            <do>OBJECT(TEMP.my_curr_work).expired = '1'</do>
+          </then>
+        </if>
+        <do>OBJECT(TEMP.my_curr_work).audit_only = '0'</do>
+        <index_select>
+          <index>'CURRENT_DECISIONS'</index>
+          <field name='decision_unique_id'>OBJECT(TEMP.my_curr_work).decision_unique_id</field>
+          <cursor>TEMP.dec_csr</cursor>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.my_curr_work).end_date eq OBJECT(TEMP.dec_csr).end_date</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.my_curr_work).expired eq '1'</condition>
+                  <then>
+                    <do>OBJECT(TEMP.my_curr_work).expired = '0'</do>
+                    <do>OBJECT(TEMP.my_curr_work).audit_only = '1'</do>
+                  </then>
+                  <else>
+                    <do>OBJECT(TEMP.my_curr_work).audit_only = '2'</do>
+                  </else>
+                </if>
+              </then>
+            </if>
+          </then>
+        </index_select>
+
+        <if>
+          <condition>OBJECT(TEMP.my_curr_work).tier_category Eq 'a'</condition>
+          <then>
+            <do>OBJECT(TEMP.my_curr_work).parent_decision_unique_id = OBJECT(OBJECT(TEMP.my_curr_work).previous_dimension).decision_unique_id</do>
+          </then>
+        </if>
+
+        <if>
+          <condition>OBJECT(TEMP.my_curr_work).tier_category Eq 'b'</condition>
+          <then>
+            <do>OBJECT(TEMP.my_curr_work).parent_decision_unique_id = OBJECT(OBJECT(TEMP.my_curr_work).next_dimension).decision_unique_id</do>
+          </then>
+        </if>
+
+		<if>
+          <condition>OBJECT(TEMP.my_curr_work).orig_tier_start ne ''</condition>
+          <then>
+            <do>OBJECT(TEMP.my_curr_work).tier_start = OBJECT(TEMP.my_curr_work).orig_tier_start</do>
+			<do>OBJECT(TEMP.my_curr_work).tier_end = OBJECT(TEMP.my_curr_work).orig_tier_end</do>
+          </then>
+        </if>
+
+
+        <db_upsert>
+          <login_object>GLOBAL.target_login</login_object>
+          <name>'AGG_DECISION_AUDIT_TRAIL'</name>
+          <object_id>TEMP.my_curr_work</object_id>
+          <!--<regex pattern="^(.*)$">OBJECT(TEMP.bucket).$1</regex>-->
+        </db_upsert>
+        
+        <!--<db_bulk_insert>
+          <login_object>GLOBAL.target_login</login_object>
+          <name>'AGG_DECISION_AUDIT_TRAIL'</name>
+          <object_id>TEMP.my_curr_work</object_id>
+        </db_bulk_insert>-->
+      </loop>
+    </index_select_keys>
+    <!--<db_bulk_insert_flush_all/>-->
+  </proc>
+
+</procs>

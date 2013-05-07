@@ -1,0 +1,454 @@
+<procs>
+  <proc name="normalize_audit_trail_for_payee">
+    <param name='id_payee'/>
+    <param name='id_interval'/>
+
+    <initialize>
+      <define_memory_index>
+        <index>'DUMMY_ID_ACC'</index>
+        <key_field>'id_acc'</key_field>
+      </define_memory_index>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select a.charge_qualification_group, b.id_view, a.charge_name from charge_qualification_groups a inner join t_prod_view b on lower(b.nm_table_name) = lower('t_pv_'||a.productview_name) where charge_name != 'normalize'"
+        </query>
+        <query type="sql">
+          "select a.charge_qualification_group, b.id_view, a.charge_name from charge_qualification_groups a inner join t_prod_view b on lower(b.nm_table_name) = lower('t_pv_'+a.productview_name) where charge_name != 'normalize' and 1=0"
+        </query>
+        <cursor>TEMP.csr</cursor>
+        <run>
+          <create_memory_index_from_cursor>
+            <index>'CQG_CHARGE_LOOKUP'</index>
+            <cursor>TEMP.csr</cursor>
+            <key_field>'charge_qualification_group'</key_field>
+            <key_field>'id_view'</key_field>
+          </create_memory_index_from_cursor>
+        </run>
+      </db_select>
+
+      <do>OBJECT(GLOBAL.counter_object).normalize_audit_counter = '1'</do>
+
+    </initialize>
+
+    <do>OBJECT(GLOBAL.counter_object).normalize_audit_counter += 1</do>
+
+    <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).normalize_audit_timer'>
+
+      <index_clear>
+        <index>'DUMMY_ID_ACC'</index>
+      </index_clear>
+
+      <index_insert>
+        <index>'DUMMY_ID_ACC'</index>
+        <field name="id_acc">TEMP.id_payee</field>
+      </index_insert>
+
+      <index_select_keys>
+        <index>'DUMMY_ID_ACC'</index>
+        <cursor>TEMP.id_acc_csr</cursor>
+        <then>
+          <call_proc_for_current_object>
+            <name>'get_usage_hook'</name>
+            <param name="hook_id">GLOBAL.usage_hook_id</param>
+            <param name="id_acc_csr">TEMP.id_acc_csr</param>
+            <param name="id_usage_interval">TEMP.id_interval</param>
+          </call_proc_for_current_object>
+        </then>
+      </index_select_keys>
+
+
+      <usage_hook_select>
+        <hook_id>GLOBAL.usage_hook_id</hook_id>
+        <cursor>TEMP.usg_csr</cursor>
+        <loop>
+          <do>TEMP.hookctr+=1</do>
+
+          <!-- here we need to normalize the before and after for each decision that applied to the event and put the before and after values into the normalized table-->
+          <!-- so we need to see the audit trail as it exists in the DB. Dunno if we can see that by default. -->
+          <spawn>
+            <internal_type>'format_array_delta'</internal_type>
+            <feedback_name>'NORMALIZE_IDVIEW_'~OBJECT(TEMP.usg_csr).id_view</feedback_name>
+            <object_type>'NORMALIZE_TYPE'</object_type>
+            <object_id>TEMP.spawned_object</object_id>
+          </spawn>
+          <do>object_delta_set_state(TEMP.spawned_object,'SettingPersisted')</do>
+          <inherit_object>
+            <source>TEMP.usg_csr</source>
+            <target>TEMP.spawned_object</target>
+          </inherit_object>
+          <do>object_delta_set_state(TEMP.spawned_object,'SettingNew')</do>
+
+          <object_delta_get_persisted>
+            <object_id>TEMP.usg_csr</object_id>
+            <field_name>'agg_applied_tier_counter'</field_name>
+            <value>TEMP.applied_tiers</value>
+          </object_delta_get_persisted>
+
+          <do>OBJECT(TEMP.spawned_object).agg_applied_tier_counter = TEMP.applied_tiers</do>
+
+          <do>OBJECT(TEMP.spawned_object).master_amount_pre = 'normalize'</do>
+
+          <object_delta_get_persisted>
+            <object_id>TEMP.usg_csr</object_id>
+            <field_name>'last_modified'</field_name>
+            <value>OBJECT(TEMP.spawned_object).dt_create</value>
+          </object_delta_get_persisted>
+
+          <do>OBJECT(TEMP.spawned_object).dt_mod = OBJECT(TEMP.spawned_object).dt_create</do>
+          <do>TEMP.curr_tier = 1</do>
+          <!--<while>
+          <condition>TEMP.curr_tier LTE TEMP.applied_tiers</condition>
+          <loop>-->
+          <if>
+            <condition>TEMP.applied_tiers GTE '1'</condition>
+            <then>
+
+              <call_dynamic_proc_for_object>
+                <name>'normalize_charge_qual_normalize_'~OBJECT(TEMP.spawned_object).id_view</name>
+                <object_id>TEMP.spawned_object</object_id>
+              </call_dynamic_proc_for_object>
+             
+
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_1_amount_before'</field_name>
+                <value>OBJECT(TEMP.spawned_object).amount_before</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_1_amount_after'</field_name>
+                <value>OBJECT(TEMP.spawned_object).amount_after</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_1_perc_elig'</field_name>
+                <value>OBJECT(TEMP.spawned_object).percent_eligible</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_1_id'</field_name>
+                <value>OBJECT(TEMP.spawned_object).decision_unique_id</value>
+              </object_delta_get_persisted>
+
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_1_cqg'</field_name>
+                <value>OBJECT(TEMP.spawned_object).decision_cqg</value>
+              </object_delta_get_persisted>
+
+              <!-- since this is the first, use the amount_before as the orig_amount. A little cheat... -->
+              <do>OBJECT(TEMP.spawned_object).orig_amount = OBJECT(TEMP.spawned_object).amount_before</do>
+
+              <split>
+                <source>OBJECT(TEMP.spawned_object).decision_unique_id</source>
+                <delimiter>"|"</delimiter>
+                <limit>9</limit>
+                <target>OBJECT(TEMP.spawned_object).decision_id_acc</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_sub</target>
+                <target>OBJECT(TEMP.spawned_object).decision_start</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_po</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_sched</target>
+                <target>OBJECT(TEMP.spawned_object).decision_n_order</target>
+                <target>OBJECT(TEMP.spawned_object).decision_tt_start</target>
+                <target>OBJECT(TEMP.spawned_object).decision_column_group</target>
+                <target>OBJECT(TEMP.spawned_object).decision_tier_priority</target>
+              </split>
+              <do>OBJECT(TEMP.spawned_object).tier_row_counter = 1</do>
+
+              <index_select>
+                <index>'CQG_CHARGE_LOOKUP'</index>
+                <field name='charge_qualification_group'>OBJECT(TEMP.spawned_object).decision_cqg</field>
+                <field name='id_view'>OBJECT(TEMP.spawned_object).id_view</field>
+                <cursor>TEMP.my_charge</cursor>
+                <loop>
+                  <do>OBJECT(TEMP.spawned_object).charge_name = OBJECT(TEMP.my_charge).charge_name</do>
+                </loop>
+              </index_select>
+
+              <if>
+                <condition>OBJECT(TEMP.spawned_object).amount_before ne OBJECT(TEMP.spawned_object).amount_after</condition>
+                <then>
+                  <call_dynamic_proc_for_object>
+                    <name>'denormalize_charge_qual_'~OBJECT(TEMP.spawned_object).current_denorm</name>
+                    <object_id>TEMP.spawned_object</object_id>
+                  </call_dynamic_proc_for_object>
+
+                  <db_upsert>
+                    <login_object>GLOBAL.target_login</login_object>
+                    <name>'AGG_USAGE_DECISION_DETAIL'</name>
+                    <object_id>TEMP.spawned_object</object_id>
+                  </db_upsert>
+                </then>
+              </if>
+
+            </then>
+          </if>
+
+          <if>
+            <condition>TEMP.applied_tiers GTE '2'</condition>
+            <then>
+
+              <call_dynamic_proc_for_object>
+                <name>'normalize_charge_qual_normalize_'~OBJECT(TEMP.spawned_object).id_view</name>
+                <object_id>TEMP.spawned_object</object_id>
+              </call_dynamic_proc_for_object>
+
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_2_amount_before'</field_name>
+                <value>OBJECT(TEMP.spawned_object).amount_before</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_2_amount_after'</field_name>
+                <value>OBJECT(TEMP.spawned_object).amount_after</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_2_perc_elig'</field_name>
+                <value>OBJECT(TEMP.spawned_object).percent_eligible</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_2_id'</field_name>
+                <value>OBJECT(TEMP.spawned_object).decision_unique_id</value>
+              </object_delta_get_persisted>
+
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_2_cqg'</field_name>
+                <value>OBJECT(TEMP.spawned_object).decision_cqg</value>
+              </object_delta_get_persisted>
+
+              <split>
+                <source>OBJECT(TEMP.spawned_object).decision_unique_id</source>
+                <delimiter>"|"</delimiter>
+                <limit>9</limit>
+                <target>OBJECT(TEMP.spawned_object).decision_id_acc</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_sub</target>
+                <target>OBJECT(TEMP.spawned_object).decision_start</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_po</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_sched</target>
+                <target>OBJECT(TEMP.spawned_object).decision_n_order</target>
+                <target>OBJECT(TEMP.spawned_object).decision_tt_start</target>
+                <target>OBJECT(TEMP.spawned_object).decision_column_group</target>
+                <target>OBJECT(TEMP.spawned_object).decision_tier_priority</target>
+              </split>
+              <do>OBJECT(TEMP.spawned_object).tier_row_counter = 2</do>
+
+              <index_select>
+                <index>'CQG_CHARGE_LOOKUP'</index>
+                <field name='charge_qualification_group'>OBJECT(TEMP.spawned_object).decision_cqg</field>
+                <field name='id_view'>OBJECT(TEMP.spawned_object).id_view</field>
+                <cursor>TEMP.my_charge</cursor>
+                <loop>
+                  <do>OBJECT(TEMP.spawned_object).charge_name = OBJECT(TEMP.my_charge).charge_name</do>
+                </loop>
+              </index_select>
+
+              <if>
+                <condition>OBJECT(TEMP.spawned_object).amount_before ne OBJECT(TEMP.spawned_object).amount_after</condition>
+                <then>
+                  <call_dynamic_proc_for_object>
+                    <name>'denormalize_charge_qual_'~OBJECT(TEMP.spawned_object).current_denorm</name>
+                    <object_id>TEMP.spawned_object</object_id>
+                  </call_dynamic_proc_for_object>
+
+                  <db_upsert>
+                    <login_object>GLOBAL.target_login</login_object>
+                    <name>'AGG_USAGE_DECISION_DETAIL'</name>
+                    <object_id>TEMP.spawned_object</object_id>
+                  </db_upsert>
+                </then>
+              </if>
+
+            </then>
+          </if>
+
+          <if>
+            <condition>TEMP.applied_tiers GTE '3'</condition>
+            <then>
+
+              <call_dynamic_proc_for_object>
+                <name>'normalize_charge_qual_normalize_'~OBJECT(TEMP.spawned_object).id_view</name>
+                <object_id>TEMP.spawned_object</object_id>
+              </call_dynamic_proc_for_object>
+
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_3_amount_before'</field_name>
+                <value>OBJECT(TEMP.spawned_object).amount_before</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_3_amount_after'</field_name>
+                <value>OBJECT(TEMP.spawned_object).amount_after</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_3_perc_elig'</field_name>
+                <value>OBJECT(TEMP.spawned_object).percent_eligible</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_3_id'</field_name>
+                <value>OBJECT(TEMP.spawned_object).decision_unique_id</value>
+              </object_delta_get_persisted>
+
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_3_cqg'</field_name>
+                <value>OBJECT(TEMP.spawned_object).decision_cqg</value>
+              </object_delta_get_persisted>
+
+
+              <split>
+                <source>OBJECT(TEMP.spawned_object).decision_unique_id</source>
+                <delimiter>"|"</delimiter>
+                <limit>9</limit>
+                <target>OBJECT(TEMP.spawned_object).decision_id_acc</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_sub</target>
+                <target>OBJECT(TEMP.spawned_object).decision_start</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_po</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_sched</target>
+                <target>OBJECT(TEMP.spawned_object).decision_n_order</target>
+                <target>OBJECT(TEMP.spawned_object).decision_tt_start</target>
+                <target>OBJECT(TEMP.spawned_object).decision_column_group</target>
+                <target>OBJECT(TEMP.spawned_object).decision_tier_priority</target>
+              </split>
+              <do>OBJECT(TEMP.spawned_object).tier_row_counter = 3</do>
+
+              <index_select>
+                <index>'CQG_CHARGE_LOOKUP'</index>
+                <field name='charge_qualification_group'>OBJECT(TEMP.spawned_object).decision_cqg</field>
+                <field name='id_view'>OBJECT(TEMP.spawned_object).id_view</field>
+                <cursor>TEMP.my_charge</cursor>
+                <loop>
+                  <do>OBJECT(TEMP.spawned_object).charge_name = OBJECT(TEMP.my_charge).charge_name</do>
+                </loop>
+              </index_select>
+
+              <if>
+                <condition>OBJECT(TEMP.spawned_object).amount_before ne OBJECT(TEMP.spawned_object).amount_after</condition>
+                <then>
+                  <call_dynamic_proc_for_object>
+                    <name>'denormalize_charge_qual_'~OBJECT(TEMP.spawned_object).current_denorm</name>
+                    <object_id>TEMP.spawned_object</object_id>
+                  </call_dynamic_proc_for_object>
+
+                  <db_upsert>
+                    <login_object>GLOBAL.target_login</login_object>
+                    <name>'AGG_USAGE_DECISION_DETAIL'</name>
+                    <object_id>TEMP.spawned_object</object_id>
+                  </db_upsert>
+                </then>
+              </if>
+
+            </then>
+          </if>
+
+          <if>
+            <condition>TEMP.applied_tiers GTE '4'</condition>
+            <then>
+
+              <call_dynamic_proc_for_object>
+                <name>'normalize_charge_qual_normalize_'~OBJECT(TEMP.spawned_object).id_view</name>
+                <object_id>TEMP.spawned_object</object_id>
+              </call_dynamic_proc_for_object>
+
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_4_amount_before'</field_name>
+                <value>OBJECT(TEMP.spawned_object).amount_before</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_4_amount_after'</field_name>
+                <value>OBJECT(TEMP.spawned_object).amount_after</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_4_perc_elig'</field_name>
+                <value>OBJECT(TEMP.spawned_object).percent_eligible</value>
+              </object_delta_get_persisted>
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_4_id'</field_name>
+                <value>OBJECT(TEMP.spawned_object).decision_unique_id</value>
+              </object_delta_get_persisted>
+
+              <object_delta_get_persisted>
+                <object_id>TEMP.usg_csr</object_id>
+                <field_name>'agg_tier_4_cqg'</field_name>
+                <value>OBJECT(TEMP.spawned_object).decision_cqg</value>
+              </object_delta_get_persisted>
+
+              <split>
+                <source>OBJECT(TEMP.spawned_object).decision_unique_id</source>
+                <delimiter>"|"</delimiter>
+                <limit>9</limit>
+                <target>OBJECT(TEMP.spawned_object).decision_id_acc</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_sub</target>
+                <target>OBJECT(TEMP.spawned_object).decision_start</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_po</target>
+                <target>OBJECT(TEMP.spawned_object).decision_id_sched</target>
+                <target>OBJECT(TEMP.spawned_object).decision_n_order</target>
+                <target>OBJECT(TEMP.spawned_object).decision_tt_start</target>
+                <target>OBJECT(TEMP.spawned_object).decision_column_group</target>
+                <target>OBJECT(TEMP.spawned_object).decision_tier_priority</target>
+              </split>
+              <do>OBJECT(TEMP.spawned_object).tier_row_counter = 4</do>
+
+              <index_select>
+                <index>'CQG_CHARGE_LOOKUP'</index>
+                <field name='charge_qualification_group'>OBJECT(TEMP.spawned_object).decision_cqg</field>
+                <field name='id_view'>OBJECT(TEMP.spawned_object).id_view</field>
+                <cursor>TEMP.my_charge</cursor>
+                <loop>
+                  <do>OBJECT(TEMP.spawned_object).charge_name = OBJECT(TEMP.my_charge).charge_name</do>
+                </loop>
+              </index_select>
+
+              <if>
+                <condition>OBJECT(TEMP.spawned_object).amount_before ne OBJECT(TEMP.spawned_object).amount_after</condition>
+                <then>
+                  <call_dynamic_proc_for_object>
+                    <name>'denormalize_charge_qual_'~OBJECT(TEMP.spawned_object).current_denorm</name>
+                    <object_id>TEMP.spawned_object</object_id>
+                  </call_dynamic_proc_for_object>
+
+                  <db_upsert>
+                    <login_object>GLOBAL.target_login</login_object>
+                    <name>'AGG_USAGE_DECISION_DETAIL'</name>
+                    <object_id>TEMP.spawned_object</object_id>
+                  </db_upsert>
+                </then>
+              </if>
+
+            </then>
+          </if>
+
+          <remove_object_from_cache>TEMP.spawned_object</remove_object_from_cache>
+
+          <!--<dump_memory/>-->
+
+        </loop>
+      </usage_hook_select>
+
+
+      <!--<print>'release just the hook, do not call the release proc because that does erd delta updates we do no need'</print>-->
+      <usage_hook_release>
+        <hook_id>GLOBAL.usage_hook_id</hook_id>
+      </usage_hook_release>
+
+      <!--<dump_memory/>-->
+
+      <db_bulk_insert_flush_all/>
+
+    </stopwatch>
+
+  </proc>
+
+</procs>

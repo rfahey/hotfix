@@ -1,0 +1,6 @@
+<procs>
+  <proc name='set_amount_by_units'>
+	<do>OBJECT.per_unit_rate = OBJECT.overage_rate</do>
+    <do>OBJECT.master_amount = (OBJECT.tier_end - (OBJECT.qualified_total==''?0:OBJECT.qualified_total)) * OBJECT.per_unit_rate</do>
+  </proc>
+</procs>

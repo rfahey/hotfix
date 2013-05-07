@@ -1,0 +1,260 @@
+<procs>
+  <proc name='localize_dimension_refs'>
+    <param name='root_bucket_object'/>
+    <param name='bucket_object'/>
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).previous_dimension eq '' or OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).processing_started eq '1' or OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).tier_priority GTE OBJECT(TEMP.root_bucket_object).tier_priority</condition>
+      <else>
+        <c>I need to localize this decision because it hasn't been processed (or isn't currently being processed) on this node and the priority indicates it must be processed already</c>
+        <debug switch='log_dimensions'>'Requesting prev object copy for ['~OBJECT(TEMP.bucket_object).previous_dimension~'] with started ['~OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).processing_started~'] prev priority ['~OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).tier_priority~'] and root priority ['~OBJECT(TEMP.root_bucket_object).tier_priority~']'</debug>
+        <call_proc_for_current_object>
+          <name>'request_object_copy'</name>
+          <param name='object_id'>OBJECT(TEMP.bucket_object).previous_dimension</param>
+        </call_proc_for_current_object>
+      </else>
+    </if>
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).bulk_source_obj_id eq '' or OBJECT(OBJECT(TEMP.bucket_object).bulk_source_obj_id).processing_started eq '1'</condition>
+      <else>
+        <debug switch='log_dimensions'>'Requesting object copy for ['~OBJECT(TEMP.bucket_object).bulk_source_obj_id~']'</debug>
+        <c>I need to localize this decision because it hasn't been processed (or isn't currently being processed) on this node and the priority indicates it must be processed already</c>
+        <call_proc_for_current_object>
+          <name>'request_object_copy'</name>
+          <param name='object_id'>OBJECT(TEMP.bucket_object).bulk_source_obj_id</param>
+        </call_proc_for_current_object>
+      </else>
+    </if>
+
+    <if>
+      <condition>OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).previous_dimension ne ''</condition>
+      <then>
+        <c>I need to recursively ensure that the decisions are in the cache</c>
+        <debug switch='log_dimensions'>'Recursing with ['~OBJECT(TEMP.bucket_object).previous_dimension~']'</debug>
+        <call_proc_for_current_object>
+          <name>'localize_dimension_refs'</name>
+          <param name='root_bucket_object'>TEMP.root_bucket_object</param>
+          <param name='bucket_object'>OBJECT(TEMP.bucket_object).previous_dimension</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+    
+  </proc>
+
+  <proc name='localize_ref'>
+    <param name='bucket_object'/>
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).processing_started ne '1'</condition>
+      <then>
+        <debug switch='log_dimensions'>'Localizing object ['~TEMP.bucket_object~'], decision_unique_id ['~OBJECT(TEMP.bucket_object).decision_unique_id~']'</debug>
+        <c>I need to localize this decision because it does not exist locally</c>
+        <call_proc_for_current_object>
+          <name>'request_object_copy'</name>
+          <param name='object_id'>TEMP.bucket_object</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+
+  </proc>
+
+  <proc name='dimensional_search'>
+    <param name='bucket_object'/>
+    <param name='search_up'/>
+    <param name='need_to_push' mode='out'/>
+
+    <debug switch='log_dimensions'>'Starting dimensional search!'</debug>
+    <c>Check if the previous or next decisions have not been processed. If so, set the flag to 1</c>
+    <if>
+      <condition>(OBJECT(TEMP.bucket_object).next_dimension ne '' and OBJECT(OBJECT(TEMP.bucket_object).next_dimension).processing_started ne '1') or (OBJECT(TEMP.bucket_object).previous_dimension ne '' and OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).processing_started ne '1')</condition>
+      <then>
+        <c>I need to localize this decision because it hasn't been processed (or isn't currently being processed) on this node and the priority indicates it must be processed already</c>
+        <do>TEMP.need_to_push = '1'</do>
+      </then>
+    </if>
+
+
+    <if>
+      <condition>TEMP.need_to_push ne '1' and TEMP.search_up eq '0' and OBJECT(TEMP.bucket_object).previous_dimension ne '' and OBJECT(OBJECT(TEMP.bucket_object).previous_dimension).previous_dimension ne ''</condition>
+      <then>
+        <c>I need to recursively ensure that the decisions are in the cache</c>
+        <call_proc_for_current_object>
+          <name>'dimensional_search'</name>
+          <param name='bucket_object'>OBJECT(TEMP.bucket_object).previous_dimension</param>
+          <param name='search_up'>TEMP.search_up</param>
+          <param name='need_to_push'>TEMP.need_to_push</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+
+    <if>
+      <condition>TEMP.need_to_push ne '1' and TEMP.search_up eq '1' and OBJECT(TEMP.bucket_object).next_dimension ne '' and OBJECT(OBJECT(TEMP.bucket_object).next_dimension).next_dimension ne ''</condition>
+      <then>
+        <c>I need to recursively ensure that the decisions are in the cache</c>
+        <call_proc_for_current_object>
+          <name>'dimensional_search'</name>
+          <param name='bucket_object'>OBJECT(TEMP.bucket_object).next_dimension</param>
+          <param name='search_up'>TEMP.search_up</param>
+          <param name='need_to_push'>TEMP.need_to_push</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+
+    <debug switch='log_dimensions'>'Ending dimensional search ['~TEMP.need_to_push~']!'</debug>
+  </proc>
+
+  <proc name='dimensional_push'>
+    <param name='bucket_object'/>
+
+    <debug switch='log_dimensions'>'Trying to push parent!!!! ['~TEMP.bucket_object~'] d_uid['~OBJECT(TEMP.bucket_object).decision_unique_id~']'</debug>
+    <do>TEMP.need_to_push = '0'</do>
+    <call_proc_for_current_object>
+      <name>'dimensional_search'</name>
+      <param name='bucket_object'>TEMP.bucket_object</param>
+      <param name='search_up'>'0'</param>
+      <param name='need_to_push'>TEMP.need_to_push</param>
+    </call_proc_for_current_object>
+
+    <call_proc_for_current_object>
+      <name>'dimensional_search'</name>
+      <param name='bucket_object'>TEMP.bucket_object</param>
+      <param name='search_up'>'1'</param>
+      <param name='need_to_push'>TEMP.need_to_push</param>
+    </call_proc_for_current_object>
+    
+    <if>
+      <condition>TEMP.need_to_push eq '1' or OBJECT(TEMP.bucket_object).hard_audit_point eq '1'</condition>
+      <then>
+        <debug switch='log_dimensions'>'Actually pushing parent ['~TEMP.bucket_object~'] started ['~OBJECT(TEMP.bucket_object).processing_started~']!'</debug>
+        <c>I need to push this decision to the parent because a related decision is unprocessed by any node or it is a hard audit point which means it is always needed</c>
+        <call_proc_for_current_object>
+          <name>'push_object_copy'</name>
+          <param name='object_id'>TEMP.bucket_object</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+  </proc>
+
+  <proc name="request_remove_object">
+    <param name='object_id'/>
+
+    <!--<print>'Starting request_remove_object'</print>-->
+    <remote_queue_proc>
+      <name>'remove_object'</name>
+      <process_id>GLOBAL.master_id</process_id>
+      <batch_id>TEMP.my_batch_id</batch_id>
+      <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+      <param name='object_id'>TEMP.object_id</param>
+    </remote_queue_proc>
+    <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+
+    <!--<print>'Ending request_remove_object'</print>-->
+  </proc>
+
+  <proc name="remove_object">
+    <param name='object_id'/>
+    <!--<print>'Starting remove_object'</print>-->
+    <!--<remove_object_from_cache>TEMP.object_id</remove_object_from_cache>-->
+  </proc>
+
+  <proc name="request_object_copy">
+    <param name='object_id'/>
+
+    <!--<remove_object_from_cache>TEMP.object_id</remove_object_from_cache>-->
+    
+    <print>'Starting request_object_copy'</print>
+    <remote_queue_proc>
+      <name>'get_object_copy'</name>
+      <process_id>GLOBAL.master_id</process_id>
+      <batch_id>TEMP.my_batch_id</batch_id>
+      <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+      <param name='object_id'>TEMP.object_id</param>
+      <param name='slave_id'>GLOBAL.node_id</param>
+    </remote_queue_proc>
+    <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+
+    <print>'Ending request_object_copy'</print>
+  </proc>
+
+
+
+  <proc name="get_object_copy">
+    <param name='object_id'/>
+    <param name='slave_id'/>
+
+    <initialize>
+      <define_memory_index synchronized='true'>
+        <index>'TEMP_OBJECT_STRUCT'</index>
+        <key_field type='object_id'>'object_id'</key_field>
+      </define_memory_index>
+    </initialize>
+
+    <print>'Starting1 get_object_copy'</print>
+
+    <index_insert>
+      <index>'TEMP_OBJECT_STRUCT'</index>
+      <field name='object_id'>TEMP.object_id</field>
+    </index_insert>
+
+    <push_index>
+      <process_id>TEMP.slave_id</process_id>
+      <clear_source>0</clear_source>
+      <source>
+        <index>'TEMP_OBJECT_STRUCT'</index>
+      </source>
+      <target>
+        <index>'TEMP_OBJECT_STRUCT'</index>
+      </target>
+    </push_index>
+
+    <index_remove>
+      <index>'TEMP_OBJECT_STRUCT'</index>
+      <field name='object_id'>TEMP.object_id</field>
+    </index_remove>
+    
+  </proc>
+
+  <proc name="push_object_copy">
+    <param name='object_id'/>
+
+    <initialize>
+      <define_memory_index synchronized='true'>
+        <index>'TEMP_OBJECT_PUSH_STRUCT'</index>
+        <key_field type='object_id'>'object_id'</key_field>
+      </define_memory_index>
+    </initialize>
+    <print>'Pushing object copy ['~TEMP.object_id~']'</print>
+    
+    <call_proc_for_current_object>
+      <name>'request_remove_object'</name>
+      <param name='object_id'>TEMP.object_id</param>
+    </call_proc_for_current_object>
+
+    <index_insert>
+      <index>'TEMP_OBJECT_PUSH_STRUCT'</index>
+      <field name='object_id'>TEMP.object_id</field>
+    </index_insert>
+
+    <push_index>
+      <process_id>GLOBAL.master_id</process_id>
+      <clear_source>0</clear_source>
+      <source>
+        <index>'TEMP_OBJECT_PUSH_STRUCT'</index>
+      </source>
+      <target>
+        <index>'TEMP_OBJECT_PUSH_STRUCT'</index>
+      </target>
+    </push_index>
+
+    <index_remove>
+      <index>'TEMP_OBJECT_PUSH_STRUCT'</index>
+      <field name='object_id'>TEMP.object_id</field>
+    </index_remove>
+
+
+    <debug switch='log_dimensions'>'DONE Pushing object copy ['~TEMP.object_id~'] object_ref_count='~object_ref_count(TEMP.object_id)</debug>
+
+  </proc>
+
+</procs>

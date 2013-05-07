@@ -1,0 +1,55 @@
+<procs>
+  <proc name="persist_counters">
+    <param name='batch_id'/>
+    <param name='node_id'/>
+    <initialize>
+      <spawn>
+        <object_type>'COUNTER_OBJECT'</object_type>
+        <object_id>GLOBAL.counter_object</object_id>
+      </spawn>
+      <index_insert>
+        <index>'GLOBAL_OBJECTS'</index>
+        <field name="object_id">GLOBAL.counter_object</field>
+      </index_insert>
+    </initialize>
+    
+    <object_field_value_select>
+      <object_id>GLOBAL.counter_object</object_id>
+      <cursor_field>'field'</cursor_field>
+      <cursor_value>'value'</cursor_value>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <if>
+          <condition>OBJECT(GLOBAL.target_login).database_type eq 'oracle'</condition>
+          <then>
+            <db_insert>
+              <login_object>GLOBAL.target_login</login_object>
+              <name>'MVM_COUNTERS'</name>
+              <!--<field name="mvm_batch_id">TEMP.batch_id</field>-->
+              <field name="mvm_batch_id">GLOBAL.mvm_run_id</field>
+              <field name="mvm_node_id">TEMP.node_id</field>
+              <field name="counter_date" sql="true">'SYSDATE'</field>
+              <field name="counter_name">OBJECT(TEMP.csr).field</field>
+              <field name="counter_value">OBJECT(TEMP.csr).value</field>
+            </db_insert>
+          </then>
+          <else>
+            <db_insert>
+              <login_object>GLOBAL.target_login</login_object>
+              <name>'MVM_COUNTERS'</name>
+              <!--<field name="mvm_batch_id">TEMP.batch_id</field>-->
+              <field name="mvm_batch_id">GLOBAL.mvm_run_id</field>
+              <field name="mvm_node_id">TEMP.node_id</field>
+              <field name="counter_date" sql="true">'GETDATE()'</field>
+              <field name="counter_name">OBJECT(TEMP.csr).field</field>
+              <field name="counter_value">OBJECT(TEMP.csr).value</field>
+            </db_insert>
+          </else>
+        </if>
+      </loop>
+    </object_field_value_select>
+
+    <object_clear>GLOBAL.counter_object</object_clear>
+    
+  </proc>
+</procs>

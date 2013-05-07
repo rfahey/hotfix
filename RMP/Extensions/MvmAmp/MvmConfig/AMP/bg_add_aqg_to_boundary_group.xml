@@ -1,0 +1,130 @@
+<proc name="bg_add_aqg_to_boundary_group">
+  <param name='id_acc'/>
+  <param name='account_qualification_group'/>
+  <param name='force_lock'/>
+  <param name='boundary_group_id' mode='in out'/>
+
+  <do>TEMP.incremented_aqg = 0</do>
+  <do>TEMP.created_boundary_group = 0</do>
+  
+  <c>Grab current AQG for account and check to see if the AQG is already in a boundary group if the passed value is NULL</c>
+  <do>TEMP.aqg_boundary_group_id = ''</do>
+  <db_select>
+    <login_object>GLOBAL.target_login</login_object>
+    <query>
+      "select * from agg_boundary_group_aqg_map where id_acc = $${TEMP.id_acc} and account_qualification_group = $${TEMP.account_qualification_group}"
+    </query>
+    <cursor>TEMP.bgam_csr</cursor>
+    <then>
+      <if>
+        <condition>TEMP.boundary_group_id eq ''</condition>
+        <then>
+          <do>TEMP.boundary_group_id = OBJECT(TEMP.bgam_csr).boundary_group_id</do>
+        </then>
+      </if>
+      <do>TEMP.aqg_boundary_group_id = OBJECT(TEMP.bgam_csr).boundary_group_id</do>
+    </then>
+  </db_select>
+
+
+  <c>If the passed boundary group is NULL and the AQG is not currently in a boundary group, create a new one to hold the AQG</c>
+  <if>
+    <condition>TEMP.boundary_group_id eq ''</condition>
+    <then>
+      <do>TEMP.created_boundary_group = 1</do>
+      <call_proc_for_current_object>
+        <name>'bg_create_boundary_group_for_aqg'</name>
+        <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+        <param name='id_acc'>TEMP.id_acc</param>
+        <param name='account_qualification_group'>TEMP.account_qualification_group</param>
+      </call_proc_for_current_object>
+    </then>
+  </if>
+
+  <c>Respect force_lock parameter</c>
+  <if>
+    <condition>TEMP.force_lock eq 1</condition>
+    <then>
+      <c>Lock the boundary group the AQG is being added to</c>
+      <call_proc_for_current_object>
+        <name>'bg_lock_boundary_group_for_aqg'</name>
+        <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+        <param name='id_acc'>TEMP.id_acc</param>
+        <param name='account_qualification_group'>TEMP.account_qualification_group</param>
+        <param name='got_lock'>TEMP.got_lock</param>
+      </call_proc_for_current_object>
+    </then>
+  </if>
+  
+
+  <c>Only do anything if the boundary group for the AQG has changed (or the boundary group has just been created)</c>
+  <if>
+    <condition>TEMP.boundary_group_id ne TEMP.aqg_boundary_group_id</condition>
+    <then>
+
+      <c>Lock the boundary group the AQG is being added to</c>
+      <call_proc_for_current_object>
+        <name>'bg_lock_boundary_group_for_aqg'</name>
+        <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+        <param name='id_acc'>TEMP.id_acc</param>
+        <param name='account_qualification_group'>TEMP.account_qualification_group</param>
+        <param name='got_lock'>TEMP.got_lock</param>
+      </call_proc_for_current_object>
+      <print>'Got lock is ['~TEMP.got_lock~']'</print>
+
+      <if>
+        <condition>TEMP.got_lock eq 1</condition>
+        <then>
+          <do>TEMP.counter = 0</do>
+          <db_select>
+            <login_object>GLOBAL.target_login</login_object>
+            <query>
+              "select count(*) group_counter from agg_boundary_group_aqg_map where id_acc = $${TEMP.id_acc} and account_qualification_group = $${TEMP.account_qualification_group}"
+            </query>
+            <cursor>TEMP.bgam_csr</cursor>
+            <then>
+              <do>TEMP.counter = OBJECT(TEMP.bgam_csr).group_counter</do>
+            </then>
+          </db_select>
+
+          <if>
+            <condition>TEMP.counter eq 0</condition>
+            <then>
+              <db_execute>
+                <login_object>GLOBAL.target_login</login_object>
+                <statement>
+                  "insert into agg_boundary_group_aqg_map (boundary_group_id, id_acc, account_qualification_group) values($${TEMP.boundary_group_id}, $${TEMP.id_acc}, $${TEMP.account_qualification_group})"
+                </statement>
+                <num_rows>TEMP.num_rows</num_rows>
+              </db_execute>
+
+              <db_execute>
+                <login_object>GLOBAL.target_login</login_object>
+                <statement>
+                  "insert into agg_boundary_group_acc_map (boundary_group_id, id_acc, group_counter) select $${TEMP.boundary_group_id}, a.child_id_acc, 0 from agg_aqg_map a
+                  left outer join agg_boundary_group_acc_map b on a.child_id_acc = b.id_acc and b.boundary_group_id = $${TEMP.boundary_group_id}
+                  where a.account_qualification_group = $${TEMP.account_qualification_group} and a.id_acc = $${TEMP.id_acc} and b.id_acc IS NULL"
+                </statement>
+                <num_rows>TEMP.num_rows</num_rows>
+              </db_execute>
+              <db_execute>
+                <login_object>GLOBAL.target_login</login_object>
+                <statement>
+                  "update agg_boundary_group_acc_map set group_counter = group_counter + 1 where id_acc in (select child_id_acc from AGG_AQG_MAP where id_acc = $${TEMP.id_acc} and account_qualification_group = $${TEMP.account_qualification_group})
+                  and boundary_group_id = $${TEMP.boundary_group_id}"
+                </statement>
+                <num_rows>TEMP.num_rows</num_rows>
+              </db_execute>
+              <call_proc_for_current_object>
+                <name>'bg_manage_boundary_group_overlaps'</name>
+                <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+              </call_proc_for_current_object>
+              <do>TEMP.incremented_aqg = 1</do>
+            </then>
+          </if>
+        </then>
+      </if>
+    </then>
+  </if>
+
+</proc>

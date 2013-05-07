@@ -1,0 +1,128 @@
+<proc name="bg_combine_boundary_groups">
+  <param name='boundary_group_id1' mode='in out'/>
+  <param name='boundary_group_id2'/>
+  <param name='combined_bg' mode='out'/>
+
+  <do>TEMP.combined_bg = 0</do>
+
+  <print>'Getting the locks for combining'</print>
+  <if>
+    <condition>TEMP.boundary_group_id1 LT TEMP.boundary_group_id2</condition>
+    <then>
+      <call_proc_for_current_object>
+        <name>'bg_lock_boundary_group'</name>
+        <param name='boundary_group_id'>TEMP.boundary_group_id1</param>
+        <param name='got_lock'>TEMP.got_lock</param>
+      </call_proc_for_current_object>
+
+      <call_proc_for_current_object>
+        <name>'bg_lock_boundary_group'</name>
+        <param name='boundary_group_id'>TEMP.boundary_group_id2</param>
+        <param name='got_lock'>TEMP.got_lock</param>
+      </call_proc_for_current_object>
+
+    </then>
+    <else>
+      <call_proc_for_current_object>
+        <name>'bg_lock_boundary_group'</name>
+        <param name='boundary_group_id'>TEMP.boundary_group_id2</param>
+        <param name='got_lock'>TEMP.got_lock</param>
+      </call_proc_for_current_object>
+
+      <call_proc_for_current_object>
+        <name>'bg_lock_boundary_group'</name>
+        <param name='boundary_group_id'>TEMP.boundary_group_id1</param>
+        <param name='got_lock'>TEMP.got_lock</param>
+      </call_proc_for_current_object>
+    </else>
+  </if>
+
+  <print>'I have the locks for combining!'</print>
+  <if>
+    <condition>TEMP.got_lock eq 1</condition>
+    <then>
+      <c>Make sure we combine the smaller group into the larger group</c>
+      <do>TEMP.group1_count = 0</do>
+      <do>TEMP.group2_count = 0</do>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select count(*) group_count from agg_boundary_group_acc_map where boundary_group_id = $${TEMP.boundary_group_id1}"
+        </query>
+        <cursor>TEMP.bgam_csr</cursor>
+        <then>
+          <do>TEMP.group1_count = OBJECT(TEMP.bgam_csr).group_count</do>
+        </then>
+      </db_select>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select count(*) group_count from agg_boundary_group_acc_map where boundary_group_id = $${TEMP.boundary_group_id2}"
+        </query>
+        <cursor>TEMP.bgam_csr</cursor>
+        <then>
+          <do>TEMP.group2_count = OBJECT(TEMP.bgam_csr).group_count</do>
+        </then>
+      </db_select>
+      <if>
+        <condition>TEMP.group2_count GT TEMP.group1_count</condition>
+        <then>
+          <do>TEMP.temp_bg = TEMP.boundary_group_id1</do>
+          <do>TEMP.boundary_group_id1 = TEMP.boundary_group_id2</do>
+          <do>TEMP.boundary_group_id2 = TEMP.temp_bg</do>
+        </then>
+      </if>
+
+      <c>Update the counter on any overlapping account</c>
+      <db_execute>
+        <login_object>GLOBAL.target_login</login_object>
+        <statement>
+          "update agg_boundary_group_acc_map set group_counter = group_counter + (select group_counter from agg_boundary_group_acc_map b where b.id_acc = agg_boundary_group_acc_map.id_acc and b.boundary_group_id = $${TEMP.boundary_group_id2})
+          where agg_boundary_group_acc_map.boundary_group_id = $${TEMP.boundary_group_id1}
+          and id_acc in(select id_acc from agg_boundary_group_acc_map b where b.boundary_group_id = $${TEMP.boundary_group_id2})"
+        </statement>
+        <num_rows>TEMP.num_rows</num_rows>
+      </db_execute>
+      
+      <c>Delete rows from the seconary bg for any overlapping account</c>
+      <db_execute>
+        <login_object>GLOBAL.target_login</login_object>
+        <statement>
+          "delete agg_boundary_group_acc_map 
+          where agg_boundary_group_acc_map.boundary_group_id = $${TEMP.boundary_group_id2}
+          and id_acc in(select id_acc from agg_boundary_group_acc_map b where b.boundary_group_id = $${TEMP.boundary_group_id1})"
+        </statement>
+        <num_rows>TEMP.num_rows</num_rows>
+      </db_execute>
+      
+      <c>Update the boundary group to the primary bg on any remaining acc rows in the secondary bg</c>
+      <db_execute>
+        <login_object>GLOBAL.target_login</login_object>
+        <statement>
+          "update agg_boundary_group_acc_map set boundary_group_id = $${TEMP.boundary_group_id1} where boundary_group_id = $${TEMP.boundary_group_id2}"
+        </statement>
+        <num_rows>TEMP.num_rows</num_rows>
+      </db_execute>
+
+      <c>Update the boundary group to the primary bg on all aqg rows in the secondary bg</c>
+      <db_execute>
+        <login_object>GLOBAL.target_login</login_object>
+        <statement>
+          "update agg_boundary_group_aqg_map set boundary_group_id = $${TEMP.boundary_group_id1} where boundary_group_id = $${TEMP.boundary_group_id2}"
+        </statement>
+        <num_rows>TEMP.num_rows</num_rows>
+      </db_execute>
+
+      <c>Remove the old boundary group</c>
+      <db_execute>
+        <login_object>GLOBAL.target_login</login_object>
+        <statement>
+          "delete agg_boundary_groups where boundary_group_id = $${TEMP.boundary_group_id2}"
+        </statement>
+        <num_rows>TEMP.num_rows</num_rows>
+      </db_execute>
+      <do>TEMP.combined_bg = 1</do>
+    </then>
+  </if>
+
+</proc>

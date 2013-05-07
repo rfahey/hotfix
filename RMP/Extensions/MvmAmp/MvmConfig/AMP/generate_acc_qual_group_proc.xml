@@ -1,0 +1,764 @@
+
+<procs>
+
+  <!-- ===================================================================== -->
+  <!--                                                                       -->
+  <!-- Given an account qualification group name, load all the associated    -->
+  <!-- accounts into ACC_QUAL_GROUPS (id_acc | group).                       -->
+  <!--                                                                       -->
+  <!-- Inputs:                                                               -->
+  <!--     id_interval  The interval that we are interested in.              -->
+  <!--                                                                       -->
+  <!-- Results:                                                              -->
+  <!--     ACC_QUAL_GROUP                                                    -->
+  <!--                                                                       -->
+  <!-- ===================================================================== -->
+
+  <proc name='generate_acc_qual_group_proc'>
+    <param name='account_qualification_group'/>
+    <initialize>
+      <define_memory_index>
+        <index>'GENERATED_ACC_QUAL_GROUPS'</index>
+        <key_field>'account_qualification_group'</key_field>
+        <field>'generated'</field>
+      </define_memory_index>
+
+      <!--<define_memory_index>
+        <index>'ALL_ACC_QUAL_GROUPS'</index>
+        <key_field>'account_qualification_group'</key_field>
+        <field>'exists'</field>
+      </define_memory_index>-->
+
+      <define_memory_index>
+        <index>'ACC_DEDUPE'</index>
+        <key_field>'id_acc'</key_field>
+      </define_memory_index>
+
+      <define_memory_index synchronized='true'>
+        <index>'ACCOUNT_CACHE'</index>
+        <key_field>'id_acc'</key_field>
+        <field type='object_id'>'account_object'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'OVERLAID_CHILD_ACCOUNT_TABLES'</index>
+        <key_field>'id_acc'</key_field>
+        <key_field>'table_name'</key_field>
+        <key_field>'predicate'</key_field>
+        <key_field>'target_field'</key_field>
+        <key_field>'output_field'</key_field>
+        <field>'child_id_acc'</field>
+      </define_memory_index>
+
+      <!--<db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select distinct account_qualification_group account_qualification_group from account_qualification_groups"
+        </query>
+        <query type="sql">
+          "select distinct account_qualification_group account_qualification_group from account_qualification_groups"
+        </query>
+        <cursor>TEMP.acc_qual_groups</cursor>
+        <loop>
+          <index_insert>
+            <index>'ALL_ACC_QUAL_GROUPS'</index>
+            <field name="account_qualification_group">OBJECT(TEMP.acc_qual_groups).account_qualification_group</field>
+            <field name="exists">'1'</field>
+          </index_insert>
+        </loop>
+      </db_select>-->
+      <define_memory_index>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <key_field>'id_acc'</key_field>
+        <key_field>'group'</key_field>
+        <field>'child_id_acc'</field>
+      </define_memory_index>
+    </initialize>
+    <!--<print>'Doing ['~TEMP.account_qualification_group~']'</print>-->
+    <if>
+      <condition>TEMP.account_qualification_group eq ''</condition>
+      <then>
+        <fatal>'Generating for a non-existent account qualification group!'</fatal>
+      </then>
+    </if>
+    <index_select>
+      <index>'GENERATED_ACC_QUAL_GROUPS'</index>
+      <field name="account_qualification_group">TEMP.account_qualification_group</field>
+      <cursor>TEMP.outer_group_csr</cursor>
+      <else>
+        <index_insert>
+          <index>'GENERATED_ACC_QUAL_GROUPS'</index>
+          <field name="account_qualification_group">TEMP.account_qualification_group</field>
+          <field name="generated">'1'</field>
+        </index_insert>
+        <do>
+          TEMP.my_aq_proc="<![CDATA[
+<proc name='generate_acc_qual_"~TEMP.account_qualification_group~"'>
+  <param name='id_acc'/>
+  <param name='curr_decision'/>
+  <do>TEMP.fake_id_acc = 0 - TEMP.id_acc</do>
+  <index_select>
+    <index>'ACC_QUAL_GROUPS'</index>
+    <field name='id_acc'>TEMP.id_acc</field>
+    <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+    <cursor>TEMP.out_group_member_csr</cursor>
+    <else>
+      <!-- <debug>'Actually doing id_acc ['~TEMP.id_acc~'] for AQG["~TEMP.account_qualification_group~"]'</debug> -->
+      <index_insert>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>TEMP.fake_id_acc</field>
+        <field name='child_id_acc'>TEMP.id_acc</field>
+        <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+      </index_insert>
+            ]]>"
+        </do>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select * from account_qualification_groups where lower(account_qualification_group) = lower($${TEMP.account_qualification_group}) order by row_num"
+          </query>
+          <cursor>TEMP.acc_qual_rows</cursor>
+          <loop>
+            <!--<print>'Doing input AQG ['~TEMP.account_qualification_group~'] AQG ['~OBJECT(TEMP.acc_qual_rows).account_qualification_group~'] include ['~OBJECT(TEMP.acc_qual_rows).include~']'</print>-->
+            <if>
+              <condition>OBJECT(TEMP.acc_qual_rows).include ne ''</condition>
+              <then>
+                <index_select>
+                  <index>'GENERATED_ACC_QUAL_GROUPS'</index>
+                  <field name="account_qualification_group">OBJECT(TEMP.acc_qual_rows).include</field>
+                  <cursor>TEMP.group_csr</cursor>
+                  <then>
+                    <call_proc_for_current_object>
+                      <name>'generate_acc_qual_group_proc'</name>
+                      <param name='account_qualification_group'>OBJECT(TEMP.acc_qual_rows).include</param>
+                    </call_proc_for_current_object>
+                    <if>
+                      <condition>OBJECT(TEMP.acc_qual_rows).append_to_list Eq 'no'</condition>
+                      <then>
+                        <do>
+                          TEMP.my_aq_proc~="<![CDATA[
+      <index_remove>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>TEMP.fake_id_acc</field>
+        <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+      </index_remove>
+                        ]]>"
+                        </do>
+                      </then>
+                    </if>
+                    <do>
+                      TEMP.my_aq_proc~="<![CDATA[
+      <call_proc_for_current_object>
+        <name>'generate_acc_qual_"~OBJECT(TEMP.acc_qual_rows).include~"'</name>
+        <param name='id_acc'>TEMP.id_acc</param>
+        <param name='curr_decision'>TEMP.curr_decision</param>
+      </call_proc_for_current_object>
+      <index_select>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>TEMP.id_acc</field>
+        <field name='group'>"~OBJECT(TEMP.acc_qual_rows).include~"</field>
+        <cursor>TEMP.group_member_csr</cursor>
+        <loop>
+          <if>
+            <condition>OBJECT(TEMP.group_member_csr).child_id_acc ne ''</condition>
+            <then>
+                    ]]>"
+                    </do>
+                    <if>
+                      <condition>OBJECT(TEMP.acc_qual_rows).include_mvm_filter ne ''</condition>
+                      <then>
+                        <call_proc_for_current_object>
+                          <name>'replace_enum_strings'</name>
+                          <param name='source_string'>OBJECT(TEMP.acc_qual_rows).include_mvm_filter</param>
+                          <param name='target_string'>OBJECT(TEMP.acc_qual_rows).include_mvm_filter</param>
+                        </call_proc_for_current_object>
+                        <do>
+                          TEMP.my_aq_proc~="<![CDATA[
+              <if>
+                <condition>"~OBJECT(TEMP.acc_qual_rows).include_mvm_filter~"</condition>
+                <then>
+                          ]]>"
+                        </do>
+                      </then>
+                    </if>
+                    <do>
+                      TEMP.my_aq_proc~="<![CDATA[
+              <index_insert>
+                <index>'ACC_QUAL_GROUPS'</index>
+                <field name='id_acc'>TEMP.fake_id_acc</field>
+                <field name='child_id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</field>
+                <field name='group'>'"~OBJECT(TEMP.acc_qual_rows).include~"'</field>
+              </index_insert>
+              <call_proc_for_current_object>
+                <name>'get_id_acc_object'</name>
+                <param name='id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</param>
+                <param name='id_acc_object'>TEMP.my_account</param>
+              </call_proc_for_current_object>
+              <!--<set_object_field>
+                <input>'"~OBJECT(TEMP.acc_qual_rows).row_num~"'</input>
+                <object_id>TEMP.my_account</object_id>
+                <field_name>'"~TEMP.account_qualification_group~"_'~TEMP.id_acc~'_rownum'</field_name>
+              </set_object_field>-->
+              <!--<do>OBJECT(TEMP.my_account)."~TEMP.account_qualification_group~"_rownum = '"~OBJECT(TEMP.acc_qual_rows).row_num~"'</do>-->
+                    ]]>"
+                    </do>
+                    <if>
+                      <condition>OBJECT(TEMP.acc_qual_rows).include_mvm_filter ne ''</condition>
+                      <then>
+                        <do>
+                          TEMP.my_aq_proc~="<![CDATA[
+                </then>
+              </if>
+                          ]]>"
+                        </do>
+                      </then>
+                    </if>
+                    <do>
+                      TEMP.my_aq_proc~="<![CDATA[
+            </then>
+          </if>
+        </loop>
+      </index_select>
+                
+            ]]>"
+                    </do>
+                  </then>
+                  <else>
+                    <if>
+                      <condition>OBJECT(TEMP.acc_qual_rows).source_field eq ''</condition>
+                      <then>
+                        <do>OBJECT(TEMP.acc_qual_rows).source_field = 'id_acc'</do>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.acc_qual_rows).target_field eq ''</condition>
+                      <then>
+                        <do>OBJECT(TEMP.acc_qual_rows).target_field = 'id_acc'</do>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.acc_qual_rows).output_field ne ''</condition>
+                      <then>
+                        <do>
+                          TEMP.my_aq_proc~="<![CDATA[
+      <index_remove>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>'0'</field>
+        <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+      </index_remove>
+      <index_select>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>TEMP.fake_id_acc</field>
+        <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+        <cursor>TEMP.group_member_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'ACC_QUAL_GROUPS'</index>
+            <field name='id_acc'>'0'</field>
+            <field name='child_id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</field>
+            <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+          </index_insert>
+        </loop>
+      </index_select>
+                          ]]>"
+                        </do>
+                        <if>
+                          <condition>OBJECT(TEMP.acc_qual_rows).append_to_list Eq 'no'</condition>
+                          <then>
+                            <do>
+                              TEMP.my_aq_proc~="<![CDATA[
+      <index_remove>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>TEMP.fake_id_acc</field>
+        <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+      </index_remove>
+                        ]]>"
+                            </do>
+                          </then>
+                        </if>
+                        <do>
+                          TEMP.my_aq_proc~='<![CDATA[
+      <index_select>
+        <index>"ACC_QUAL_GROUPS"</index>
+        <field name="id_acc">"0"</field>
+        <field name="group">"'~TEMP.account_qualification_group~'"</field>
+        <cursor>TEMP.group_member_csr</cursor>
+        <loop>
+          <index_select>
+            <index>"OVERLAID_CHILD_ACCOUNT_TABLES"</index>
+            <field name="id_acc">OBJECT(TEMP.group_member_csr).child_id_acc</field>
+            <field name="table_name">"'~OBJECT(TEMP.acc_qual_rows).include~'"</field>
+            <field name="predicate">"'~OBJECT(TEMP.acc_qual_rows).include_filter~'"</field>
+            <field name="target_field">"'~OBJECT(TEMP.acc_qual_rows).target_field~'"</field>
+            <field name="output_field">"'~OBJECT(TEMP.acc_qual_rows).output_field~'"</field>
+            <cursor>TEMP.overlaid_tables_csr</cursor>
+            <loop>
+              <index_insert>
+                <index>"ACC_QUAL_GROUPS"</index>
+                <field name="id_acc">TEMP.fake_id_acc</field>
+                <field name="child_id_acc">OBJECT(TEMP.overlaid_tables_csr).child_id_acc</field>
+                <field name="group">"'~TEMP.account_qualification_group~'"</field>
+              </index_insert>
+            </loop>
+            <else>
+                          ]]>'
+                        </do>
+                        <if>
+                          <condition>OBJECT(TEMP.acc_qual_rows).source_field ne ''</condition>
+                          <then>
+						    <match>
+                              <input>OBJECT(TEMP.acc_qual_rows).source_field</input>
+                              <regex>"\."</regex>
+                              <success>TEMP.success</success>
+                            </match>
+                            <if>
+                              <condition>TEMP.success</condition>
+                              <else>
+                                <do>OBJECT(TEMP.acc_qual_rows).source_field = 'OBJECT(TEMP.my_account).'~OBJECT(TEMP.acc_qual_rows).source_field</do>
+                              </else>
+                            </if>
+                            <replace>
+                              <input>OBJECT(TEMP.acc_qual_rows).source_field</input>
+                              <old_value>'OBJECT.'</old_value>
+                              <new_value>'OBJECT(TEMP.my_account).'</new_value>
+                              <output>OBJECT(TEMP.acc_qual_rows).source_field</output>
+                            </replace>
+                            <replace>
+                              <input>OBJECT(TEMP.acc_qual_rows).source_field</input>
+                              <old_value>'ACCOUNT.'</old_value>
+                              <new_value>'OBJECT(TEMP.my_account).'</new_value>
+                              <output>OBJECT(TEMP.acc_qual_rows).source_field</output>
+                            </replace>
+                             <replace>
+                              <input>OBJECT(TEMP.acc_qual_rows).source_field</input>
+                              <old_value>'DECISION.'</old_value>
+                              <new_value>'OBJECT(TEMP.curr_decision).'</new_value>
+                              <output>OBJECT(TEMP.acc_qual_rows).source_field</output>
+                            </replace>
+                            <call_proc_for_current_object>
+                              <name>'replace_enum_strings'</name>
+                              <param name='source_string'>OBJECT(TEMP.acc_qual_rows).source_field</param>
+                              <param name='target_string'>OBJECT(TEMP.acc_qual_rows).source_field</param>
+                            </call_proc_for_current_object>
+                          </then>
+                        </if>
+                        <if>
+                          <condition>OBJECT(TEMP.acc_qual_rows).include_filter ne ''</condition>
+                          <then>
+                            <replace>
+                              <input>OBJECT(TEMP.acc_qual_rows).include_filter</input>
+                              <old_value>'OBJECT.'</old_value>
+                              <new_value>'OBJECT(TEMP.my_account).'</new_value>
+                              <output>OBJECT(TEMP.acc_qual_rows).include_filter</output>
+                            </replace>
+                            <replace>
+                              <input>OBJECT(TEMP.acc_qual_rows).include_filter</input>
+                              <old_value>'ACCOUNT.'</old_value>
+                              <new_value>'OBJECT(TEMP.my_account).'</new_value>
+                              <output>OBJECT(TEMP.acc_qual_rows).include_filter</output>
+                            </replace>
+                             <replace>
+                              <input>OBJECT(TEMP.acc_qual_rows).include_filter</input>
+                              <old_value>'DECISION.'</old_value>
+                              <new_value>'OBJECT(TEMP.curr_decision).'</new_value>
+                              <output>OBJECT(TEMP.acc_qual_rows).include_filter</output>
+                            </replace>
+                            <call_proc_for_current_object>
+                              <name>'replace_enum_strings'</name>
+                              <param name='source_string'>OBJECT(TEMP.acc_qual_rows).include_filter</param>
+                              <param name='target_string'>OBJECT(TEMP.acc_qual_rows).include_filter</param>
+                            </call_proc_for_current_object>
+                            <match>
+                              <input>OBJECT(TEMP.acc_qual_rows).include_filter</input>
+                              <regex>"WHERE"</regex>
+                              <success>TEMP.success</success>
+                            </match>
+                            <if>
+                              <condition>TEMP.success</condition>
+                              <then>
+                                <do>TEMP.where = OBJECT(TEMP.acc_qual_rows).include_filter~' and '</do>
+                              </then>
+                              <else>
+                                <do>TEMP.where = ' where '~OBJECT(TEMP.acc_qual_rows).include_filter~' and '</do>
+                              </else>
+                            </if>
+                          </then>
+                          <else>
+                            <do>TEMP.where = ' where '</do>
+                          </else>
+                        </if>
+                        <do>
+                          TEMP.my_aq_proc~='<![CDATA[
+              <call_proc_for_current_object>
+                <name>"get_id_acc_object"</name>
+                <param name="id_acc">OBJECT(TEMP.group_member_csr).child_id_acc</param>
+                <param name="id_acc_object">TEMP.my_account</param>
+              </call_proc_for_current_object>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query type="oracle">
+                  "select '~OBJECT(TEMP.acc_qual_rows).output_field~' output_field from '~OBJECT(TEMP.acc_qual_rows).include~' 
+                    '~TEMP.where~' '~OBJECT(TEMP.acc_qual_rows).target_field~' = $${'~OBJECT(TEMP.acc_qual_rows).source_field~'}"
+                </query>
+                <query type="sql">
+                  "select '~OBJECT(TEMP.acc_qual_rows).output_field~' output_field from '~OBJECT(TEMP.acc_qual_rows).include~' 
+                    '~TEMP.where~' '~OBJECT(TEMP.acc_qual_rows).target_field~' = $${'~OBJECT(TEMP.acc_qual_rows).source_field~'}"
+                </query>
+                <cursor>TEMP.output_csr</cursor>
+                <loop>
+                  <call_proc_for_current_object>
+                    <name>"get_id_acc_object"</name>
+                    <param name="id_acc">OBJECT(TEMP.output_csr).output_field</param>
+                    <param name="id_acc_object">TEMP.my_account</param>
+                  </call_proc_for_current_object>
+                  <index_insert>
+                    <index>"OVERLAID_CHILD_ACCOUNT_TABLES"</index>
+                    <field name="id_acc">OBJECT(TEMP.group_member_csr).child_id_acc</field>
+                    <field name="table_name">"'~OBJECT(TEMP.acc_qual_rows).include~'"</field>
+                    <field name="predicate">"'~OBJECT(TEMP.acc_qual_rows).include_filter~'"</field>
+                    <field name="target_field">"'~OBJECT(TEMP.acc_qual_rows).target_field~'"</field>
+                    <field name="output_field">"'~OBJECT(TEMP.acc_qual_rows).output_field~'"</field>
+                    <field name="child_id_acc">OBJECT(TEMP.output_csr).output_field</field>
+                  </index_insert>
+                  <index_insert>
+                    <index>"ACC_QUAL_GROUPS"</index>
+                    <field name="id_acc">TEMP.fake_id_acc</field>
+                    <field name="child_id_acc">OBJECT(TEMP.output_csr).output_field</field>
+                    <field name="group">"'~TEMP.account_qualification_group~'"</field>
+                  </index_insert>
+                  <!--<set_object_field>
+                    <input>"'~OBJECT(TEMP.acc_qual_rows).row_num~'"</input>
+                    <object_id>TEMP.my_account</object_id>
+                    <field_name>"'~TEMP.account_qualification_group~'_"~TEMP.id_acc~"_rownum"</field_name>
+                 </set_object_field>-->
+                </loop>
+              </db_select>
+            </else>
+          </index_select>
+        </loop>
+      </index_select>
+      <index_remove>
+        <index>"ACC_QUAL_GROUPS"</index>
+        <field name="id_acc">"0"</field>
+        <field name="group">"'~TEMP.account_qualification_group~'"</field>
+      </index_remove>
+                            
+                        ]]>'
+                        </do>
+                      </then>
+                      <else>
+
+                        <do>
+                          TEMP.my_aq_proc~="<![CDATA[
+      <index_select>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>TEMP.fake_id_acc</field>
+        <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+        <cursor>TEMP.group_member_csr</cursor>
+        <loop>
+          <call_proc_for_current_object>
+            <name>'get_id_acc_object'</name>
+            <param name='id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</param>
+            <param name='id_acc_object'>TEMP.my_account</param>
+          </call_proc_for_current_object>
+          <if>
+            <condition>OBJECT(TEMP.my_account).overlay_"~OBJECT(TEMP.acc_qual_rows).include~" eq ''</condition>
+            <then>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query type='oracle'>
+                  'select * from "~OBJECT(TEMP.acc_qual_rows).include~" 
+                     where "~OBJECT(TEMP.acc_qual_rows).target_field~" = $${OBJECT(TEMP.my_account)."~OBJECT(TEMP.acc_qual_rows).source_field~"}'
+                </query>
+                <query type='sql'>
+                  'select * from "~OBJECT(TEMP.acc_qual_rows).include~" 
+                    where "~OBJECT(TEMP.acc_qual_rows).target_field~" = $${OBJECT(TEMP.my_account)."~OBJECT(TEMP.acc_qual_rows).source_field~"}'
+                </query>
+                <cursor>TEMP.output_csr</cursor>
+                <loop>
+                  <!--<set_object_field>
+                    <input>'1'</input>
+                    <object_id>TEMP.my_account</object_id>
+                    <field_name>'"~TEMP.account_qualification_group~"_'~TEMP.id_acc~'_"~OBJECT(TEMP.acc_qual_rows).row_num~"'</field_name>
+                  </set_object_field>-->
+                  <!--<do>OBJECT(TEMP.my_account)."~TEMP.account_qualification_group~"_"~OBJECT(TEMP.acc_qual_rows).row_num~" = '1'</do>-->
+                  <do>OBJECT(TEMP.my_account).overlay_"~OBJECT(TEMP.acc_qual_rows).include~" = '1'</do>
+                  <inherit_object>
+                    <source>TEMP.output_csr</source>
+                    <target>TEMP.my_account</target>
+                  </inherit_object>
+                </loop>
+                <else>
+                  <!--<set_object_field>
+                    <input>'0'</input>
+                    <object_id>TEMP.my_account</object_id>
+                    <field_name>'"~TEMP.account_qualification_group~"_'~TEMP.id_acc~'_"~OBJECT(TEMP.acc_qual_rows).row_num~"'</field_name>
+                  </set_object_field>-->
+                  <!--<do>OBJECT(TEMP.my_account).overlay_"~OBJECT(TEMP.acc_qual_rows).include~" = '0'</do>-->
+                  <do>OBJECT(TEMP.my_account)."~TEMP.account_qualification_group~"_"~OBJECT(TEMP.acc_qual_rows).row_num~" = '0'</do>
+                </else>
+              </db_select>
+            </then>
+            <else>
+              <!--<set_object_field>
+                <input>OBJECT(TEMP.my_account).overlay_"~OBJECT(TEMP.acc_qual_rows).include~"</input>
+                <object_id>TEMP.my_account</object_id>
+                <field_name>'"~TEMP.account_qualification_group~"_'~TEMP.id_acc~'_"~OBJECT(TEMP.acc_qual_rows).row_num~"'</field_name>
+              </set_object_field>-->
+              <!--<do>OBJECT(TEMP.my_account)."~TEMP.account_qualification_group~"_"~OBJECT(TEMP.acc_qual_rows).row_num~" = OBJECT(TEMP.my_account).overlay_"~OBJECT(TEMP.acc_qual_rows).include~"</do>-->
+            </else>
+          </if>
+        </loop>
+      </index_select>
+                        ]]>"
+                        </do>
+
+                      </else>
+                    </if>
+                  </else>
+                </index_select>
+              </then>
+            </if>
+            <do>TEMP.my_temp_fields = ''</do>
+            <if>
+              <condition>OBJECT(TEMP.acc_qual_rows).filter ne ''</condition>
+              <then>
+                <do>TEMP.curr_filter = OBJECT(TEMP.acc_qual_rows).filter</do>
+                <do>TEMP.success = '1'</do>
+                <while>
+                  <condition>TEMP.success eq '1'</condition>
+                  <loop>
+                    <match>
+                      <input>TEMP.curr_filter</input>
+                      <regex>"GROUP\.(\w+)"</regex>
+                      <success>TEMP.success</success>
+                      <capture>TEMP.my_group</capture>
+                    </match>
+                    <if>
+                      <condition>TEMP.success eq '1'</condition>
+                      <then>
+                        <replace>
+                          <input>TEMP.curr_filter</input>
+                          <old_value>'GROUP.'~TEMP.my_group</old_value>
+                          <new_value>'OBJECT(TEMP.my_account).member_of_'~TEMP.my_group</new_value>
+                          <output>TEMP.curr_filter</output>
+                        </replace>
+                        <call_proc_for_current_object>
+                          <name>'generate_acc_qual_group_proc'</name>
+                          <param name='account_qualification_group'>TEMP.my_group</param>
+                        </call_proc_for_current_object>
+                        <do>
+                          TEMP.my_aq_proc~="<![CDATA[
+      <call_proc_for_current_object>
+        <name>'generate_acc_qual_"~TEMP.my_group~"'</name>
+        <param name='id_acc'>TEMP.id_acc</param>
+        <param name='curr_decision'>TEMP.curr_decision</param>
+      </call_proc_for_current_object>
+      ]]>"
+                        </do>
+                        <!--<do>
+                          TEMP.my_temp_fields~="<![CDATA[
+      <set_object_field>
+        <input>OBJECT(TEMP.my_account).member_of_"~TEMP.account_qualification_group~"</input>
+        <object_id>TEMP.my_account</object_id>
+        <field_name>'member_of_"~TEMP.account_qualification_group~"_'~TEMP.id_acc</field_name>
+      </set_object_field>
+      
+                    ]]>"
+                        </do>-->
+                      </then>
+                    </if>
+                  </loop>
+                </while>
+                <replace>
+                  <input>TEMP.curr_filter</input>
+                  <old_value>'OBJECT.'</old_value>
+                  <new_value>'OBJECT(TEMP.my_account).'</new_value>
+                  <output>TEMP.curr_filter</output>
+                </replace>
+                <call_proc_for_current_object>
+                  <name>'replace_enum_strings'</name>
+                  <param name='source_string'>TEMP.curr_filter</param>
+                  <param name='target_string'>TEMP.curr_filter</param>
+                </call_proc_for_current_object>
+                <do>
+                  TEMP.my_aq_proc~="<![CDATA[
+      <do>TEMP.fake_id_acc2 = 0 - TEMP.fake_id_acc</do>
+      <index_select>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>TEMP.fake_id_acc</field>
+        <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+        <cursor>TEMP.group_member_csr</cursor>
+        <loop>
+          <call_proc_for_current_object>
+            <name>'get_id_acc_object'</name>
+            <param name='id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</param>
+            <param name='id_acc_object'>TEMP.my_account</param>
+          </call_proc_for_current_object>
+          "~TEMP.my_temp_fields~"
+          <if>
+            <condition>"~TEMP.curr_filter~"</condition>
+            <then>
+              <index_insert>
+                <index>'ACC_QUAL_GROUPS'</index>
+                <field name='id_acc'>TEMP.fake_id_acc2</field>
+                <field name='child_id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</field>
+                <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+              </index_insert>
+            </then>
+            <else>
+              <!--<set_object_field>
+                <input>'0'</input>
+                <object_id>TEMP.my_account</object_id>
+                <field_name>'member_of_"~TEMP.account_qualification_group~"_'~TEMP.id_acc</field_name>
+              </set_object_field>-->
+              <do>OBJECT(TEMP.my_account).member_of_"~TEMP.account_qualification_group~" = '0'</do>
+            </else>
+          </if>
+        </loop>
+      </index_select>
+      <index_remove>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>TEMP.fake_id_acc</field>
+        <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+      </index_remove>
+      <do>TEMP.fake_id_acc = TEMP.fake_id_acc2</do>
+                  ]]>"
+                </do>
+
+              </then>
+            </if>
+          </loop>
+          <else>
+            <fatal>'Generated an Account Qualification Group ['~TEMP.account_qualification_group~'] that does not exist or has no defined filter criteria!'</fatal>
+          </else>
+        </db_select>
+        <do>
+          TEMP.my_aq_proc~="<![CDATA[
+          
+      <if>
+        <condition>TEMP.fake_id_acc ne TEMP.id_acc</condition>
+        <then>        
+          <index_select>
+            <index>'ACC_QUAL_GROUPS'</index>
+            <field name='id_acc'>TEMP.fake_id_acc</field>
+            <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+            <cursor>TEMP.group_member_csr</cursor>
+            <loop>
+              <index_insert>
+                <index>'ACC_QUAL_GROUPS'</index>
+                <field name='id_acc'>TEMP.id_acc</field>
+                <field name='child_id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</field>
+                <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+              </index_insert>
+            </loop>
+          </index_select>
+        </then>
+      </if>
+          
+      <index_select>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>TEMP.fake_id_acc</field>
+        <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+        <cursor>TEMP.group_member_csr</cursor>
+        <loop>
+          <print>'Here I have id_acc['~OBJECT(TEMP.group_member_csr).child_id_acc~'] for parent ['~TEMP.id_acc~']'</print>
+          <call_proc_for_current_object>
+            <name>'get_id_acc_object'</name>
+            <param name='id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</param>
+            <param name='id_acc_object'>TEMP.my_account</param>
+          </call_proc_for_current_object>
+          <!--<set_object_field>
+            <input>'1'</input>
+            <object_id>TEMP.my_account</object_id>
+            <field_name>'member_of_"~TEMP.account_qualification_group~"_'~TEMP.id_acc</field_name>
+          </set_object_field>-->
+          <do>OBJECT(TEMP.my_account).member_of_"~TEMP.account_qualification_group~" = '1'</do>
+          <if>
+            <condition>TEMP.fake_id_acc ne TEMP.id_acc</condition>
+            <then>
+              <index_insert>
+                <index>'ACC_QUAL_GROUPS'</index>
+                <field name='id_acc'>TEMP.id_acc</field>
+                <field name='child_id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</field>
+                <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+              </index_insert>
+            </then>
+          </if>
+        </loop>
+        <else>
+          <index_insert>
+                <index>'ACC_QUAL_GROUPS'</index>
+                <field name='id_acc'>TEMP.id_acc</field>
+                <field name='child_id_acc'>''</field>
+                <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+          </index_insert>
+        </else>
+      </index_select>
+      <if>
+        <condition>TEMP.fake_id_acc ne TEMP.id_acc</condition>
+        <then>
+          <index_remove>
+            <index>'ACC_QUAL_GROUPS'</index>
+            <field name='id_acc'>TEMP.fake_id_acc</field>
+            <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+          </index_remove>
+        </then>
+      </if>
+    </else>
+  </index_select>
+  
+  <c>Now dedupe</c>
+  <index_clear>
+    <index>'ACC_DEDUPE'</index>
+  </index_clear>
+  
+  <index_select>
+    <index>'ACC_QUAL_GROUPS'</index>
+    <field name='id_acc'>TEMP.id_acc</field>
+    <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+    <cursor>TEMP.group_member_csr</cursor>
+    <loop>
+      <index_select>
+        <index>'ACC_DEDUPE'</index>
+        <field name='id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</field>
+        <cursor>TEMP.dedupe_csr</cursor>
+        <else>
+          <index_insert>
+            <index>'ACC_DEDUPE'</index>
+            <field name='id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</field>
+          </index_insert>
+        </else>
+      </index_select>
+    </loop>
+  </index_select>
+  <index_remove>
+    <index>'ACC_QUAL_GROUPS'</index>
+    <field name='id_acc'>TEMP.id_acc</field>
+    <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+  </index_remove>
+  <index_select_keys>
+    <index>'ACC_DEDUPE'</index>
+    <cursor>TEMP.dedupe_csr</cursor>
+    <loop>
+      <index_insert>
+        <index>'ACC_QUAL_GROUPS'</index>
+        <field name='id_acc'>TEMP.id_acc</field>
+        <field name='group'>'"~TEMP.account_qualification_group~"'</field>
+        <field name='child_id_acc'>OBJECT(TEMP.dedupe_csr).id_acc</field>
+      </index_insert>
+    </loop>
+  </index_select_keys>
+  <index_clear>
+    <index>'ACC_DEDUPE'</index>
+  </index_clear>
+</proc>
+          ]]>"
+        </do>
+        <!--<print>TEMP.my_aq_proc</print>-->
+        <execute_immediate>TEMP.my_aq_proc</execute_immediate>
+      </else>
+    </index_select>
+  </proc>
+
+</procs>

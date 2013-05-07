@@ -1,0 +1,20 @@
+<procs>
+  
+  <proc name="start_ramp">
+
+    <print>'** Start RAMP physical_cluster=['~GLOBAL.physical_cluster~'] logical_cluster=['~GLOBAL.logical_cluster~'] physical_node_id=["+GLOBAL.physical_node_id+"] logical_node_id=['~GLOBAL.physical_node_id~']'</print>
+    <spawn>
+      <object_type>'STATION1'</object_type>
+      <object_id>TEMP.oid</object_id>
+    </spawn>
+
+    <send_proc_call>
+      <name>'dequeue_usage'</name>
+      <object_id>TEMP.oid</object_id>
+      <node_id>GLOBAL.node_id</node_id>
+      <priority>1000</priority>
+    </send_proc_call>
+    
+  </proc>
+
+</procs>

@@ -1,0 +1,157 @@
+<procs>
+  <proc name="check_for_bucket_triggers">
+    <param name='bucket_object'/>
+    <param name='usage_object'/>
+    <!--<debug>'JONAH HAS NOT DONE BUCKET TRIGGERS YET!!!!!'</debug>-->
+    <!--<print>'Processing bucket triggers!'</print>-->
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).charge_on_every Ne ''</condition>
+      <then>
+        <call_dynamic_proc_for_object>
+          <name>'create_charge_'~OBJECT(TEMP.bucket_object).charge_type_id</name>
+          <object_id>TEMP.bucket_object</object_id>
+          <param name='charge_direction'>'every'</param>
+          <param name='usage_object'>TEMP.usage_object</param>
+          <param name='bucket_object'>TEMP.bucket_object</param>
+          <param name='parent_object'>''</param>
+          <param name='precalc_amount'>''</param>
+          <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+        </call_dynamic_proc_for_object>
+      </then>
+    </if>
+    
+    <if>
+      <condition>
+        (OBJECT(TEMP.bucket_object).decrement_counter ne '1' and OBJECT(TEMP.bucket_object).tier_start GTE OBJECT(TEMP.bucket_object).last_qualified_total and OBJECT(TEMP.bucket_object).tier_start LT OBJECT(TEMP.bucket_object).qualified_total)
+        or (OBJECT(TEMP.bucket_object).decrement_counter eq '1' and OBJECT(TEMP.bucket_object).tier_end LTE OBJECT(TEMP.bucket_object).last_qualified_total and OBJECT(TEMP.bucket_object).tier_end GT OBJECT(TEMP.bucket_object).qualified_total)
+      </condition>
+      <then>
+        <do>OBJECT(TEMP.bucket_object).within_tier_boundary = '1'</do>
+        <c>need to fire before trigger for bucket</c>
+        <!--<print>'Firing before bucket trigger['~OBJECT(TEMP.bucket_object).last_qualified_total~']['~OBJECT(TEMP.bucket_object).qualified_total~']['~OBJECT(TEMP.bucket_object).tier_start~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).charge_on_inbound Ne ''</condition>
+          <then>
+            <!--<print>'Firing inbound charge!'</print>-->
+            <call_dynamic_proc_for_object>
+              <name>'create_charge_'~OBJECT(TEMP.bucket_object).charge_type_id</name>
+              <object_id>TEMP.bucket_object</object_id>
+              <param name='charge_direction'>'inbound'</param>
+              <param name='usage_object'>TEMP.usage_object</param>
+              <param name='bucket_object'>TEMP.bucket_object</param>
+              <param name='parent_object'>''</param>
+              <param name='precalc_amount'>''</param>
+              <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+            </call_dynamic_proc_for_object>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).notify_on_inbound Ne ''</condition>
+          <then>
+            <print>'Firing notify on inbound!'</print>
+          </then>
+        </if>
+      </then>
+    </if>
+    <if>
+      <condition>
+        (OBJECT(TEMP.bucket_object).decrement_counter ne '1' and OBJECT(TEMP.bucket_object).tier_end GTE OBJECT(TEMP.bucket_object).last_qualified_total and OBJECT(TEMP.bucket_object).tier_end LT OBJECT(TEMP.bucket_object).qualified_total)
+        or (OBJECT(TEMP.bucket_object).decrement_counter eq '1' and OBJECT(TEMP.bucket_object).tier_start LTE OBJECT(TEMP.bucket_object).last_qualified_total and OBJECT(TEMP.bucket_object).tier_start GT OBJECT(TEMP.bucket_object).qualified_total)
+      </condition>
+      <then>
+        <do>OBJECT(TEMP.bucket_object).within_tier_boundary = '0'</do>
+        <!--<print>'Firing after bucket trigger['~OBJECT(TEMP.bucket_object).qualified_total~']['~OBJECT(TEMP.bucket_object).tier_end~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+        <c>need to fire after trigger for bucket</c>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).charge_on_outbound Ne ''</condition>
+          <then>
+            <call_dynamic_proc_for_object>
+              <name>'create_charge_'~OBJECT(TEMP.bucket_object).charge_type_id</name>
+              <object_id>TEMP.bucket_object</object_id>
+              <param name='charge_direction'>'outbound'</param>
+              <param name='usage_object'>TEMP.usage_object</param>
+              <param name='bucket_object'>TEMP.bucket_object</param>
+              <param name='parent_object'>''</param>
+              <param name='precalc_amount'>''</param>
+              <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+            </call_dynamic_proc_for_object>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).notify_on_outbound Ne ''</condition>
+          <then>
+            <print>'Firing notify on outbound!'</print>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).tier_repetition Eq 'individual'</condition>
+          <then>
+            <do>TEMP.tier_delta = OBJECT(TEMP.bucket_object).tier_end - OBJECT(TEMP.bucket_object).tier_start</do>
+            <do>OBJECT(TEMP.bucket_object).tier_start = OBJECT(TEMP.bucket_object).tier_end</do>
+            <do>OBJECT(TEMP.bucket_object).tier_end = OBJECT(TEMP.bucket_object).tier_start + TEMP.tier_delta</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).tier_start GTE OBJECT(TEMP.bucket_object).last_qualified_total and OBJECT(TEMP.bucket_object).tier_start LT OBJECT(TEMP.bucket_object).qualified_total</condition>
+              <then>
+                <!--<print>'Firing repetition charge!'</print>-->
+                <c>Need to immediately fire before trigger!</c>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).charge_on_inbound Ne ''</condition>
+                  <then>
+                    <c>'Commenting out the create charge for repeating tiers'</c>
+                    <!--<call_dynamic_proc_for_object>
+                      <name>'create_charge_'~OBJECT(TEMP.bucket_object).charge_type_id</name>
+                      <object_id>TEMP.bucket_object</object_id>
+                      <param name='charge_direction'>'inbound'</param>
+                      <param name='usage_object'>TEMP.usage_object</param>
+                      <param name='bucket_object'>TEMP.bucket_object</param>
+                      <param name='parent_object'>''</param>
+                      <param name='precalc_amount'>''</param>
+                      <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+                    </call_dynamic_proc_for_object>-->
+                  </then>
+                </if>
+              </then>
+            </if>
+            <!--<print>'Recursively applying charge to bucket because the bucket repeated!'</print>-->
+            <call_proc_for_current_object>
+              <name>'calc_percent_eligibility'</name>
+              <param name='bucket_object'>TEMP.bucket_object</param>
+              <param name='usage_object'>TEMP.usage_object</param>
+            </call_proc_for_current_object>
+            <if>
+              <condition>OBJECT(TEMP.usage_object).percent_eligible GT '0' and OBJECT(TEMP.bucket_object).per_unit_rate ne ''</condition>
+              <then>
+                <!--<print>'TNA2Subtracting 1 from bucket ['~OBJECT(TEMP.bucket_object).decision_unique_id~'] with eligibile ['~OBJECT(TEMP.usage_object).percent_eligible~']'</print>-->
+                <do>OBJECT(TEMP.bucket_object).total_rated_events = (OBJECT(TEMP.bucket_object).total_rated_events==''?'0':OBJECT(TEMP.bucket_object).total_rated_events) - 1</do>
+              </then>
+            </if>
+            <call_proc_for_current_object>
+              <name>'apply_bucket_to_charge'</name>
+              <param name='bucket_object'>TEMP.bucket_object</param>
+              <param name='usage_object'>TEMP.usage_object</param>
+            </call_proc_for_current_object>
+            <!--<print>'Recursively calling bucket triggers'</print>-->
+            <call_proc_for_current_object>
+              <name>'check_for_bucket_triggers'</name>
+              <param name='bucket_object'>TEMP.bucket_object</param>
+              <param name='usage_object'>TEMP.usage_object</param>
+            </call_proc_for_current_object>
+            <!--<print>'DONE Recursively calling bucket triggers'</print>-->
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).tier_repetition Eq 'group' and OBJECT(TEMP.bucket_object).tier_end == OBJECT(TEMP.bucket_object).group_tier_end</condition>
+          <then>
+            <do>TEMP.tier_delta = OBJECT(TEMP.bucket_object).tier_end - OBJECT(TEMP.bucket_object).tier_start</do>
+            <do>OBJECT(TEMP.bucket_object).tier_start = OBJECT(TEMP.bucket_object).tier_end</do>
+            <do>OBJECT(TEMP.bucket_object).tier_end = OBJECT(TEMP.bucket_object).tier_start + TEMP.tier_delta</do>
+            <!--<print>'JONAH has not implemented group bucket repetition!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+          </then>
+        </if>
+      </then>
+    </if>
+    <!--<print>'DONE Processing bucket triggers!'</print>-->
+  </proc>
+
+</procs>

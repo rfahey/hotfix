@@ -1,0 +1,58 @@
+<proc name="set_exchange_rates">
+
+  <run_once>
+    <call_proc_for_current_object>
+      <name>'convert_currency_amount'</name>
+      <param name='source_field'>TEMP.source</param>
+      <param name='source_currency'>'BOGUS'</param>
+      <param name='target_field'>TEMP.target</param>
+      <param name='target_currency'>'BOGUS'</param>
+      <param name='effective_date'>'1234567890'</param>
+    </call_proc_for_current_object>
+  </run_once>
+
+  <index_select>
+    <index>'ALL_CURRENCY_CONVERSIONS'</index>
+    <field name="source_currency_code">OBJECT.c_rate_curr</field>
+    <field name="target_currency_code">OBJECT.am_currency</field>
+    <field name="start_date">OBJECT.dt_session</field>
+    <cursor>TEMP.currency_cur</cursor>
+    <then>
+      <do>OBJECT.c_fx_inv_rate = OBJECT(TEMP.currency_cur).exchange_rate</do>
+    </then>
+  </index_select>
+
+  <index_select>
+    <index>'ALL_CURRENCY_CONVERSIONS'</index>
+    <field name="source_currency_code">OBJECT.am_currency</field>
+    <field name="target_currency_code">OBJECT.c_div_curr</field>
+    <field name="start_date">OBJECT.dt_session</field>
+    <cursor>TEMP.currency_cur</cursor>
+    <then>
+      <do>OBJECT.c_fx_div_rate = OBJECT(TEMP.currency_cur).exchange_rate</do>
+    </then>
+  </index_select>
+
+  <index_select>
+    <index>'ALL_CURRENCY_CONVERSIONS'</index>
+    <field name="source_currency_code">OBJECT.am_currency</field>
+    <field name="target_currency_code">OBJECT.c_bu_curr</field>
+    <field name="start_date">OBJECT.dt_session</field>
+    <cursor>TEMP.currency_cur</cursor>
+    <then>
+      <do>OBJECT.c_fx_bu_rate = OBJECT(TEMP.currency_cur).exchange_rate</do>
+    </then>
+  </index_select>
+
+  <index_select>
+    <index>'ALL_CURRENCY_CONVERSIONS'</index>
+    <field name="source_currency_code">OBJECT.am_currency</field>
+    <field name="target_currency_code">OBJECT.c_gbl_curr</field>
+    <field name="start_date">OBJECT.dt_session</field>
+    <cursor>TEMP.currency_cur</cursor>
+    <then>
+      <do>OBJECT.c_fx_gbl_rate = OBJECT(TEMP.currency_cur).exchange_rate</do>
+    </then>
+  </index_select>
+
+</proc>

@@ -1,0 +1,24 @@
+<proc name="bg_manage_boundary_group_overlaps">
+  <param name='boundary_group_id' mode='in out'/>
+
+  <db_select>
+    <login_object>GLOBAL.target_login</login_object>
+    <query>
+      "select distinct b.boundary_group_id from agg_boundary_group_acc_map a 
+        inner join agg_boundary_group_acc_map b on a.id_acc = b.id_acc and a.boundary_group_id != b.boundary_group_id
+        where a.boundary_group_id = $${TEMP.boundary_group_id}
+        order by b.boundary_group_id
+      "
+    </query>
+    <cursor>TEMP.bgam_csr</cursor>
+    <loop>
+      <call_proc_for_current_object>
+        <name>'bg_combine_boundary_groups'</name>
+        <param name='boundary_group_id1'>TEMP.boundary_group_id</param>
+        <param name='boundary_group_id2'>OBJECT(TEMP.bgam_csr).boundary_group_id</param>
+        <param name='combined_bg'>TEMP.got_lock</param>
+      </call_proc_for_current_object>
+    </loop>
+  </db_select>
+
+</proc>

@@ -1,0 +1,56 @@
+<procs>
+  <proc name='perform_map_gsub_filter'>
+    <if>
+      <condition>OBJECT.id_group ne '' and (OBJECT.account_qualification_group Eq 'GroupMembers' or OBJECT.group_sub_level Eq 'group')</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'get_id_acc_object'</name>
+          <param name='id_acc'>'g_'~OBJECT.id_group</param>
+          <param name='id_acc_object'>TEMP.my_group</param>
+        </call_proc_for_current_object>
+        <if>
+          <condition>OBJECT(TEMP.my_account).overlay_min_group eq ''</condition>
+          <then>
+            <db_select>
+              <login_object>GLOBAL.target_login</login_object>
+              <query type='oracle'>
+                'select min(id_acc) min_id_acc from t_gsubmember gsub
+                where id_group = $${OBJECT.id_group}
+                and to_date($${GLOBAL.interval_end_date},'YYYYMMDDHH24MISS') >= gsub.vt_start
+                and gsub.vt_end > to_date($${GLOBAL.interval_start_date},'YYYYMMDDHH24MISS')
+                and gsub.vt_end >= (gsub.vt_start + 1)'
+              </query>
+              <query type='sql'>
+                'select min(id_acc) min_id_acc from t_gsubmember gsub
+                where gsub.id_group = $${OBJECT.id_group}
+                and CAST($${GLOBAL.interval_end_date} AS DATETIME) >= gsub.vt_start
+                and gsub.vt_end > CAST($${GLOBAL.interval_start_date} AS DATETIME)
+                and gsub.vt_end >= dateadd(dd,1,gsub.vt_start)'
+              </query>
+              <cursor>TEMP.output_csr</cursor>
+              <loop>
+                <do>OBJECT(TEMP.my_group).overlay_min_group = '1'</do>
+                <inherit_object>
+                  <source>TEMP.output_csr</source>
+                  <target>TEMP.my_group</target>
+                </inherit_object>
+              </loop>
+            </db_select>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT.id_acc ne OBJECT(TEMP.my_group).min_id_acc</condition>
+          <then>
+            <do>OBJECT.discard_decision = 1</do>
+          </then>
+        </if>
+      </then>
+    </if>
+    <if>
+      <condition>OBJECT.id_group eq '' and (OBJECT.account_qualification_group Eq 'GroupMembers' or OBJECT.group_sub_level Eq 'group')</condition>
+      <then>
+        <do>OBJECT.discard_decision = 1</do>
+      </then>
+    </if>
+  </proc>
+</procs>

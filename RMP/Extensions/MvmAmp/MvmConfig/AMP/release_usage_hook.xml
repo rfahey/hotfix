@@ -1,0 +1,485 @@
+<procs>
+  <proc name="off_id_acc_is_complete" namespace="x">
+    <param name="id_acc"/>
+    <param name="is_complete" mode="out"/>
+    <do>TEMP.is_complete=0</do>
+  </proc>
+  
+  <proc name="release_usage_hook">
+    <param name="hook_id"/>
+    <info switch='log_erd'>'Begin to release hook_id=['~TEMP.hook_id~']'</info>
+
+    <run_once>
+      <define_memory_index>
+        <index>'DELETED_CHARGE_CURSORS'</index>
+        <key_field>'id_view'</key_field>
+        <field type='object_id'>'del_csr'</field>
+      </define_memory_index>
+    </run_once>
+
+    <index_clear>
+      <index>'ACCOUNT_IS_COMPLETE_FLAGS'</index>
+    </index_clear>
+
+    <info switch='log_erd'>'open up cursors for each id_view in USAGE_TO_DELETE'</info>
+    <index_clear>
+      <index>'DELETED_CHARGE_CURSORS'</index>
+    </index_clear>
+    <index_select_keys>
+      <index>'USAGE_TO_DELETE'</index>
+      <cursor>TEMP.csr1</cursor>
+      <loop>
+        <do>TEMP.id_view=OBJECT(TEMP.csr1).id_view</do>
+        <index_select>
+          <index>'USAGE_TO_DELETE'</index>
+          <field name="id_view">TEMP.id_view</field>
+          <cursor>TEMP.del_csr</cursor>
+        </index_select>
+        <cursor_next>TEMP.del_csr</cursor_next>
+        <info switch="log_erd">'DELETED_CHARGE_CURSORS.insert id_view=['~TEMP.id_view~'] currDelUsageOid='~OBJECT(TEMP.del_csr).del_oid~',id_sess='~OBJECT(OBJECT(TEMP.del_csr).del_oid).id_sess</info>
+        <index_insert>
+          <index>'DELETED_CHARGE_CURSORS'</index>
+          <field name="id_view">TEMP.id_view</field>
+          <field name="del_csr">TEMP.del_csr</field>
+        </index_insert>
+      </loop>
+    </index_select_keys>
+     
+    <info switch="log_erd">'loop thru usage hook (readonly) and persist to db or write out to released file'</info>
+    <usage_hook_select>
+      <hook_id>TEMP.hook_id</hook_id>
+      <read_only>1</read_only>
+      <cursor>TEMP.usg_csr</cursor>
+      <loop>
+        <c>
+          Since we might end up using a deleted charge instead of the one from the usage cursor,
+          use a TEMP.usg_oid instead of TEMP.usg_csr from this point forward.
+        </c>
+        <do>TEMP.usg_oid=TEMP.usg_csr</do>
+
+        <info switch='log_erd'>'RELEASE usage for id_payee=['~OBJECT(TEMP.usg_oid).id_payee~'] id_sess=['~OBJECT(TEMP.usg_oid).id_sess~'], id_parent_sess=['~OBJECT(TEMP.usg_oid).id_parent_sess~'], object_id=['~OBJECT(TEMP.usg_oid).object_id~'], parent_oid=['~OBJECT(TEMP.usg_oid).parent_oid~'], sortkey=['~OBJECT(TEMP.usg_oid).sortkey~'], is_live_parent=['~OBJECT(TEMP.usg_oid).is_live_parent~'], amount=['~OBJECT(TEMP.usg_oid).amount~'], deleted=['~OBJECT(TEMP.usg_oid).deleted~'], is_generated_charge=['~OBJECT(TEMP.usg_oid).is_generated_charge~']'</info>
+
+        <do>TEMP.id_payee=OBJECT(TEMP.usg_oid).id_payee</do>
+        <do>TEMP.id_view=OBJECT(TEMP.usg_oid).id_view</do>
+        <call_proc_for_current_object>
+          <name>'get_pv_table_name'</name>
+          <param name="id_view">OBJECT(TEMP.usg_oid).id_view</param>
+          <param name="table_name">TEMP.pv_table_name</param>
+        </call_proc_for_current_object>
+         
+        <!-- START GEN CHARGES -->
+        <do>TEMP.reuse_charge=0</do>
+
+        <if>
+          <condition>OBJECT(TEMP.usg_oid).is_generated_charge eq 1</condition>
+          <then>
+             
+            <c>see if we can reuse a deleted charge.</c>
+            <index_select>
+              <index>'DELETED_CHARGE_CURSORS'</index>
+              <field name="id_view">TEMP.id_view</field>
+              <cursor>TEMP.csr9</cursor>
+              <then>
+                <do>TEMP.del_csr=OBJECT(TEMP.csr9).del_csr</do>
+                <if>
+                  <condition>TEMP.del_csr eq ''</condition>
+                  <then>
+                    <fatal>'[gen][reuse]Not expecting there to be an eof cursor in DELETED_CHARGE_CURSORS'</fatal>
+                  </then>
+                </if>
+                     
+                <!-- reuse deleted charge -->
+                <do>TEMP.del_oid=OBJECT(TEMP.del_csr).del_oid</do>
+                <do>TEMP.reuse_charge=1</do>
+                <info switch='log_erd'>'[gen][reuse]REUSED deleted charge with oid=['~TEMP.del_oid~'] id_sess ['~OBJECT(TEMP.del_oid).id_sess~'] old id_payee=['~OBJECT(TEMP.del_oid).id_payee~'] new id_payee=['~OBJECT(TEMP.usg_oid).id_payee~']'</info>
+
+                <info switch='log_erd'>'[gen][reuse][advance]Advance the deleted charge cursor for next time'</info>
+                <index_remove>
+                  <index>'DELETED_CHARGE_CURSORS'</index>
+                  <field name="id_view">TEMP.id_view</field>
+                </index_remove>
+                <info switch='log_erd'>'[gen][reuse][advance]call cursor_next='~TEMP.del_csr</info>
+                <cursor_next>TEMP.del_csr</cursor_next>
+                <info switch='log_erd'>'[gen][reuse][advance]after call cursor_next='~TEMP.del_csr</info>
+                <if>
+                  <condition>TEMP.del_csr ne ''</condition>
+                  <then>
+                    <info switch="log_erd">'[gen][reuse][advance]DELETED_CHARGE_CURSORS.insert id_view=['~TEMP.id_view~'] currDelUsageOid='~OBJECT(TEMP.del_csr).del_oid~',id_sess='~OBJECT(OBJECT(TEMP.del_csr).del_oid).id_sess</info>
+                    <index_insert>
+                      <index>'DELETED_CHARGE_CURSORS'</index>
+                      <field name="id_view">TEMP.id_view</field>
+                      <field name="del_csr">TEMP.del_csr</field>
+                    </index_insert>
+                  </then>
+                  <else>
+                    <info switch="log_erd">'[gen][reuse][advance] DELETED_CHARGE_CURSORS has no more rows with id_view=['~TEMP.id_view~']'</info>
+                  </else>
+                </if>
+                     
+                <!-- Clear all the fields on the deleted object except id_sess  -->
+                <!-- Copy in all the fields from the usg cursor onto the deleted object-->
+
+                <!--object_delta_track_persisted_set>
+                  <object_id>TEMP.del_oid</object_id>
+                  <value>1</value>
+                </object_delta_track_persisted_set-->
+
+                <do>TEMP.keep_id_sess=OBJECT(TEMP.del_oid).id_sess</do>
+                <do>TEMP.keep_object_id=OBJECT(TEMP.del_oid).object_id</do>
+                <object_null_fields>
+                  <object_id>TEMP.del_oid</object_id>
+                  <exclude>'id_sess'</exclude>
+                  <exclude>'object_id'</exclude>
+                </object_null_fields>
+                <inherit_object>
+                  <source>TEMP.usg_oid</source>
+                  <target>TEMP.del_oid</target>
+                </inherit_object>
+                <do>OBJECT(TEMP.del_oid).id_sess=TEMP.keep_id_sess</do>
+                <!-- use the deleted object instead of the usage cursor object-->
+                <object_ref_get>
+                  <object_id>TEMP.del_oid</object_id>
+                  <target>TEMP.usg_oid</target>
+                </object_ref_get>
+                <info switch='log_erd'>'[gen][reuse] SET usg_oid=['~TEMP.usg_oid~'] id_sess=['~OBJECT(TEMP.usg_oid).id_sess~']'</info>
+              </then>
+              <else>
+                <info switch="log_erd">'[gen] Nothing to reuse - no more deleted charges with id_view=['~TEMP.id_view~']'</info>
+                <info switch='log_erd'>'[gen]Setup the charge as a new generated charge'</info>
+                <object_delta_add_table>
+                  <object_id>TEMP.usg_oid</object_id>
+                  <table_name>'AGG_CHARGE_AUDIT_TRAIL'</table_name>
+                </object_delta_add_table>
+                <object_delta_add_table>
+                  <object_id>TEMP.usg_oid</object_id>
+                  <table_name>'AGG_USAGE_AUDIT_TRAIL'</table_name>
+                </object_delta_add_table>
+                <object_delta_add_table>
+                  <object_id>TEMP.usg_oid</object_id>
+                  <table_name>'T_ACC_USAGE'</table_name>
+                </object_delta_add_table>
+                <object_delta_add_table>
+                  <object_id>TEMP.usg_oid</object_id>
+                  <table_name>TEMP.pv_table_name</table_name>
+                </object_delta_add_table>
+              </else>
+            </index_select>
+
+            <info switch='log_erd'>'[gen]Calling generated charge mapping for usg_oid=['~TEMP.usg_oid~'] id_sess=['~OBJECT(TEMP.usg_oid).id_sess~']'</info>
+            <call_proc_for_object>
+              <name>'generated_usage_mapping'</name>
+              <object_id>TEMP.usg_oid</object_id>
+            </call_proc_for_object>
+			<do>OBJECT(TEMP.usg_oid).is_realtime=0</do>
+            <info switch='log_erd'>'[gen]Done generated charge mapping'</info>
+            
+            <!-- 
+            Here we were clearing out the original values because a generated charges should not have 'packed' original values. This should 
+            not be necessary because because the delta object will not have any 'from tables' so there will not be any original values
+            to pack. ROB: make sure this is true!
+            -->
+            <!-- object_delta_clear_originals>
+              <object_id>TEMP.usg_oid</object_id>
+            </object_delta_clear_originals -->
+            
+          </then>
+        </if>
+        <!-- END GEN CHARGES -->
+         
+        <if>
+          <condition>OBJECT(TEMP.usg_oid).current_denorm ne ''</condition>
+          <then>
+            <call_dynamic_proc_for_object>
+              <name>'denormalize_charge_qual_'~OBJECT(TEMP.usg_oid).current_denorm</name>
+              <object_id>TEMP.usg_oid</object_id>
+            </call_dynamic_proc_for_object>
+          </then>
+        </if>
+
+        <!-- SPECIFIC THINGS -->
+        <if>
+          <condition>GLOBAL.has_tax_table</condition>
+          <then>
+            <object_delta_get_persisted>
+              <object_id>TEMP.usg_oid</object_id>
+              <field_name>'amount'</field_name>
+              <value>TEMP.persisted_amount</value>
+            </object_delta_get_persisted>
+            <do>OBJECT(TEMP.usg_oid).ic_id_type='ID_SESS'</do>
+            <do>OBJECT(TEMP.usg_oid).ic_id_value=OBJECT(TEMP.usg_oid).id_sess</do>
+            <object_delta_add_update_triggered_table>
+              <object_id>TEMP.usg_oid</object_id>
+              <update_table_name>'T_ACC_USAGE'</update_table_name>
+              <update_field_name>'amount'</update_field_name>
+              <insert_table_name>'T_IC_TAX_REFEED_TRANS'</insert_table_name>
+            </object_delta_add_update_triggered_table>
+            <object_delta_add_update_triggered_table>
+              <object_id>TEMP.usg_oid</object_id>
+              <update_table_name>'T_ACC_USAGE'</update_table_name>
+              <update_field_name>'dt_crt'</update_field_name>
+              <insert_table_name>'T_IC_TAX_REFEED_TRANS'</insert_table_name>
+            </object_delta_add_update_triggered_table>
+          </then>
+        </if>
+
+        <if>
+          <condition>OBJECT(TEMP.usg_oid).adj_id_adj_trx ne ''</condition>
+          <then>
+            <object_delta_get_persisted>
+              <object_id>TEMP.usg_oid</object_id>
+              <field_name>'amount'</field_name>
+              <value>TEMP.persisted_amount</value>
+            </object_delta_get_persisted>
+            <if>
+              <condition>OBJECT(TEMP.usg_oid).amount ne TEMP.persisted_amount</condition>
+              <then>
+                <do>OBJECT(TEMP.usg_oid).adj_id_sess=0-OBJECT(TEMP.usg_oid).id_sess</do>
+              </then>
+            </if>
+          </then>
+        </if>
+
+
+        <c> we might not have come from auat, but we're gonna attempt to write a row to it anyways</c>
+        <object_delta_add_table>
+          <object_id>TEMP.usg_oid</object_id>
+          <table_name>'AGG_USAGE_AUDIT_TRAIL'</table_name>
+        </object_delta_add_table>
+
+        <!--<stopwatch ms='TEMP.junk7' total_ms='OBJECT(GLOBAL.counter_object).id_acc_is_complete_timer'>-->
+        <call_proc_for_current_object>
+          <name>'id_acc_is_complete'</name>
+          <param name="id_acc">TEMP.id_payee</param>
+          <param name="is_complete">TEMP.is_complete</param>
+        </call_proc_for_current_object>
+        <!--</stopwatch>-->
+
+        <if>
+          <condition>TEMP.is_complete</condition>
+          <then>
+            <info switch='log_erd'>'Persisting usage for id_payee=['~OBJECT(TEMP.usg_oid).id_payee~'] id_sess=['~OBJECT(TEMP.usg_oid).id_sess~'], id_parent_sess=['~OBJECT(TEMP.usg_oid).id_parent_sess~'], amount=['~OBJECT(TEMP.usg_oid).amount~']'</info>
+
+            <!--<stopwatch ms='TEMP.junk8' total_ms='OBJECT(GLOBAL.counter_object).release_force_tax_timer'>-->
+            <c>force retax by setting ic_status='' when amount changes</c>
+            <if>
+              <condition>GLOBAL.has_tax_table</condition>
+              <then>
+                <object_delta_get_persisted>
+                  <object_id>TEMP.usg_oid</object_id>
+                  <field_name>'amount'</field_name>
+                  <value>TEMP.persisted_amount</value>
+                </object_delta_get_persisted>
+                <if>
+                  <condition>OBJECT(TEMP.usg_oid).amount ne TEMP.persisted_amount</condition>
+                  <then>
+                    <do> OBJECT(TEMP.usg_oid).ic_status=''</do>
+                  </then>
+                </if>
+              </then>
+            </if>
+            <!--</stopwatch>-->
+
+            <!-- If the parent_oid is set but id_parent_sess is not, make sure parent has an id_sess, then inherit it -->
+            <if>
+              <condition>OBJECT(TEMP.usg_oid).id_parent_sess eq '' and OBJECT(TEMP.usg_oid).parent_oid ne ''</condition>
+              <then>
+                <do>TEMP.parent_oid=OBJECT(TEMP.usg_oid).parent_oid</do>
+                <if>
+                  <condition>OBJECT(TEMP.parent_oid).id_sess eq ''</condition>
+                  <then>
+                    <info switch='log_erd'>'Not expecting to have to assign id_sess for the parent object'</info>
+                    <call_proc_for_current_object>
+                      <name>'next_id_sess'</name>
+                      <param name="batch_size">100</param>
+                      <param name="id_sess">OBJECT(TEMP.parent_oid).id_sess</param>
+                    </call_proc_for_current_object>
+                  </then>
+                </if>
+                <do>OBJECT(TEMP.usg_oid).id_parent_sess=OBJECT(TEMP.parent_oid).id_sess</do>
+                <info switch='log_erd'>'Set id_parent_sess=['~OBJECT(TEMP.usg_oid).id_parent_sess~']'</info>
+              </then>
+            </if>
+            <do>OBJECT(TEMP.usg_csr).id_sess=OBJECT(TEMP.usg_oid).id_sess</do>
+            <do>OBJECT(TEMP.usg_csr).id_parent_sess=OBJECT(TEMP.usg_oid).id_parent_sess</do>
+            <!--<stopwatch ms='TEMP.junk9' total_ms='OBJECT(GLOBAL.counter_object).release_audit_timer'>-->
+            <c>write to the audit table only if we have changed values</c>
+
+            <info switch='log_erd'>'Calling object_delta_persist for object_id='~TEMP.usg_oid</info>
+            <object_delta_persist>
+              <object_id>TEMP.usg_oid</object_id>
+              <packed_originals_field_name>'orig_values_packed'</packed_originals_field_name>
+              <audit_table_name>'AGG_USAGE_AUDIT_TRAIL'</audit_table_name>
+              <modified_date_field>'last_modified'</modified_date_field>
+              <modified_date_value>GLOBAL.mvm_startup_date</modified_date_value>
+            </object_delta_persist>
+            <!--</stopwatch>-->
+
+            <!--<stopwatch ms='TEMP.junk10' total_ms='OBJECT(GLOBAL.counter_object).release_tau_timer'>-->
+            <c>inspect persist results to set extra stuff for audit trail (too late to make it into normal persisted tables)</c>
+            <object_delta_table_status>
+              <object_id>TEMP.usg_oid</object_id>
+              <table_name>'T_ACC_USAGE'</table_name>
+              <is_inserted>TEMP.tau_is_inserted</is_inserted>
+              <is_updated>TEMP.tau_is_updated</is_updated>
+            </object_delta_table_status>
+            <if>
+              <condition>TEMP.tau_is_updated or TEMP.tau_is_inserted</condition>
+              <then>
+                <do>OBJECT(TEMP.usg_oid).last_modified_au=GLOBAL.mvm_startup_date</do>
+              </then>
+            </if>
+            <!--</stopwatch>-->
+
+            <!--<stopwatch ms='TEMP.junk11' total_ms='OBJECT(GLOBAL.counter_object).release_pv_timer'>-->
+            <object_delta_table_status>
+              <object_id>TEMP.usg_oid</object_id>
+              <table_name>TEMP.pv_table_name</table_name>
+              <is_inserted>TEMP.pv_is_inserted</is_inserted>
+              <is_updated>TEMP.pv_is_updated</is_updated>
+            </object_delta_table_status>
+            <if>
+              <condition>TEMP.pv_is_updated or TEMP.pv_is_inserted</condition>
+              <then>
+                <do>OBJECT(TEMP.usg_oid).last_modified_pv=GLOBAL.mvm_startup_date</do>
+                <!--<info switch='log_erd'>'SET_LMPV,id_sess='~OBJECT(TEMP.usg_oid).id_sess~',pv_is_updated'~TEMP.pv_is_updated~',pv_is_inserted'~TEMP.pv_is_inserted~'id_view='~OBJECT(TEMP.usg_oid).id_view~'pv_table_name='~TEMP.pv_table_name</info>-->
+              </then>
+            </if>
+            <!--</stopwatch>-->
+
+            <!--<stopwatch ms='TEMP.junk12' total_ms='OBJECT(GLOBAL.counter_object).release_audit_timer'>-->
+            <c>Now try to persist the audit trail</c>
+            <object_delta_persist_audit>
+              <object_id>TEMP.usg_oid</object_id>
+            </object_delta_persist_audit>
+            <!--</stopwatch>-->
+             
+          </then>
+          <else>
+
+            <!--<stopwatch ms='TEMP.junk13' total_ms='OBJECT(GLOBAL.counter_object).release_serialize_timer'>-->
+            <info switch='log_erd'>'Serialize usage for id_payee=['~OBJECT(TEMP.usg_oid).id_payee~'] id_sess=['~OBJECT(TEMP.usg_oid).id_sess~']'</info>
+            <usage_hook_save_local>
+              <hook_id>TEMP.hook_id</hook_id>
+              <object_id>TEMP.usg_oid</object_id>
+            </usage_hook_save_local>
+            <!--</stopwatch>-->
+
+          </else>
+        </if>
+
+        <!-- If this is a reused deleted charge, remove the remove the ref so it can be GCed -->
+        <if>
+          <condition>TEMP.reuse_charge</condition>
+          <then>
+            <info switch='log_erd'>'[gen][reuse]remove object ref to ['~TEMP.usg_oid~'] so it gets GCed'</info>
+            <object_ref_remove>
+              <object_id>TEMP.usg_oid</object_id>
+            </object_ref_remove>
+          </then>
+        </if>
+
+      </loop>
+    </usage_hook_select>
+
+    <!--<stopwatch ms='TEMP.junk15' total_ms='OBJECT(GLOBAL.counter_object).release_delete_timer'>-->
+    <c>
+      Need to delete usage for all objects left in the DELETED_CHARGE_CURSORS
+      We should let the ERD deal with deleting since it know the tables it came from.
+      We can simply need ability to flag the object as deleted, then have flush do a
+      bulk delete.
+
+      TBD:If the usage is not for a released but not persisted id_acc we need to write it
+      out to the released dir as it might get generated in future pass
+    </c>
+    <info switch='log_erd'>'Release or persist any remaining deleted usage:'</info>
+    <index_select_keys>
+      <index>'DELETED_CHARGE_CURSORS'</index>
+      <cursor>TEMP.dcc1</cursor>
+      <loop>
+        <do>TEMP.id_view=OBJECT(TEMP.dcc1).id_view</do>
+        <print>'DCC with id_view=['~TEMP.id_view~']'</print>
+        <index_select>
+          <index>'DELETED_CHARGE_CURSORS'</index>
+          <field name="id_view">TEMP.id_view</field>
+          <cursor>TEMP.dcc2</cursor>
+          <then>
+            <do>TEMP.del_csr=OBJECT(TEMP.dcc2).del_csr</do>
+            <print>'DCC with del_csr=['~TEMP.del_csr~']'</print>
+            <while>
+              <condition>TEMP.del_csr ne ''</condition>
+              <loop>
+                <do>TEMP.del_oid=OBJECT(TEMP.del_csr).del_oid</do>
+                <print>'DCC with del_oid=['~TEMP.del_oid~']'</print>
+                <cursor_next>TEMP.del_csr</cursor_next>
+
+                <do>TEMP.id_payee=OBJECT(TEMP.del_oid).id_acc</do>
+                <print>'DCC with id_payee=['~TEMP.id_payee~']'</print>
+                <call_proc_for_current_object>
+                  <name>'id_acc_is_complete'</name>
+                  <param name="id_acc">TEMP.id_payee</param>
+                  <param name="is_complete">TEMP.is_complete</param>
+                </call_proc_for_current_object>
+
+                <if>
+                  <condition>TEMP.is_complete</condition>
+                  <then>
+
+                    <info switch='log_erd'>'mark usage for erd deletion: oid=['~TEMP.del_oid~']=?['~OBJECT(TEMP.del_oid).object_id~'] ,id_sess='~OBJECT(TEMP.del_oid).id_sess</info>
+                    <do>OBJECT(TEMP.del_oid).erd_deleted=1</do>
+                    <object_delta_persist>
+                      <object_id>TEMP.del_oid</object_id>
+                      <packed_originals_field_name>'orig_values_packed'</packed_originals_field_name>
+                      <audit_table_name>'AGG_USAGE_AUDIT_TRAIL'</audit_table_name>
+                      <modified_date_field>'last_modified'</modified_date_field>
+                      <modified_date_value>GLOBAL.mvm_startup_date</modified_date_value>
+                    </object_delta_persist>
+                  </then>
+                  <else>
+                    <info switch='log_erd'>'save local deleted usage for oid=['~TEMP.del_oid~']=?['~OBJECT(TEMP.del_oid).object_id~'], id_sess=['~OBJECT(TEMP.del_oid).id_sess~']'</info>
+                    <usage_hook_save_local>
+                      <hook_id>TEMP.hook_id</hook_id>
+                      <object_id>TEMP.del_oid</object_id>
+                    </usage_hook_save_local>
+                    <!--<remove_object_from_cache>TEMP.del_oid</remove_object_from_cache>-->
+                  </else>
+                </if>
+
+              </loop>
+            </while>
+          </then>
+          <else>
+            <fatal>'not expecting no row in DELETED_CHARGE_CURSORS'</fatal>
+          </else>
+        </index_select>
+        <print>'cleared all deleted charges with id_view=['~TEMP.id_view~']'</print>
+        <index_remove>
+          <index>'DELETED_CHARGE_CURSORS'</index>
+          <field name="id_view">TEMP.id_view</field>
+        </index_remove>
+      </loop>
+      <else>
+        <info switch='log_erd'>'Good, no deleted usage to remove.'</info>
+      </else>
+    </index_select_keys>
+
+    <info switch='log_erd'>'Clear USAGE_TO_DELETE since we no longer need it.'</info>
+    <index_clear>
+      <index>'USAGE_TO_DELETE'</index>
+    </index_clear>
+    <!--</stopwatch>-->
+
+    <info switch='log_erd'>'COMMITING!!!!!!!!!!!!!!!!!'</info>
+    <!--<stopwatch ms='TEMP.junk14' total_ms='OBJECT(GLOBAL.counter_object).release_flush_timer'>-->
+    <object_delta_flush_all/>
+    <!--</stopwatch>-->
+
+    <!--<stopwatch ms='TEMP.junk15' total_ms='OBJECT(GLOBAL.counter_object).release_release_timer'>-->
+    <info switch='log_erd'>'call release_usage_hook_module=['~TEMP.hook_id~']'</info>
+    <usage_hook_release>
+      <hook_id>TEMP.hook_id</hook_id>
+    </usage_hook_release>
+    <!--</stopwatch>-->
+
+    <info switch='log_erd'>'done release_usage_hook_module=['~TEMP.hook_id~']'</info>
+  </proc>
+</procs>

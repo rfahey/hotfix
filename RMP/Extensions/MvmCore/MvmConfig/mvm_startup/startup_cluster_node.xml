@@ -1,0 +1,26 @@
+<proc name="startup_cluster_node">
+  <call_proc>'update_mvm_physical_cluster_nodes'</call_proc>
+
+  <print>'I was launched with the special parameter is_cluster_node=1'</print>
+  <call_proc_for_current_object>
+    <name>'read_cluster_info_from_db'</name>
+    <param name="logical_cluster">GLOBAL.logical_cluster</param>
+  </call_proc_for_current_object>
+  <if>
+    <condition>GLOBAL.starting_proc ne ''</condition>
+    <then>
+      <print>'calling starting proc'</print>
+      <call_proc>GLOBAL.starting_proc</call_proc>
+      <print>'done calling starting proc'</print>
+    </then>
+    <condition>GLOBAL.server_mode eq '1'</condition>
+    <then>
+      <print>'server mode on, no starting proc'</print>
+      <set_server_mode_on/>
+    </then>
+    <else>
+      <warning>'Looks like you kicked off mvm without passing a proc to run and without passing server mode so this is not going to do anything'</warning>
+    </else>
+  </if>
+
+</proc>

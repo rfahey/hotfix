@@ -1,0 +1,54 @@
+<proc name="bg_create_boundary_group_for_aqg">
+  <param name='id_acc'/>
+  <param name='account_qualification_group'/>
+  <param name='boundary_group_id' mode='out'/>
+
+  <db_call_proc>
+    <login_object>GLOBAL.target_login</login_object>
+    <name>'mvm_get_long_id'</name>
+    <param name="p_nm_current">'boundary_group_id'</param>
+    <param name="p_batch_size">1</param>
+    <param name="p_id_start">TEMP.boundary_group_id</param>
+    <param name="p_id_end">TEMP.junk</param>
+  </db_call_proc>
+
+  <get_guid>TEMP.my_lock_guid</get_guid>
+
+  <do>TEMP.logical_instance_id = ''</do>
+  <db_select>
+    <login_object>GLOBAL.target_login</login_object>
+    <query type="sql">
+      "select cast((floor(rand()*a.nodes) + 1) as int) logical_instance_id from mvm_logical_cluster_def a where logical_cluster = 'nrt_cluster'"
+    </query>
+    <query type="oracle">
+      "select floor(rand()*max(logical_instance_id)) + 1 logical_instance_id from mvm_logical_cluster_def a where logical_cluster = 'nrt_cluster'"
+    </query>
+    <cursor>TEMP.bgli_csr</cursor>
+    <then>
+      <do>TEMP.logical_instance_id = OBJECT(TEMP.bgli_csr).logical_instance_id</do>
+    </then>
+    <else>
+      <do>TEMP.logical_instance_id = 1</do>
+    </else>
+  </db_select>
+
+ 
+
+  <db_execute>
+    <login_object>GLOBAL.target_login</login_object>
+    <statement type="sql">
+      "insert into agg_boundary_groups (boundary_group_id, lock_date, lock_guid, logical_instance_id) values($${TEMP.boundary_group_id}, getdate(), $${TEMP.my_lock_guid}, $${TEMP.logical_instance_id})"
+    </statement>
+    <statement type="oracle">
+      "insert into agg_boundary_groups (boundary_group_id, lock_date, lock_guid, logical_instance_id) values($${TEMP.boundary_group_id}, sysdate, $${TEMP.my_lock_guid}, $${TEMP.logical_instance_id})"
+    </statement>
+    <num_rows>TEMP.num_rows</num_rows>
+  </db_execute>
+
+  <index_insert>
+    <index>'BOUNDARY_GROUP_LOCKS'</index>
+    <field name="boundary_group_id">TEMP.boundary_group_id</field>
+    <field name="lock_guid">TEMP.my_lock_guid</field>
+  </index_insert>
+
+</proc>

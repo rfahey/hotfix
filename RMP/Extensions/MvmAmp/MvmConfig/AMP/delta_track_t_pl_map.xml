@@ -1,0 +1,72 @@
+<procs>
+
+  <proc name="clear_processed_pos">
+
+    <initialize>
+      <define_memory_index>
+        <index>'PROCESSED_POS'</index>
+        <key_field>'id_po'</key_field>
+      </define_memory_index>
+
+      <if>
+        <condition>GLOBAL.running_nrt_amp eq '1'</condition>
+        <then>
+          <define_data_routing>
+            <table_name>'T_PL_MAP'</table_name>
+            <prerouting_procedure>'clear_processed_pos'</prerouting_procedure>
+            <routing_procedure>'determine_no_node'</routing_procedure>
+            <integration_procedure>'add_bundle_po'</integration_procedure>
+            <included_column>'id_po'</included_column>
+            <included_column>'id_paramtable'</included_column>
+            <included_column>'id_sub'</included_column>
+            <inclusion_expression>'1 eq 1'</inclusion_expression>
+            <inclusion_procedure>'check_for_processed_pos'</inclusion_procedure>
+            <!--<filter_predicate>'id_sub IS NULL and id_paramtable IS NOT NULL'</filter_predicate>-->
+            <operation_type_field>'operation_type'</operation_type_field>
+            <table_name_field>'table_name'</table_name_field>
+          </define_data_routing>
+        </then>
+      </if>
+      
+    </initialize>
+    
+    <index_clear>
+      <index>'PROCESSED_POS'</index>
+    </index_clear>
+  </proc>
+
+  <proc name="check_for_processed_pos">
+    <param name='return_value' mode='out'/>
+    <do>TEMP.return_value = ''</do>
+    <if>
+      <condition>index_get(index => "AGG_PT_ID_TO_NAME", id_po=>OBJECT.id_paramtable)</condition>
+      <then>
+        <if>
+          <condition>index_get(index => "PROCESSED_POS", id_po=>OBJECT.id_po) eq ''</condition>
+          <then>
+            <!--<do>TEMP.return_value = '1'</do>-->
+            <index_insert>
+              <index>'PROCESSED_POS'</index>
+              <field name='id_po'>OBJECT.id_po</field>
+            </index_insert>
+            <db_execute>
+              <login_object>GLOBAL.target_login</login_object>
+              <statement type="sql">
+                "insert into agg_bundle_pos (id_po) select $${OBJECT.id_po} where 0 in (select count(*) from agg_bundle_pos where id_po = $${OBJECT.id_po})"
+              </statement>
+              <statement type="oracle">
+                "insert into agg_bundle_pos (id_po) select $${OBJECT.id_po} from dual where 0 in (select count(*) from agg_bundle_pos where id_po = $${OBJECT.id_po})"
+              </statement>
+              <num_rows>TEMP.num_rows</num_rows>
+            </db_execute>
+          </then>
+        </if>
+      </then>
+    </if>
+  </proc>
+
+  <proc name="add_bundle_po">
+    <c>Nothing to do here since we're only storing the bundle_pos in the DB right now</c>
+  </proc>
+</procs>
+

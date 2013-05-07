@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xmlconfig>
+    <version ptype="INTEGER">2</version>
+    <ScheduledAdapters>
+
+        <Adapter>
+	  <Name>Aggregate Metrics Processor (Scheduled)</Name>
+          <DisplayName>Aggregate Metrics Processor (Scheduled)</DisplayName>
+          <ClassID>MetraTech.Baseline.Adapters.RunEXE, MetraTech.Baseline.Adapters.ExecuteExternalApp</ClassID>
+          <ConfigFile>AggregateDecisionScheduled.xml</ConfigFile>
+          <ActivationDate>8/4/2008 00:00:00</ActivationDate>
+          <Description>
+            <![CDATA[
+         	  Aggregate Metrics Processor (Scheduled)
+            ]]>
+          </Description>
+          <RecurrencePattern>
+            <SystemCycle>Daily</SystemCycle>
+          </RecurrencePattern>
+          <Dependencies>
+          </Dependencies>
+        </Adapter>
+
+        <Adapter>
+	  <Name>Rebuild Realtime Decisions</Name>
+          <DisplayName>Rebuild Realtime Decisions</DisplayName>
+          <ClassID>MetraTech.Baseline.Adapters.RunEXE, MetraTech.Baseline.Adapters.ExecuteExternalApp</ClassID>
+          <ConfigFile>RebuildRealtimeDecisions.xml</ConfigFile>
+          <ActivationDate>8/4/2008 00:00:00</ActivationDate>
+          <Description>
+            <![CDATA[
+         	 Rebuild Realtime Decisions
+            ]]>
+          </Description>
+          <RecurrencePattern>
+            <SystemCycle>Daily</SystemCycle>
+          </RecurrencePattern>
+          <Dependencies>
+          </Dependencies>
+        </Adapter>
+
+    </ScheduledAdapters>
+
+
+    <EndOfPeriodAdapters>
+
+        <Adapter>
+          <Name>Aggregate Metrics Processor (EOP)</Name>
+          <DisplayName>Aggregate Metrics Processor (EOP)</DisplayName>
+          <ClassID>MetraTech.Baseline.Adapters.RunEXE, MetraTech.Baseline.Adapters.ExecuteExternalApp</ClassID>
+          <ConfigFile>AggregateDecisionEOP.xml</ConfigFile>
+          <ActivationDate>8/4/2008 00:00:00</ActivationDate>
+          <Description>
+            <![CDATA[
+         	  Aggregate Metrics Processor (EOP)
+            ]]>
+          </Description>
+            <RecurrencePattern>
+                <UsageCycleType>All</UsageCycleType>
+            </RecurrencePattern>
+          <Dependencies>
+                <DependsOnMe>Invoices</DependsOnMe>
+          </Dependencies>
+        </Adapter>
+        
+    </EndOfPeriodAdapters>
+</xmlconfig>

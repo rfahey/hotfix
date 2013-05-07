@@ -1,0 +1,101 @@
+<procs>
+  <proc name='persist_record_to_table'>
+    <param name='transaction_id'/>
+    <param name='table_name'/>
+    <param name='is_update'/>
+
+
+    <initialize>
+      <get_date>GLOBAL.last_persist_date</get_date>
+      <do>GLOBAL.persist_insert_counter = 0</do>
+      <do>GLOBAL.persist_threshold = 1</do>
+      <do>GLOBAL.persist_time_delay = 10</do>
+      <get_date>GLOBAL.next_persist_date</get_date>
+      <print>'My date is ['~GLOBAL.next_persist_date~']'</print>
+      <date_add>
+        <input>GLOBAL.next_persist_date</input>
+        <unit>'SS'</unit>
+        <increment>GLOBAL.persist_time_delay</increment>
+        <output>GLOBAL.next_persist_date</output>
+      </date_add>
+      <define_memory_index>
+        <index>'PENDING_UPDATE_RECORDS'</index>
+        <key_field>'table_name'</key_field>
+        <key_field type='object_id'>'object_ref'</key_field>
+      </define_memory_index>
+    </initialize>
+
+    <get_date>TEMP.current_date</get_date>
+    <do>GLOBAL.persist_insert_counter += 1</do>
+
+    <if>
+      <condition>TEMP.is_update ne '1'</condition>
+      <then>
+        <!--<print>'My table name is ['~TEMP.table_name~']'</print>-->
+        
+        <!--
+        <db_bulk_insert_dynamic>
+          <login_object>GLOBAL.target_login</login_object>
+          <name>TEMP.table_name</name>
+          <object_id>OBJECT.object_id</object_id>
+        </db_bulk_insert_dynamic>
+        -->
+
+        <db_persist_object_changes>
+          <persisted_object_id>''</persisted_object_id>
+          <current_object_id>OBJECT.object_id</current_object_id>
+          <table_name>TEMP.table_name</table_name>
+        </db_persist_object_changes>
+        
+      </then>
+      <else>
+        <index_insert_if_none>
+          <index>'PENDING_UPDATE_RECORDS'</index>
+          <field name="table_name">TEMP.table_name</field>
+          <field name="object_ref">OBJECT.object_id</field>
+        </index_insert_if_none>
+      </else>
+    </if>
+    
+
+
+
+    <if>
+      <condition>TEMP.current_date GT GLOBAL.next_persist_date or GLOBAL.persist_insert_counter GTE GLOBAL.persist_threshold</condition>
+      <then>
+        <!--<print>'Persisting 1000 rows!!!!!'</print>-->
+        <do>GLOBAL.persist_insert_counter = 0</do>
+        <get_date>GLOBAL.next_persist_date</get_date>
+        <date_add>
+          <input>GLOBAL.next_persist_date</input>
+          <unit>'SS'</unit>
+          <increment>GLOBAL.persist_time_delay</increment>
+          <output>GLOBAL.next_persist_date</output>
+        </date_add>
+
+        <index_select_keys>
+          <index>'PENDING_UPDATE_RECORDS'</index>
+          <cursor>TEMP.my_upd_recs</cursor>
+          <loop>
+            <db_upsert_dynamic>
+              <login_object>GLOBAL.target_login</login_object>
+              <name>OBJECT(TEMP.my_upd_recs).table_name</name>
+              <object_id>OBJECT(TEMP.my_upd_recs).object_ref</object_id>
+            </db_upsert_dynamic>
+          </loop>
+        </index_select_keys>
+        
+        <db_bulk_insert_flush_all/>
+        <object_delta_flush_all/>
+
+        <index_clear>
+          <index>'PENDING_UPDATE_RECORDS'</index>
+        </index_clear>
+        
+      </then>
+    </if>
+
+    
+  </proc>
+
+</procs>

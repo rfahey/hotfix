@@ -1,0 +1,67 @@
+<proc name="setup_parent_physical_node_id">
+  <!--
+  - get the physical node for the lowest logical node and make that the parent
+  - update all the physical nodes with the parent id.
+  -->
+
+  <do>TEMP.parent_physical_node_id=''</do>
+  <do>TEMP.min_logical_node_id=''</do>
+
+  <index_select_keys>
+    <index>'MVM_LOGICAL_CLUSTER_NODES'</index>
+    <cursor>TEMP.keys</cursor>
+    <loop>
+      <do>TEMP.logical_node_id=OBJECT(TEMP.keys).logical_node_id</do>
+      <index_select>
+        <index>'MVM_LOGICAL_CLUSTER_NODES'</index>
+        <field name="logical_node_id">TEMP.logical_node_id</field>
+        <cursor>TEMP.csr</cursor>
+        <loop>
+          <do>TEMP.physical_node_id=OBJECT(TEMP.csr).physical_node_id</do>
+          <if>
+            <condition>TEMP.min_logical_node_id eq '' or TEMP.logical_node_id LT TEMP.min_logical_node_id</condition>
+            <then>
+              <do>TEMP.min_logical_node_id=TEMP.logical_node_id</do>
+              <do>TEMP.parent_physical_node_id=TEMP.physical_node_id</do>
+            </then>
+          </if>
+        </loop>
+      </index_select>
+    </loop>
+  </index_select_keys>
+
+  <index_select_keys>
+    <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+    <cursor>TEMP.keys</cursor>
+    <loop>
+      <do>TEMP.physical_node_id=OBJECT(TEMP.keys).physical_node_id</do>
+      <!--<print>'update ['~TEMP.physical_node_id~'] w parent_physical_node_id=['~TEMP.parent_physical_node_id~']'</print>-->
+      <do>index_update('MVM_PHYSICAL_CLUSTER_NODES',physical_node_id=>TEMP.physical_node_id, parent_physical_node_id=>TEMP.parent_physical_node_id)</do>
+
+
+      <do>index_get('MVM_PHYSICAL_CLUSTER_NODES',physical_node_id=>TEMP.physical_node_id,starting_args=>TEMP.starting_args)</do>
+      <do>TEMP.starting_args~=' "-parent_physical_node_id='~TEMP.parent_physical_node_id~'"'</do>
+      <!--<print>'update ['~TEMP.physical_node_id~'] w starting_args=['~TEMP.starting_args~']'</print>-->
+
+      <c>if not passed server_mode, then passit on the kids.</c>
+      <if>
+        <condition>TEMP.physical_node_id ne TEMP.parent_physical_node_id</condition>
+        <then>
+          <if>
+            <condition>regex_match(TEMP.starting_args,'-server_mode *=')</condition>
+            <then>
+              <!-- force it to 1 -->
+              <do>TEMP.starting_args=regex_replace(TEMP.starting_args,'-server_mode *= *0','-server_mode=1')</do>
+            </then>
+            <else>
+              <do>TEMP.starting_args~=' "-server_mode=1"'</do>
+            </else>
+          </if>
+        </then>
+      </if>
+
+      <do>index_update('MVM_PHYSICAL_CLUSTER_NODES',physical_node_id=>TEMP.physical_node_id, starting_args=>TEMP.starting_args)</do>
+
+    </loop>
+  </index_select_keys>
+</proc>

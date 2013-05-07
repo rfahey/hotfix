@@ -1,0 +1,14 @@
+<procs>
+  <proc name="route_to_processing_node">
+    <param name="object"/>
+    <param name="pipe_cursor"/>
+
+    <call_proc_for_current_object>
+      <name>'determine_logical_node'</name>
+      <param name='id_acc'>OBJECT.id_acc</param>
+      <param name='logical_instance_id'>OBJECT(TEMP.object).node_id</param>
+    </call_proc_for_current_object>
+    <pipe_row>TEMP.object</pipe_row>
+  </proc>
+
+</procs>

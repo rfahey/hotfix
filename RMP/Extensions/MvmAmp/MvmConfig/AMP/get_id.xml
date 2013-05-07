@@ -1,0 +1,96 @@
+<procs>
+  <proc name='get_id'>
+    <param name='id' mode='out'/>
+    <param name='namespace'/>
+    <initialize>
+      <define_memory_index>
+        <index>'SEQUENCE_NUMBERS'</index>
+        <key_field>'namespace'</key_field>
+        <field>'next_id'</field>
+        <field>'max_id'</field>
+        <field>'block_size'</field>
+        <field>'max_block_size'</field>
+      </define_memory_index>
+      <do>GLOBAL.max_block_size = 1000</do>
+    </initialize>
+
+    <do>TEMP.need_block = 0</do>
+    <do>TEMP.block_size = 0</do>
+    <do>TEMP.max_block_size = 0</do>
+    <index_select>
+      <index>'SEQUENCE_NUMBERS'</index>
+      <field name="namespace">TEMP.namespace</field>
+      <cursor>TEMP.seq_num</cursor>
+      <then>
+        <if>
+          <condition>OBJECT(TEMP.seq_num).next_id lte OBJECT(TEMP.seq_num).max_id</condition>
+          <then>
+            <do>TEMP.id = OBJECT(TEMP.seq_num).next_id</do>
+            <do>OBJECT(TEMP.seq_num).next_id += 1</do>
+            <index_remove>
+              <index>'SEQUENCE_NUMBERS'</index>
+              <field name='namespace'>TEMP.namespace</field>
+            </index_remove>
+            <index_insert>
+              <index>'SEQUENCE_NUMBERS'</index>
+              <field name='namespace'>TEMP.namespace</field>
+              <field name='next_id'>OBJECT(TEMP.seq_num).next_id</field>
+              <field name='max_id'>OBJECT(TEMP.seq_num).max_id</field>
+              <field name='block_size'>OBJECT(TEMP.seq_num).block_size</field>
+              <field name='max_block_size'>OBJECT(TEMP.seq_num).max_block_size</field>
+            </index_insert>
+          </then>
+          <else>
+            <do>TEMP.need_block = 1</do>
+            <if>
+              <condition>OBJECT(TEMP.seq_num).block_size LT OBJECT(TEMP.seq_num).max_block_size</condition>
+              <then>
+                <do>OBJECT(TEMP.seq_num).block_size = OBJECT(TEMP.seq_num).block_size * 2</do>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.seq_num).block_size GT OBJECT(TEMP.seq_num).max_block_size</condition>
+              <then>
+                <do>OBJECT(TEMP.seq_num).block_size = OBJECT(TEMP.seq_num).max_block_size</do>
+              </then>
+            </if>
+            <do>TEMP.block_size = OBJECT(TEMP.seq_num).block_size</do>
+            <do>TEMP.max_block_size = OBJECT(TEMP.seq_num).max_block_size</do>
+          </else>
+        </if>
+      </then>
+      <else>
+        <do>TEMP.need_block = 1</do>
+        <do>TEMP.block_size = 1</do>
+        <do>TEMP.max_block_size = GLOBAL.max_block_size</do>
+      </else>
+    </index_select>
+    
+    <if>
+      <condition>TEMP.need_block eq '1'</condition>
+      <then>
+        <db_call_proc>
+          <login_object>GLOBAL.target_login</login_object>
+          <name>'getidblock'</name>
+          <param name="block_size">TEMP.block_size</param>
+          <param name="sequence_name">TEMP.namespace</param>
+          <param name="block_start">TEMP.id</param>
+        </db_call_proc>
+        <do>TEMP.next_id = TEMP.id + 1</do>
+        <do>TEMP.max_id = TEMP.id + TEMP.block_size - 1</do>
+        <index_remove>
+          <index>'SEQUENCE_NUMBERS'</index>
+          <field name='namespace'>TEMP.namespace</field>
+        </index_remove>
+        <index_insert>
+          <index>'SEQUENCE_NUMBERS'</index>
+          <field name='namespace'>TEMP.namespace</field>
+          <field name='next_id'>TEMP.next_id</field>
+          <field name='max_id'>TEMP.max_id</field>
+          <field name='block_size'>TEMP.block_size</field>
+          <field name='max_block_size'>TEMP.max_block_size</field>
+        </index_insert>
+      </then>
+    </if>
+  </proc>
+</procs>

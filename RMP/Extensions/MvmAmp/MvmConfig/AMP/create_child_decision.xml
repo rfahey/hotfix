@@ -1,0 +1,181 @@
+<procs>
+
+  <!-- ===================================================================== -->
+  <!--                                                                       -->
+  <!-- Inputs:                                                               -->
+  <!--   bucket_object                                                       -->
+  <!--                                                                       -->
+  <!-- Outputs:                                                              -->
+  <!--   bucket_overlay  - the newly created child decision instance.        -->
+  <!-- ===================================================================== -->
+
+  <proc name='create_child_decision'>
+    <param name='bucket_object'/>
+    <param name='bucket_overlay'/>
+    <param name='new_bucket_object' mode='out'/>
+    <param name='delta_tracking_available'/>
+    <param name='delta_tracking_on'/>
+
+    <initialize>
+      <!--<print>'init create_child_decision'</print>-->
+      <define_memory_index>
+        <index>'BUCKET_CHILDREN'</index>
+        <key_field>'parent_bucket_object'</key_field>
+        <key_field>'tier_type'</key_field>
+        <!--<field>'child_bucket_guid'</field>-->
+        <field>'child_bucket_object'</field>
+        <!--<field>'parent_bucket_object'</field>-->
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'BUCKET_PARENT'</index>
+        <key_field>'child_bucket_object'</key_field>
+        <!--<field>'parent_bucket_guid'</field>-->
+        <!--<field>'child_bucket_object'</field>-->
+        <field>'parent_bucket_object'</field>
+      </define_memory_index>
+
+    </initialize>
+
+
+    <do>TEMP.delta_tracking_available = TEMP.delta_tracking_available eq ''?0:TEMP.delta_tracking_available</do>
+    <do>TEMP.delta_tracking_on = TEMP.delta_tracking_on eq ''?0:TEMP.delta_tracking_on</do>
+    <spawn>
+      <object_type>'TIER_BUCKET'</object_type>
+      <object_id>TEMP.new_bucket_object</object_id>
+      <delta_tracking_support>TEMP.delta_tracking_available</delta_tracking_support>
+      <delta_tracking_on>TEMP.delta_tracking_on</delta_tracking_on>
+    </spawn>
+
+    <inherit_object>
+      <source>TEMP.bucket_object</source>
+      <target>TEMP.new_bucket_object</target>
+    </inherit_object>
+    <inherit_object>
+      <source>TEMP.bucket_overlay</source>
+      <target>TEMP.new_bucket_object</target>
+    </inherit_object>
+
+    <!--<print>'I am calling create_child_decision with tier_type ['~OBJECT(TEMP.new_bucket_object).tier_type~']'</print>-->
+    <!--<print>'overlay with tier_type ['~OBJECT(TEMP.bucket_overlay).tier_type~']'</print>-->
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_overlay).account_qualification_group ne '' and OBJECT(TEMP.new_bucket_object).account_qualification_group Ne 'bulk_node'</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'generate_acc_qual_group_proc'</name>
+          <param name='account_qualification_group'>OBJECT(TEMP.bucket_overlay).account_qualification_group</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+
+
+    <if>
+      <condition>OBJECT(TEMP.new_bucket_object).tier_type Eq 'bulk_source' or OBJECT(TEMP.new_bucket_object).tier_type Eq 'bulk_target'</condition>
+      <then>
+    <index_insert>
+      <index>'BUCKET_CHILDREN'</index>
+      <field name="tier_type">OBJECT(TEMP.new_bucket_object).tier_type</field>
+      <field name="parent_bucket_object">TEMP.bucket_object</field>
+      <field name="child_bucket_object">TEMP.new_bucket_object</field>
+    </index_insert>
+      </then>
+    </if>
+
+
+
+    <index_insert>
+      <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+      <field name="bucket_object">TEMP.new_bucket_object</field>
+      <field name="tier_priority">OBJECT(TEMP.new_bucket_object).tier_priority</field>
+    </index_insert>
+
+
+    <!--<do>OBJECT(TEMP.new_bucket_object).decision_unique_id = OBJECT(TEMP.new_bucket_object).id_acc~'|'~OBJECT(TEMP.new_bucket_object).id_sub~'|'~OBJECT(TEMP.new_bucket_object).start_date~'|'~OBJECT(TEMP.new_bucket_object).id_po~'|'~OBJECT(TEMP.new_bucket_object).id_sched~'|'~OBJECT(TEMP.new_bucket_object).n_order~'|'~OBJECT(TEMP.new_bucket_object).tt_start~'|'~OBJECT(TEMP.new_bucket_object).tier_column_group~'|'~OBJECT(TEMP.new_bucket_object).tier_priority</do>-->
+    <call_proc_for_object>
+      <name>'set_decision_unique_id'</name>
+      <object_id>TEMP.new_bucket_object</object_id>
+    </call_proc_for_object>
+    <print>'Setting decision unique id ['~OBJECT(TEMP.new_bucket_object).decision_unique_id~'] to column group ['~OBJECT(TEMP.new_bucket_object).tier_column_group~'] for object ['~TEMP.new_bucket_object~']'</print>
+    <if>
+      <condition>OBJECT(TEMP.new_bucket_object).account_qualification_group Ne 'bulk_node'</condition>
+      <then>
+        <index_select>
+          <index>'ACC_QUAL_GROUPS'</index>
+          <field name="id_acc">OBJECT(TEMP.new_bucket_object).id_acc</field>
+          <field name="group">OBJECT(TEMP.new_bucket_object).account_qualification_group</field>
+          <cursor>TEMP.child_accs</cursor>
+          <else>
+            <call_dynamic_proc_for_current_object>
+              <name>'generate_acc_qual_'~OBJECT(TEMP.new_bucket_object).account_qualification_group</name>
+              <param name='id_acc'>OBJECT(TEMP.new_bucket_object).id_acc</param>
+              <param name='curr_decision'>TEMP.new_bucket_object</param>
+            </call_dynamic_proc_for_current_object>
+          </else>
+        </index_select>
+
+          <do>TEMP.split_bulk_counter = ''</do>
+          <do>TEMP.node_target_bucket_object = ''</do>
+          <do>TEMP.node_source_bucket_object = ''</do>
+          <do>TEMP.node_id_acc = '-1'</do>
+          
+    <index_select>
+      <index>'ACC_QUAL_GROUPS'</index>
+      <field name="id_acc">OBJECT(TEMP.new_bucket_object).id_acc</field>
+      <field name="group">OBJECT(TEMP.new_bucket_object).account_qualification_group</field>
+      <cursor>TEMP.child_accs</cursor>
+      <loop>
+        <if>
+          <condition>TEMP.node_id_acc eq '-1'</condition>
+          <then>
+            <do>TEMP.node_id_acc = OBJECT(TEMP.child_accs).child_id_acc</do>
+          </then>
+        </if>
+        <print>'INSERTING DECISION RELATIONSHIP ['~OBJECT(TEMP.new_bucket_object).decision_unique_id~'] for id_acc ['~OBJECT(TEMP.child_accs).child_id_acc~']'</print>
+        <index_insert>
+          <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          <field name="bucket_object">OBJECT(TEMP.new_bucket_object).object_id</field>
+          <field name="id_acc">OBJECT(TEMP.child_accs).child_id_acc</field>
+        </index_insert>
+        <index_insert>
+          <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+          <field name="bucket_object">OBJECT(TEMP.new_bucket_object).object_id</field>
+          <field name="id_acc">OBJECT(TEMP.child_accs).child_id_acc</field>
+        </index_insert>
+        <if>
+          <condition>OBJECT(TEMP.my_bucket).tier_type Eq 'bulk_aggregate'</condition>
+          <then>
+            <!--<print>'BulkSplit 5'</print>-->
+            <call_proc_for_current_object>
+              <name>'split_bulk_decision'</name>
+              <param name='bucket_object'>TEMP.my_bucket</param>
+              <param name='node_source_bucket_object'>TEMP.node_source_bucket_object</param>
+              <param name='node_target_bucket_object'>TEMP.node_target_bucket_object</param>
+              <param name='id_acc'>OBJECT(TEMP.child_accs).child_id_acc</param>
+              <param name='node_id_acc'>TEMP.node_id_acc</param>
+              <param name='is_split_by_acc'>'1'</param>
+              <param name='split_bulk_counter'>TEMP.split_bulk_counter</param>
+            </call_proc_for_current_object>
+          </then>
+        </if>
+      </loop>
+    </index_select>
+
+      </then>
+      <else>
+        <index_insert>
+          <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          <field name="bucket_object">OBJECT(TEMP.new_bucket_object).object_id</field>
+          <field name="id_acc">OBJECT(TEMP.new_bucket_object).id_acc</field>
+        </index_insert>
+        <index_insert>
+          <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+          <field name="bucket_object">OBJECT(TEMP.new_bucket_object).object_id</field>
+          <field name="id_acc">OBJECT(TEMP.new_bucket_object).id_acc</field>
+        </index_insert>
+      </else>
+    </if>
+
+  </proc>
+
+</procs>

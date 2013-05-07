@@ -1,0 +1,19 @@
+<procs>
+
+  <!-- Call execute_ade_for_interval passed in a parameter taken -->
+  <!-- from the command line -->
+
+  <proc name='execute_ade_for_passed_interval'>
+
+    <print>'CALL execute_ade_for_passed_interval'</print>
+    <call_proc_for_current_object>
+      <name>'execute_ade_for_interval'</name>
+      <param name='id_interval'>GLOBAL.passed_interval</param>
+    </call_proc_for_current_object>
+    <print>'DONE execute_ade_for_passed_interval'</print>
+
+  </proc>
+  
+</procs>
+
+

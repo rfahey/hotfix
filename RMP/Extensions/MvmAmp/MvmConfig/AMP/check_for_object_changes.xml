@@ -1,0 +1,197 @@
+<procs>
+  <proc name="check_for_object_changes">
+    <initialize>
+
+      <define_memory_index>
+        <index>'TEMP_FIELD_STORAGE'</index>
+        <key_field>'dummy'</key_field>
+        <field>'field_id'</field>
+        <field>'field_name'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'FIELD_FORMATS'</index>
+        <key_field>'field_audit'</key_field>
+        <field>'format_id'</field>
+        <field>'format_string'</field>
+        <field>'is_persisted'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'FIELD_FORMAT_FIELDS'</index>
+        <key_field>'format_id'</key_field>
+        <field>'field_id'</field>
+        <field>'field_name'</field>
+      </define_memory_index>
+
+      <do>GLOBAL.max_format_id = 1</do>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "SELECT * from AGG_FIELD_FORMATS"
+        </query>
+        <query type="sql">
+          "SELECT * from AGG_FIELD_FORMATS"
+        </query>
+        <cursor>TEMP.agg_formats</cursor>
+        <loop>
+          <index_clear>
+            <index>'TEMP_FIELD_STORAGE'</index>
+          </index_clear>
+
+          <split>
+            <source>OBJECT(TEMP.agg_formats).format_string</source>
+            <delimiter>"|"</delimiter>
+            <limit>2</limit>
+            <target>TEMP.dummy_delim</target>
+            <target>TEMP.remaining_string</target>
+          </split>
+          <while>
+            <condition>TEMP.remaining_string ne ''</condition>
+            <loop>
+              <split>
+                <source>TEMP.remaining_string</source>
+                <delimiter>"|"</delimiter>
+                <limit>2</limit>
+                <target>TEMP.current_field</target>
+                <target>TEMP.remaining_string</target>
+              </split>
+              <split>
+                <source>TEMP.current_field</source>
+                <delimiter>"."</delimiter>
+                <limit>2</limit>
+                <target>TEMP.current_table</target>
+                <target>TEMP.current_field</target>
+              </split>
+              <do>TEMP.current_field_id = ''</do>
+              <index_select>
+                <index>'PERSISTED_FIELDS'</index>
+                <field name="field_name">TEMP.current_field</field>
+                <cursor>TEMP.field_check</cursor>
+                <then>
+                  <do>TEMP.current_field_id = OBJECT(TEMP.field_check).field_id</do>
+                </then>
+              </index_select>
+              <index_insert>
+                <index>'TEMP_FIELD_STORAGE'</index>
+                <field name='dummy'>'1'</field>
+                <field name='field_id'>TEMP.current_field_id</field>
+                <field name='field_name'>TEMP.current_field</field>
+              </index_insert>
+            </loop>
+          </while>
+          <do>TEMP.field_audit='|'</do>
+          <index_select>
+            <index>'TEMP_FIELD_STORAGE'</index>
+            <field name='dummy'>'1'</field>
+            <order_by type="numeric">OBJECT.field_id</order_by>
+            <cursor>TEMP.my_fields</cursor>
+            <loop>
+              <do>TEMP.field_audit ~=OBJECT(TEMP.my_fields).field_id~"|"</do>
+              <index_insert>
+                <index>'FIELD_FORMAT_FIELDS'</index>
+                <field name='format_id'>OBJECT(TEMP.agg_formats).format_id</field>
+                <field name='field_name'>OBJECT(TEMP.my_fields).field_name</field>
+                <field name='field_id'>OBJECT(TEMP.my_fields).field_id</field>
+              </index_insert>
+            </loop>
+          </index_select>
+          <if>
+            <condition>GLOBAL.max_format_id LT OBJECT(TEMP.agg_formats).format_id</condition>
+            <then>
+              <do>GLOBAL.max_format_id = OBJECT(TEMP.agg_formats).format_id</do>
+            </then>
+          </if>
+          <index_insert>
+            <index>'FIELD_FORMATS'</index>
+            <field name='field_audit'>TEMP.field_audit</field>
+            <field name='format_id'>OBJECT(TEMP.agg_formats).format_id</field>
+            <field name='format_string'>OBJECT(TEMP.agg_formats).format_string</field>
+            <field name='is_persisted'>'1'</field>
+          </index_insert>
+        </loop>
+      </db_select>
+    </initialize>
+
+    <if>
+      <condition>OBJECT.current_denorm ne ''</condition>
+      <then>
+        <call_dynamic_proc_for_object>
+          <name>'denormalize_charge_qual_'~OBJECT.current_denorm</name>
+          <object_id>OBJECT.object_id</object_id>
+        </call_dynamic_proc_for_object>
+        <!--<call_proc_for_current_object>
+          <name>'audit_object_change'</name>
+          <param name='field_name'>'current_denorm'</param>
+          <param name='field_value'>''</param>
+        </call_proc_for_current_object>-->
+      </then>
+    </if>
+    <if>
+      <condition>OBJECT.field_audit ne '' and OBJECT.field_audit ne '|'</condition>
+      <then>
+        <index_clear>
+          <index>'TEMP_FIELD_STORAGE'</index>
+        </index_clear>
+
+        <split>
+          <source>OBJECT.field_audit</source>
+          <delimiter>"|"</delimiter>
+          <limit>2</limit>
+          <target>TEMP.dummy_delim</target>
+          <target>TEMP.remaining_string</target>
+        </split>
+        <while>
+          <condition>TEMP.remaining_string ne ''</condition>
+          <loop>
+            <split>
+              <source>TEMP.remaining_string</source>
+              <delimiter>"|"</delimiter>
+              <limit>2</limit>
+              <target>TEMP.current_field</target>
+              <target>TEMP.remaining_string</target>
+            </split>
+            <index_insert>
+              <index>'TEMP_FIELD_STORAGE'</index>
+              <field name='dummy'>'1'</field>
+              <field name='field_id'>TEMP.current_field</field>
+            </index_insert>
+          </loop>
+        </while>
+        <do>OBJECT.field_audit='|'</do>
+        <index_select>
+          <index>'TEMP_FIELD_STORAGE'</index>
+          <field name='dummy'>'1'</field>
+          <order_by  type="numeric">OBJECT.field_id</order_by>
+          <cursor>TEMP.my_fields</cursor>
+          <loop>
+            <do>OBJECT.field_audit ~=OBJECT(TEMP.my_fields).field_id~"|"</do>
+          </loop>
+        </index_select>
+        <index_select>
+          <index>'FIELD_FORMATS'</index>
+          <field name='field_audit'>OBJECT.field_audit</field>
+          <cursor>TEMP.format_csr</cursor>
+          <then>
+            <do>OBJECT.field_format_id = OBJECT(TEMP.format_csr).format_id</do>
+          </then>
+          <else>
+            <print>'Generating format_id for ['~OBJECT.field_audit~']'</print>
+            <call_proc_for_current_object>
+              <name>'generate_field_format_id'</name>
+            </call_proc_for_current_object>
+          </else>
+        </index_select>
+      </then>
+      <else>
+        <if>
+          <condition>OBJECT.field_format_id ne ''</condition>
+          <then>
+            <do>OBJECT.field_format_id = ''</do>
+          </then>
+        </if>
+      </else>
+    </if>
+  </proc>
+
+</procs>

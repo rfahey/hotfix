@@ -1,0 +1,231 @@
+<procs>
+  <!--
+ALGORITHM
+
+Assumption: one backup node for now. If we need more backup nodes, those nodes will be assigned separately outside of this algorithm.
+
+Node assignment:
+
+Split nodes on all machines in half (total nodes MUST be even. If not, remove one node from any machine with an odd number of nodes). If there are multiple nodes with an odd number of nodes, just be sure that in aggregate you have taken half of the nodes for backup and half for primary.
+
+Assign logical nodes to physical nodes in round robin to one half of the nodes
+
+Keep assigning logical nodes after all physical nodes are taken until there are no more logical nodes
+
+Once all primary nodes have been assigned according to the above, do the following:
+
+-	Pick a primary node from the machine with the most primary nodes that currently have no backup node (once a primary has a backup, it is done)
+-	Assign a backup node by choosing the machine (other than the machine of the primary) with the most available nodes
+-	If there is more than 1 machine with the same max available nodes, choose the machine that currently still has the highest number of primary nodes that have not yet gotten backup nodes (other than the machine of the primary)
+-	If there are no available nodes anywhere but the machine of the primary, then put the backup on the primary
+
+The end result should be that every primary is able to get a backup node on a machine other than the machine of the primary unless it is logically impossible to do so.
+  
+  
+NEW NOTES:
+  
+logical cluster definitions 'can' limit the numbr of processes used in the physical cluster.
+-->
+
+  <proc name="map_logical_onto_physical_cluster">
+    <param name="logical_cluster"></param>
+    <param name="physical_cluster"></param>
+
+    <do>OBJECT.logical_cluster=TEMP.logical_cluster</do>
+    <do>OBJECT.physical_cluster=TEMP.physical_cluster</do>
+
+    <info switch="log_startup">
+      'start mapping logical_cluster '
+      ~ ' logical_cluster=['~OBJECT.logical_cluster~']'
+      ~ ' onto '
+      ~ ' physical_cluster=['~OBJECT.physical_cluster~']'
+    </info>
+    
+    <db_execute>
+      <statement>
+        'delete mvm_logical_cluster_nodes where logical_cluster=$${OBJECT.logical_cluster}'
+      </statement>
+    </db_execute>
+
+    <db_execute>
+      <statement>
+        'delete mvm_physical_cluster_nodes where physical_cluster=$${OBJECT.physical_cluster}'
+      </statement>
+    </db_execute>
+
+    <db_execute>
+      <statement>
+        'delete mvm_resource_nodes where logical_cluster=$${OBJECT.logical_cluster}'
+      </statement>
+    </db_execute>
+
+
+   
+
+    <define_memory_index>
+      <index>'PRIMARY_PHYSICAL_NODES'</index>
+      <field>'physical_node_id'</field>
+      <field>'physical_cluster'</field>
+      <field>'server'</field>
+    </define_memory_index>
+
+    <call_proc_for_current_object>
+      <name>'load_primary_physical_nodes'</name>
+    </call_proc_for_current_object>
+
+    <info switch="log_startup">'PRIMARY_PHYSICAL_NODES:'</info>
+    <index_select>
+      <index>'PRIMARY_PHYSICAL_NODES'</index>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <info switch="log_startup">dump_object(TEMP.csr)</info>
+
+        <!--<db_insert>
+          <login_object>GLOBAL.target_login</login_object>
+          <name>'mvm_physical_cluster_nodes'</name>
+          <field name="physical_node_id">OBJECT(TEMP.csr).physical_node_id</field>
+          <field name="physical_cluster">OBJECT.physical_cluster</field>
+          <field name="server">OBJECT(TEMP.csr).server</field>
+          <field name="status">'launching'</field>
+          <field sql="true" name="status_dt">'getdate()'</field>
+        </db_insert>-->
+
+      </loop>
+    </index_select>
+    <info switch="log_startup">'primary_physical_nodes_count='~OBJECT.primary_physical_nodes_count</info>
+
+
+    <define_memory_index>
+      <index>'BACKUP_PHYSICAL_NODES'</index>
+      <field>'physical_node_id'</field>
+      <field>'physical_cluster'</field>
+      <field>'server'</field>
+    </define_memory_index>
+    <if>
+      <condition>OBJECT.use_backup</condition>
+      <then>
+        <if>
+          <condition>OBJECT.backup_cluster eq OBJECT.physical_cluster</condition>
+          <then>
+            <info switch="log_startup">'primary_cluster=physical_cluster='~OBJECT.backup_cluster~' so need to split primary in two!'</info>
+            <call_proc_for_current_object>
+              <name>'partition_primary_into_backup'</name>
+            </call_proc_for_current_object>
+          </then>
+          <else>
+            <call_proc_for_current_object>
+              <name>'load_backup_physical_nodes'</name>
+            </call_proc_for_current_object>
+          </else>
+        </if>
+      </then>
+    </if>
+
+
+    <info switch="log_startup">'Physical node ids are now stable so register their info'</info>
+    <define_memory_index>
+      <index>'PHYSICAL_NODE_INFO'</index>
+      <key_field>'physical_node_id'</key_field>
+      <field>'physical_cluster'</field>
+      <field>'server'</field>
+      <field>'is_primary'</field>
+      <field>'is_used'</field>
+    </define_memory_index>
+    <index_select>
+      <index>'PRIMARY_PHYSICAL_NODES'</index>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <index_insert>
+          <index>'PHYSICAL_NODE_INFO'</index>
+          <field name="physical_node_id">OBJECT(TEMP.csr).physical_node_id</field>
+          <field name="physical_cluster">OBJECT(TEMP.csr).physical_cluster</field>
+          <field name="server">OBJECT(TEMP.csr).server</field>
+          <field name="is_primary">1</field>
+          <field name="is_used">0</field>
+        </index_insert>
+      </loop>
+    </index_select>
+    <index_select>
+      <index>'BACKUP_PHYSICAL_NODES'</index>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <index_insert>
+          <index>'PHYSICAL_NODE_INFO'</index>
+          <field name="physical_node_id">OBJECT(TEMP.csr).physical_node_id</field>
+          <field name="physical_cluster">OBJECT(TEMP.csr).physical_cluster</field>
+          <field name="server">OBJECT(TEMP.csr).server</field>
+          <field name="is_primary">0</field>
+          <field name="is_used">0</field>
+        </index_insert>
+      </loop>
+    </index_select>
+
+    <define_memory_index>
+      <index>'PRIMARY_SERVERS_HASH'</index>
+      <key_field>'server'</key_field>
+    </define_memory_index>
+
+    <define_memory_index>
+      <index>'PRIMARY_SERVERS_ARRAY'</index>
+      <key_field>'i'</key_field>
+      <field>'server'</field>
+    </define_memory_index>
+
+    <call_proc_for_current_object>
+      <name>'build_primary_servers_hash_array'</name>
+    </call_proc_for_current_object>
+
+    <call_proc>'dump_primary_servers_array'</call_proc>
+
+    <!--<define_memory_index>
+      <index>'PRIMARY_LOGICAL_NODES'</index>
+      <field>'logical_node_id'</field>
+      <field>'physical_node_id'</field>
+    </define_memory_index>-->
+
+    <call_proc_for_current_object>
+      <name>'map_primary_logical_nodes'</name>
+    </call_proc_for_current_object>
+    
+    <!--<call_proc>'dump_primary_logical_nodes'</call_proc>-->
+
+    <define_memory_index>
+      <index>'BACKUP_LOGICAL_NODES'</index>
+      <field>'logical_node_id'</field>
+      <field>'physical_node_id'</field>
+    </define_memory_index>
+
+    <if>
+      <condition>OBJECT.use_backup</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'backup_node_assignment'</name>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+
+
+    <info switch="log_startup">'If there is anyone running in mvm_cluster_map, abort until ppl take down the cluster'</info>
+    <call_proc_for_current_object>
+      <name>'error_if_logical_cluster_is_up'</name>
+    </call_proc_for_current_object>
+
+
+    <log switch="log_startup">'Delete the mapping since we are about to redo it'</log>
+    <db_execute>
+      <statement>
+        'delete mvm_logical_cluster_nodes where logical_cluster=$${OBJECT.logical_cluster}'
+      </statement>
+    </db_execute>
+
+
+    <info switch="log_startup">
+      'end mapping logical_cluster '
+      ~ ' logical_cluster=['~OBJECT.logical_cluster~']'
+      ~ ' onto '
+      ~ ' physical_cluster=['~OBJECT.physical_cluster~']'
+    </info>
+    
+  </proc>
+
+</procs>

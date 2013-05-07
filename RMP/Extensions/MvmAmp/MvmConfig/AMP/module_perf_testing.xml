@@ -1,0 +1,795 @@
+<procs>
+  <proc name ='perftest_run_all'>
+    <param name='iterations'/>
+    <do>GLOBAL.loop_max = 100000</do>
+    <if>
+      <condition>TEMP.iterations ne ''</condition>
+      <then>
+        <do>GLOBAL.loop_max = TEMP.iterations</do>
+      </then>
+    </if>
+    <call_proc_for_current_object>
+      <name>'perftest_do_nothing'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_do_read_scalar'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_do_read_temp'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_do_read_obj'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_do_temp_assignment'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_do_obj_assignment'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_do_math'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_do_string_concat'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_call_proc'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_index_select'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_if'</name>
+    </call_proc_for_current_object>
+    <!--<call_proc_for_current_object>
+      <name>'perftest_call_piperow_proc'</name>
+    </call_proc_for_current_object>-->
+    <!--<call_proc_for_current_object>
+      <name>'perftest_counter_select'</name>
+    </call_proc_for_current_object>-->
+    <call_proc_for_current_object>
+      <name>'perftest_call_dynamic_proc'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_date_add'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_spawn'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_index_add_remove'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_index_get'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_get_object_field'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_set_object_field'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_index_get_search'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_do_indirect_read_obj'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_do_indirect_obj_assignment'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_call_proc_params'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_call_proc_2params'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'perftest_call_proc_current_obj'</name>
+    </call_proc_for_current_object>
+
+
+    <if>
+      <condition>TEMP.iterations GT 1000</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'persist_counters'</name>
+          <param name='batch_id'>TEMP.my_batch_id</param>
+          <param name='node_id'>'0'</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+    
+  </proc>
+  
+  
+  <proc name ='perftest_do_nothing'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_do_nothing' counter='OBJECT(GLOBAL.counter_object).perftest_do_nothing_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <nothing/>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_do_nothing_ctr / OBJECT(GLOBAL.counter_object).perftest_do_nothing * 1000</do>
+    <print>'PERFTEST: do_nothing TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_do_nothing ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_do_nothing_ctr~']'</print>
+  </proc>
+  
+  <proc name ='perftest_do_read_scalar'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_do_read_scalar' counter='OBJECT(GLOBAL.counter_object).perftest_do_read_scalar_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <do>'1'</do>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_do_read_scalar_ctr / OBJECT(GLOBAL.counter_object).perftest_do_read_scalar * 1000</do>
+    <print>'PERFTEST: do_read_scalar TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_do_read_scalar ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_do_read_scalar_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_do_read_temp'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max</do>
+    <do>TEMP.junk = '1'</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_do_read_temp' counter='OBJECT(GLOBAL.counter_object).perftest_do_read_temp_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <do>'TEMP.junk'</do>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_do_read_temp_ctr / OBJECT(GLOBAL.counter_object).perftest_do_read_temp * 1000</do>
+    <print>'PERFTEST: do_read_temp TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_do_read_temp ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_do_read_temp_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_do_read_obj'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max</do>
+    <do>OBJECT.junk = '1'</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_do_read_obj' counter='OBJECT(GLOBAL.counter_object).perftest_do_read_obj_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <do>'OBJECT.junk'</do>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_do_read_obj_ctr / OBJECT(GLOBAL.counter_object).perftest_do_read_obj * 1000</do>
+    <print>'PERFTEST: do_read_obj TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_do_read_obj ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_do_read_obj_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_do_temp_assignment'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/5</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_do_temp_assignment' counter='OBJECT(GLOBAL.counter_object).perftest_do_temp_assignment_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <do>TEMP.a = '1'</do>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_do_temp_assignment_ctr / OBJECT(GLOBAL.counter_object).perftest_do_temp_assignment * 1000</do>
+    <print>'PERFTEST: do_temp_assignment TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_do_temp_assignment ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_do_temp_assignment_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_do_obj_assignment'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/5</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_do_obj_assignment' counter='OBJECT(GLOBAL.counter_object).perftest_do_obj_assignment_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <do>OBJECT.a1234567901234567890='a1'</do>
+            <!--<do>OBJECT.a='1'</do>-->
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_do_obj_assignment_ctr / OBJECT(GLOBAL.counter_object).perftest_do_obj_assignment * 1000</do>
+    <print>'PERFTEST: do_obj_assignment TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_do_obj_assignment ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_do_obj_assignment_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_do_math'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/10</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_do_math' counter='OBJECT(GLOBAL.counter_object).perftest_do_math_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <do>'1' + '1'</do>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_do_math_ctr / OBJECT(GLOBAL.counter_object).perftest_do_math * 1000</do>
+    <print>'PERFTEST: do_math TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_do_math ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_do_math_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_do_string_concat'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_do_string_concat' counter='OBJECT(GLOBAL.counter_object).perftest_do_string_concat_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <do>'1' ~ '1'</do>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_do_string_concat_ctr / OBJECT(GLOBAL.counter_object).perftest_do_string_concat * 1000</do>
+    <print>'PERFTEST: do_string_concat TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_do_string_concat ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_do_string_concat_ctr~']'</print>
+  </proc>
+
+  <proc name="perftest_dummy_proc">
+  </proc>
+  
+  <proc name ='perftest_call_proc'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/100</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_call_proc' counter='OBJECT(GLOBAL.counter_object).perftest_call_proc_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <call_proc_for_object>
+              <name>'perftest_dummy_proc'</name>
+              <object_id>OBJECT.object_id</object_id>
+            </call_proc_for_object>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_call_proc_ctr / OBJECT(GLOBAL.counter_object).perftest_call_proc * 1000</do>
+    <print>'PERFTEST: call_proc TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_call_proc ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_call_proc_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_index_select'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/500</do>
+
+    <run_once>
+    <define_memory_index>
+      <index>'JUNK'</index>
+      <key_field>'junka'</key_field>
+      <field>'junkb'</field>
+    </define_memory_index>
+
+    <index_insert>
+      <index>'JUNK'</index>
+      <field name="junka">'1'</field>
+      <field name="junkb">'11'</field>
+    </index_insert>
+    <index_insert>
+      <index>'JUNK'</index>
+      <field name="junka">'2'</field>
+      <field name="junkb">'12'</field>
+    </index_insert>
+    <index_insert>
+      <index>'JUNK'</index>
+      <field name="junka">'3'</field>
+      <field name="junkb">'13'</field>
+    </index_insert>
+    </run_once>
+    
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_index_select' counter='OBJECT(GLOBAL.counter_object).perftest_index_select_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <index_select>
+              <index>'JUNK'</index>
+              <field name="junka">'1'</field>
+              <cursor>TEMP.junk_csr</cursor>
+              <then>
+
+              </then>
+            </index_select>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_index_select_ctr / OBJECT(GLOBAL.counter_object).perftest_index_select * 1000</do>
+    <print>'PERFTEST: index_select TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_index_select ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_index_select_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_if'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/10</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_if' counter='OBJECT(GLOBAL.counter_object).perftest_if_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <if>
+              <condition>'1' eq '1'</condition>
+              <then>
+                
+              </then>
+            </if>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_if_ctr / OBJECT(GLOBAL.counter_object).perftest_if * 1000</do>
+    <print>'PERFTEST: if TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_if ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_if_ctr~']'</print>
+  </proc>
+
+  <proc name="perftest_dummy_piperow_proc">
+    <counter_select>
+      <from>0</from>
+      <to>999999999</to>
+      <cursor_value>'junka'</cursor_value>
+      <cursor>TEMP.junk_dummy</cursor>
+      <loop>
+        <pipe_row>TEMP.junk_dummy</pipe_row>
+      </loop>
+    </counter_select>
+  </proc>
+
+  <proc name ='perftest_call_piperow_proc'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/10</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_call_piperow_proc' counter='OBJECT(GLOBAL.counter_object).perftest_call_piperow_proc_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <proc_select>
+              <name>'perftest_dummy_piperow_proc' </name>
+              <cursor>TEMP.junk</cursor>
+              <loop>
+              </loop>
+            </proc_select>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_call_piperow_proc_ctr / OBJECT(GLOBAL.counter_object).perftest_call_piperow_proc * 1000</do>
+    <print>'PERFTEST: NOT CORRECT: call_piperow_proc TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_call_piperow_proc ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_call_piperow_proc_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_counter_select'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/10</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_counter_select' counter='OBJECT(GLOBAL.counter_object).perftest_counter_select_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <counter_select>
+              <from>0</from>
+              <to>2</to>
+              <cursor_value>'junk'</cursor_value>
+              <loop>
+              </loop>
+            </counter_select>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_counter_select_ctr / OBJECT(GLOBAL.counter_object).perftest_counter_select * 1000</do>
+    <print>'PERFTEST: counter_select TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_counter_select ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_counter_select_ctr~']'</print>
+  </proc>
+
+  <proc name="perftest_dummy_dynamic_proc">
+  </proc>
+
+  <proc name ='perftest_call_dynamic_proc'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/100</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_call_dynamic_proc' counter='OBJECT(GLOBAL.counter_object).perftest_call_dynamic_proc_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <call_dynamic_proc_for_current_object>
+              <name>'perftest_dummy_dynamic_proc'</name>
+            </call_dynamic_proc_for_current_object>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_call_dynamic_proc_ctr / OBJECT(GLOBAL.counter_object).perftest_call_dynamic_proc * 1000</do>
+    <print>'PERFTEST: call_dynamic_proc TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_call_dynamic_proc ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_call_dynamic_proc_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_date_add'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/100</do>
+    <do>TEMP.date_format_before = GLOBAL.date_format</do>
+    <do>GLOBAL.date_format = 'YYYYMMDDHH24MISS'</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_date_add' counter='OBJECT(GLOBAL.counter_object).perftest_date_add_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <date_add>
+              <input>'20120101000000'</input>
+              <unit>'SS'</unit>
+              <increment>'1'</increment>
+              <output>TEMP.end_date</output>
+            </date_add>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_date_add_ctr / OBJECT(GLOBAL.counter_object).perftest_date_add * 1000</do>
+    <print>'PERFTEST: date_add TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_date_add ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_date_add_ctr~']'</print>
+    <do>GLOBAL.date_format = TEMP.date_format_before</do>
+  </proc>
+
+  <proc name ='perftest_spawn'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/100</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_spawn' counter='OBJECT(GLOBAL.counter_object).perftest_spawn_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <spawn>
+              <object_type>'junk'</object_type>
+              <object_id>TEMP.junk</object_id>
+            </spawn>
+            <!--<remove_object_from_cache>TEMP.junk</remove_object_from_cache>-->
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_spawn_ctr / OBJECT(GLOBAL.counter_object).perftest_spawn * 1000</do>
+    <print>'PERFTEST: spawn TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_spawn ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_spawn_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_index_add_remove'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/20</do>
+
+    <run_once>
+      <define_memory_index>
+        <index>'JUNK_AR'</index>
+        <key_field>'junka'</key_field>
+        <field>'junkb'</field>
+      </define_memory_index>
+      <index_insert>
+        <index>'JUNK'</index>
+        <field name="junka">'2'</field>
+        <field name="junkb">'12'</field>
+      </index_insert>
+      <index_insert>
+        <index>'JUNK'</index>
+        <field name="junka">'3'</field>
+        <field name="junkb">'13'</field>
+      </index_insert>
+    </run_once>
+
+
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_index_add_remove' counter='OBJECT(GLOBAL.counter_object).perftest_index_add_remove_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <index_insert>
+              <index>'JUNK_AR'</index>
+              <field name="junka">'1'</field>
+              <field name="junkb">'11'</field>
+            </index_insert>
+            <index_remove>
+              <index>'JUNK_AR'</index>
+              <field name='junka'>'1'</field>
+            </index_remove>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_index_add_remove_ctr / OBJECT(GLOBAL.counter_object).perftest_index_add_remove * 1000</do>
+    <print>'PERFTEST: index_add/remove TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_index_add_remove ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_index_add_remove_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_index_get'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/20</do>
+
+    <run_once>
+      <define_memory_index>
+        <index>'JUNKGET'</index>
+        <key_field>'junka'</key_field>
+        <field>'junkb'</field>
+      </define_memory_index>
+
+      <index_insert>
+        <index>'JUNKGET'</index>
+        <field name="junka">'1'</field>
+        <field name="junkb">'11'</field>
+      </index_insert>
+      <index_insert>
+        <index>'JUNKGET'</index>
+        <field name="junka">'2'</field>
+        <field name="junkb">'12'</field>
+      </index_insert>
+      <index_insert>
+        <index>'JUNKGET'</index>
+        <field name="junka">'3'</field>
+        <field name="junkb">'13'</field>
+      </index_insert>
+    </run_once>
+
+    <do>TEMP.value = '5'</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_index_get' counter='OBJECT(GLOBAL.counter_object).perftest_index_get_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <index_get>
+              <index>'JUNKGET'</index>
+              <field name='junka'>'1'</field>
+              <field name='junkb'>TEMP.value</field>
+              <!--<then></then>-->
+              <else></else>
+            </index_get>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <print>'I got back ['~TEMP.value~']'</print>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_index_get_ctr / OBJECT(GLOBAL.counter_object).perftest_index_get * 1000</do>
+    <print>'PERFTEST: index_get TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_index_get ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_index_get_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_get_object_field'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/10</do>
+    <do>OBJECT.junk = '1'</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_get_object_field' counter='OBJECT(GLOBAL.counter_object).perftest_get_object_field_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'junk'</field_name>
+              <output>TEMP.junk</output>
+            </get_object_field>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_get_object_field_ctr / OBJECT(GLOBAL.counter_object).perftest_get_object_field * 1000</do>
+    <print>'PERFTEST: get_object_field TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_get_object_field ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_get_object_field_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_set_object_field'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/10</do>
+    <do>OBJECT.junk = '1'</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_set_object_field' counter='OBJECT(GLOBAL.counter_object).perftest_set_object_field_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <set_object_field>
+              <input>'1'</input>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'junk'</field_name>
+            </set_object_field>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_set_object_field_ctr / OBJECT(GLOBAL.counter_object).perftest_set_object_field * 1000</do>
+    <print>'PERFTEST: set_object_field TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_set_object_field ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_set_object_field_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_index_get_search'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/100</do>
+
+    <run_once>
+      <define_memory_index>
+        <index>'JUNKGETSEARCH'</index>
+        <key_field>'junka'</key_field>
+        <key_field type='search'>'junkb'</key_field>
+        <field>'junkc'</field>
+      </define_memory_index>
+
+
+      <index_insert>
+        <index>'JUNKGETSEARCH'</index>
+        <field name="junka">'1'</field>
+        <field name="junkb">'10'</field>
+        <field name="junkc">'100'</field>
+      </index_insert>
+      <index_insert>
+        <index>'JUNKGETSEARCH'</index>
+        <field name="junka">'1'</field>
+        <field name="junkb">'20'</field>
+        <field name="junkc">'200'</field>
+      </index_insert>
+      <index_insert>
+        <index>'JUNKGETSEARCH'</index>
+        <field name="junka">'1'</field>
+        <field name="junkb">'30'</field>
+        <field name="junkc">'300'</field>
+      </index_insert>
+    </run_once>
+
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_index_get_search' counter='OBJECT(GLOBAL.counter_object).perftest_index_get_search_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <index_get>
+              <index>'JUNKGETSEARCH'</index>
+              <field name='junka'>'1'</field>
+              <field name='junkb'>'25'</field>
+              <field name='junkc'>TEMP.c</field>
+              <then>
+              </then>
+            </index_get>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_index_get_search_ctr / OBJECT(GLOBAL.counter_object).perftest_index_get_search * 1000</do>
+    <print>'PERFTEST: index_get_search TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_index_get_search ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_index_get_search_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_do_indirect_read_obj'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max</do>
+    <spawn>
+      <object_type>'junk'</object_type>
+      <object_id>TEMP.junk</object_id>
+    </spawn>
+    <do>OBJECT(TEMP.junk).junk = '1'</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_do_indirect_read_obj' counter='OBJECT(GLOBAL.counter_object).perftest_do_indirect_read_obj_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <do>'OBJECT(TEMP.junk).junk'</do>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_do_indirect_read_obj_ctr / OBJECT(GLOBAL.counter_object).perftest_do_indirect_read_obj * 1000</do>
+    <print>'PERFTEST: do_indirect_read_obj TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_do_indirect_read_obj ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_do_indirect_read_obj_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_do_indirect_obj_assignment'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/5</do>
+    <spawn>
+      <object_type>'junk'</object_type>
+      <object_id>TEMP.junk</object_id>
+    </spawn>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_do_indirect_obj_assignment' counter='OBJECT(GLOBAL.counter_object).perftest_do_indirect_obj_assignment_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <do>OBJECT(TEMP.junk).a1234567901234567890='a1'</do>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_do_indirect_obj_assignment_ctr / OBJECT(GLOBAL.counter_object).perftest_do_indirect_obj_assignment * 1000</do>
+    <print>'PERFTEST: do_indirect_obj_assignment TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_do_indirect_obj_assignment ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_do_indirect_obj_assignment_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_dummy_proc_params'>
+    <param name='junk'/>
+  </proc>
+
+  <proc name ='perftest_call_proc_params'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/100</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_call_proc_params' counter='OBJECT(GLOBAL.counter_object).perftest_call_proc_params_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <call_proc_for_object>
+              <name>'perftest_dummy_proc_params'</name>
+              <object_id>OBJECT.object_id</object_id>
+              <param name='junk'>'junk'</param>
+            </call_proc_for_object>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_call_proc_params_ctr / OBJECT(GLOBAL.counter_object).perftest_call_proc_params * 1000</do>
+    <print>'PERFTEST: call_proc_params TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_call_proc_params ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_call_proc_params_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_dummy_proc_2params'>
+    <param name='junka'/>
+    <param name='junkb'/>
+  </proc>
+
+  <proc name ='perftest_call_proc_2params'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/100</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_call_proc_2params' counter='OBJECT(GLOBAL.counter_object).perftest_call_proc_2params_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <call_proc_for_object>
+              <name>'perftest_dummy_proc_2params'</name>
+              <object_id>OBJECT.object_id</object_id>
+              <param name='junka'>'junk'</param>
+              <param name='junkb'>'junk'</param>
+            </call_proc_for_object>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_call_proc_2params_ctr / OBJECT(GLOBAL.counter_object).perftest_call_proc_2params * 1000</do>
+    <print>'PERFTEST: call_proc_2params TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_call_proc_2params ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_call_proc_2params_ctr~']'</print>
+  </proc>
+
+  <proc name ='perftest_call_proc_current_obj'>
+    <do>TEMP.loop_counter = 0</do>
+    <do>TEMP.loop_max = GLOBAL.loop_max/100</do>
+    <while>
+      <condition>TEMP.loop_counter LT TEMP.loop_max</condition>
+      <loop>
+        <do>TEMP.loop_counter += 1</do>
+        <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).perftest_call_proc_current_obj' counter='OBJECT(GLOBAL.counter_object).perftest_call_proc_current_obj_ctr' counter_increment='100' skip_first ='1'>
+          <duplicate quantity ='100'>
+            <call_proc_for_current_object>
+              <name>'perftest_dummy_proc'</name>
+            </call_proc_for_current_object>
+          </duplicate>
+        </stopwatch>
+      </loop>
+    </while>
+    <do>TEMP.tps = OBJECT(GLOBAL.counter_object).perftest_call_proc_current_obj_ctr / OBJECT(GLOBAL.counter_object).perftest_call_proc_current_obj * 1000</do>
+    <print>'PERFTEST: call_proc_current_obj TPS = ['~TEMP.tps~'], total_ms = ['~ OBJECT(GLOBAL.counter_object).perftest_call_proc_current_obj ~'] and counter = ['~OBJECT(GLOBAL.counter_object).perftest_call_proc_current_obj_ctr~']'</print>
+  </proc>
+</procs>

@@ -1,0 +1,47 @@
+<procs>
+  <proc name='perform_map_legalentity_filter'>
+
+    <if>
+      <condition>OBJECT.decision_legal_entity ne ''</condition>
+      <then>
+
+        <call_proc_for_current_object>
+          <name>'get_id_acc_object'</name>
+          <param name='id_acc'>OBJECT.id_acc</param>
+          <param name='id_acc_object'>TEMP.my_account</param>
+        </call_proc_for_current_object>
+        <if>
+          <condition>OBJECT(TEMP.my_account).overlay_t_av_gxs eq ''</condition>
+          <then>
+            <db_select>
+              <login_object>GLOBAL.target_login</login_object>
+              <query>
+                "select a.c_legalentity 
+                from t_av_gxs a 
+                where a.id_acc = $${OBJECT.id_acc}"
+              </query>
+              <cursor>TEMP.output_csr</cursor>
+              <loop>
+                <do>OBJECT(TEMP.my_account).overlay_t_av_gxs = '1'</do>
+                <inherit_object>
+                  <source>TEMP.output_csr</source>
+                  <target>TEMP.my_account</target>
+                </inherit_object>
+              </loop>
+            </db_select>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT.decision_legal_entity ne '' and OBJECT(TEMP.my_account).c_legalentity ne '' and OBJECT.decision_legal_entity Ne OBJECT(TEMP.my_account).c_legalentity</condition>
+          <then>
+		    <print>'Mismatched legal entities: '~OBJECT.decision_legal_entity~' AND '~OBJECT(TEMP.my_account).c_legalentity</print>
+            <do>OBJECT.discard_decision = 1</do>
+          </then>
+		  <else>
+		    <print>'Matched legal entities: '~OBJECT.decision_legal_entity~' AND '~OBJECT(TEMP.my_account).c_legalentity</print>
+		  </else>
+        </if>
+      </then>
+    </if>
+  </proc>
+</procs>

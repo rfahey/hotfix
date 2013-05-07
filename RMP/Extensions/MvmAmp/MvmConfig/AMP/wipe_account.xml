@@ -1,0 +1,56 @@
+<procs>
+  <proc name='wipe_account'>
+    <param name='id_acc'/>
+    <param name='id_interval'/>
+
+    <initialize>
+      <define_memory_index>
+        <index>'CURRENT_WIPE_ACC'</index>
+        <field>'id_acc'</field>
+        <field>'id_interval'</field>
+      </define_memory_index>
+    </initialize>
+
+    <index_clear>
+      <index>'CURRENT_WIPE_ACC'</index>
+    </index_clear>
+
+    <index_insert>
+      <index>'CURRENT_WIPE_ACC'</index>
+      <field name="id_acc">TEMP.id_acc</field>
+      <field name="id_interval">TEMP.id_interval</field>
+    </index_insert>
+
+    <do>GLOBAL.usage_hook_id = ''</do>
+
+    <print>'I am wiping id_acc ['~TEMP.id_acc~'] for interval ['~TEMP.id_interval~']'</print>
+    <index_select>
+      <index>'CURRENT_WIPE_ACC'</index>
+      <cursor>TEMP.id_acc_csr</cursor>
+      <then>
+        <!--<info>'Calling get_usage_hook'</info>-->
+        <call_proc_for_current_object>
+          <name>'get_usage_hook'</name>
+          <param name="hook_id">GLOBAL.usage_hook_id</param>
+          <param name="id_acc_csr">TEMP.id_acc_csr</param>
+          <param name="id_usage_interval">TEMP.id_interval</param>
+        </call_proc_for_current_object>
+      </then>
+    </index_select>
+
+    <!--<usage_hook_select>
+      <hook_id>GLOBAL.usage_hook_id</hook_id>
+      <cursor>TEMP.usg_csr</cursor>
+      <loop>
+        <print>'Here I have agg_applied_tier_counter ['~OBJECT(TEMP.usg_csr).agg_applied_tier_counter~']'</print>
+      </loop>
+    </usage_hook_select>-->
+
+    <call_proc_for_current_object>
+      <name>'release_usage_hook'</name>
+      <param name="hook_id">GLOBAL.usage_hook_id</param>
+    </call_proc_for_current_object>
+    
+  </proc>
+
+</procs>

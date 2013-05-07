@@ -1,0 +1,595 @@
+<procs>
+
+  <proc name='do_nothing'>
+  </proc>
+
+  <proc name='process_decision_work'>
+    <param name='id_interval'/>
+    <initialize>
+      <print>'init process_decision_work for interval'</print>
+
+      <!--<spawn>
+        <object_type>'LOGGER'</object_type>
+        <object_id>GLOBAL.logger</object_id>
+      </spawn>
+      <do>OBJECT(GLOBAL.logger).log_level='info'</do>-->
+
+
+      <!-- Map of accounts that are currently locked (busy being processed): LOCKED_ACCOUNTS -->
+      <define_memory_index>
+        <index>'LOCKED_ACCOUNTS'</index>
+        <key_field>'id_acc'</key_field>
+      </define_memory_index>
+
+      <!-- Map of accounts that are currently unlocked: UNLOCKED_ACCOUNTS -->
+      <define_memory_index synchronized='true'>
+        <index>'UNLOCKED_ACCOUNTS'</index>
+        <key_field>'id_acc'</key_field>
+      </define_memory_index>
+
+      <!-- Map of decisions that we could process yet because there were locked. -->
+      <define_memory_index>
+        <index>'DELAYED_WORK'</index>
+        <key_field>'bucket_object'</key_field>
+      </define_memory_index>
+
+      <define_memory_index synchronized='true'>
+        <index>'COMPLETED_WORK'</index>
+        <key_field>'bucket_object'</key_field>
+      </define_memory_index>
+
+      <define_memory_index synchronized='true'>
+        <index>'PRECOMPLETED_WORK'</index>
+        <key_field>'bucket_object'</key_field>
+      </define_memory_index>
+
+      <define_memory_index synchronized='true'>
+        <index>'PRECOMPLETED_WORK_MAP'</index>
+        <key_field>'master_bucket_object'</key_field>
+        <field>'bucket_object'</field>
+      </define_memory_index>
+
+      <define_memory_index synchronized='true'>
+        <index>'INTERVAL_ID'</index>
+        <key_field>'interval_id'</key_field>
+      </define_memory_index>
+
+    </initialize>
+
+    <index_clear>
+      <index>'INTERVAL_ID'</index>
+    </index_clear>
+
+    <index_insert>
+      <index>'INTERVAL_ID'</index>
+      <field name='interval_id'>TEMP.id_interval</field>
+    </index_insert>
+
+    <do>GLOBAL.producer_queue_length=2</do>
+    <do>GLOBAL.reduce_ctr=0</do>
+
+
+    <!--<set_server_mode_on/>
+
+    <startup_slaves>
+      <slave_count>'*'</slave_count>
+      <num_started>GLOBAL.slave_count</num_started>
+    </startup_slaves>-->
+
+    <!-- Iterate through all the slaves. -->
+    <slave_node_id_select>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.slave_id=OBJECT(TEMP.csr).node_id</do>
+        <!--<print>'got a slave-'~TEMP.slave_id</print>-->
+
+        <!-- Wait until the slave isn't busy. -->
+        <remote_queue_proc>
+          <name>'do_nothing'</name>
+          <process_id>TEMP.slave_id</process_id>
+          <batch_id>TEMP.my_batch_id</batch_id>
+          <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+        </remote_queue_proc>
+
+        <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+
+        <!--<push_index>
+          <process_id>TEMP.slave_id</process_id>
+          <clear_source>0</clear_source>
+          <source>
+            <index>'AGG_BUCKET_MAP'</index>
+          </source>
+          <target>
+            <index>'AGG_BUCKET_MAP'</index>
+          </target>
+        </push_index>-->
+
+        <!--<print>'got a slave2-'~TEMP.slave_id</print>-->
+
+        <!-- Push to the slave a map of decision instances indexed by account. -->
+        <push_index>
+          <process_id>TEMP.slave_id</process_id>
+          <clear_source>0</clear_source>
+          <source>
+            <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+          </source>
+          <target>
+            <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+          </target>
+        </push_index>
+
+        <!-- Push to the slave a map of accounts indexed by decision instance. -->
+        <push_index>
+          <process_id>TEMP.slave_id</process_id>
+          <clear_source>0</clear_source>
+          <source>
+            <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          </source>
+          <target>
+            <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          </target>
+        </push_index>
+
+        
+        <push_index>
+          <process_id>TEMP.slave_id</process_id>
+          <clear_source>0</clear_source>
+          <source>
+            <index>'ACCOUNT_CACHE'</index>
+          </source>
+          <target>
+            <index>'ACCOUNT_CACHE'</index>
+          </target>
+        </push_index>
+
+        <push_index>
+          <process_id>TEMP.slave_id</process_id>
+          <clear_source>0</clear_source>
+          <source>
+            <index>'INTERVAL_ID'</index>
+          </source>
+          <target>
+            <index>'INTERVAL_ID'</index>
+          </target>
+        </push_index>
+
+        <push_index>
+          <process_id>TEMP.slave_id</process_id>
+          <clear_source>0</clear_source>
+          <source>
+            <index>'BUCKET_CHILDREN'</index>
+          </source>
+          <target>
+            <index>'BUCKET_CHILDREN'</index>
+          </target>
+        </push_index>
+
+
+      </loop>
+    </slave_node_id_select>
+
+    <time ms='TEMP.ms'>
+      <map_reduce>
+        <!--<producer_queue_length>GLOBAL.producer_queue_length</producer_queue_length>-->
+        <producer_queue_length>1</producer_queue_length>
+        <producer_proc>
+          <name>'produce_decision_work'</name>
+        </producer_proc>
+        <consumer_proc>
+          <name>'consume_decision_work'</name>
+          <include_object_fields_in_output>1</include_object_fields_in_output>
+        </consumer_proc>
+        <reducer_proc>
+          <name>'reduce_decision_work'</name>
+        </reducer_proc>
+      </map_reduce>
+    </time>
+
+    <!--<print>'***********************************************************'</print>
+    <print>'slave_count2='~GLOBAL.slave_count~' work_count='~GLOBAL.work_count~' producer_queue_length='~GLOBAL.producer_queue_length~' ms='~TEMP.ms~' reduce ctr='~GLOBAL.reduce_ctr</print>
+    <print>'***********************************************************'</print>-->
+
+    <!--<print>'shutting down the cluster'</print>
+    <set_server_mode_off/>
+    <shutdown_cluster/>-->
+
+  </proc>
+
+  <!-- ==================================================================== -->
+  <!-- Check if we can obtain locks for the accounts associated             -->
+  <!-- with the given decision.  If not, add the decision to DELAYED_WORK.  -->
+  <!-- If we can obtain the locks, the put the accounts in thed             -->
+  <!-- locked accounts list.                                                -->
+  <!--                                                                      -->
+  <!-- Inputs:                                                              -->
+  <!--   bucket_object  - decision instance                                 -->
+  <!--                                                                      -->
+  <!-- Output:                                                              -->
+  <!--   pipe_it  - set to 1 if we were able to lock the associated accts   -->
+  <!--                                                                      -->
+  <!-- Globals:                                                             -->
+  <!--   LOCKED_ACCOUNTS   - can add accounts to this list.                 -->
+  <!--   DELAYED_WORK      - can add the decision to this map.              -->
+  <!-- ==================================================================== -->
+  <proc name='try_to_pipe_decision'>
+    <param name='bucket_object'/>
+    <param name='pipe_it' mode='out'/>
+    <do>TEMP.found_lock = '0'</do>
+    <do>TEMP.pipe_it = '0'</do>
+    <!--<print>'Trying to pipe decision ['~TEMP.bucket_object~']'</print>-->
+
+    <!-- Check if the account associated with the decision is locked. -->
+    <index_select>
+      <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+      <field name='bucket_object'>TEMP.bucket_object</field>
+      <cursor>TEMP.my_bucket</cursor>
+      <loop>
+        <!--<print>'Seeing if account ['~OBJECT(TEMP.my_bucket).id_acc~'] is locked'</print>-->
+        <index_select>
+          <index>'LOCKED_ACCOUNTS'</index>
+          <field name='id_acc'>OBJECT(TEMP.my_bucket).id_acc</field>
+          <cursor>TEMP.my_account</cursor>
+          <then>
+            <!--<print>'account ['~OBJECT(TEMP.my_bucket).id_acc~'] is locked'</print>-->
+            <do>TEMP.found_lock = '1'</do>
+          </then>
+        </index_select>
+      </loop>
+    </index_select>
+
+    <!-- if not locked, lock all accounts that are associated with -->
+    <!-- this decision instance. -->
+    <if>
+      <condition>TEMP.found_lock eq '0'</condition>
+      <then>
+        <index_select>
+          <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          <field name='bucket_object'>TEMP.bucket_object</field>
+          <cursor>TEMP.my_accs</cursor>
+          <loop>
+            <!--<print>'Locking account ['~OBJECT(TEMP.my_accs).id_acc~'] is locked'</print>-->
+            <index_insert>
+              <index>'LOCKED_ACCOUNTS'</index>
+              <field name='id_acc'>OBJECT(TEMP.my_accs).id_acc</field>
+            </index_insert>
+          </loop>
+        </index_select>
+        <index_select>
+          <index>'COMPLETED_WORK'</index>
+          <field name='bucket_object'>TEMP.bucket_object</field>
+          <cursor>TEMP.my_completed</cursor>
+          <else>
+            <do>TEMP.pipe_it = '1'</do>
+          </else>
+        </index_select>
+      </then>
+
+      <!-- if account is locked, add to delayed work -->
+      <else>
+        <index_select>
+          <index>'DELAYED_WORK'</index>
+          <field name='bucket_object'>TEMP.bucket_object</field>
+          <cursor>TEMP.my_delay</cursor>
+          <else>
+            <!--<print>'Inserting into DELAYED_WORK ['~TEMP.bucket_object~']'</print>-->
+            <index_insert>
+              <index>'DELAYED_WORK'</index>
+              <field name='bucket_object'>TEMP.bucket_object</field>
+            </index_insert>
+          </else>
+        </index_select>
+      </else>
+    </if>
+  </proc>
+
+  <proc name='produce_decision_work'>
+    <param name='pipe_cursor'/>
+    <debug>'Processing the instantiated decision by distributing work to slaves.'</debug>
+    <do>TEMP.next_priority = '-999999999'</do>
+    <while>
+      <condition>1</condition>
+
+      <!-- Loop through the delayed work -->
+      <loop>
+        <!--<print>'I am at the top!!!!'</print>-->
+        <index_select_keys>
+          <index>'DELAYED_WORK'</index>
+          <cursor>TEMP.my_delayed</cursor>
+
+          <!-- Loop through the completed work to see if the work -->
+          <!-- item in delayed, is already completed.  -->
+          <loop>
+            <!--<print>'I am at the delayed!!!!'</print>-->
+            <index_select>
+              <index>'COMPLETED_WORK'</index>
+              <field name='bucket_object'>OBJECT(TEMP.my_delayed).bucket_object</field>
+              <cursor>TEMP.my_completed</cursor>
+              <then>
+                <!--<print>'Removing DELAYED_WORK ['~OBJECT(TEMP.my_delayed).bucket_object~']'</print>-->
+                <index_remove>
+                  <index>'DELAYED_WORK'</index>
+                  <field name='bucket_object'>OBJECT(TEMP.my_delayed).bucket_object</field>
+                </index_remove>
+              </then>
+              <else>
+                <index_select>
+                  <index>'PRECOMPLETED_WORK'</index>
+                  <field name='bucket_object'>OBJECT(TEMP.my_delayed).bucket_object</field>
+                  <cursor>TEMP.my_precompleted</cursor>
+                  <then>
+                    <!--<print>'Removing DELAYED_WORK ['~OBJECT(TEMP.my_delayed).bucket_object~']'</print>-->
+                    <index_remove>
+                      <index>'DELAYED_WORK'</index>
+                      <field name='bucket_object'>OBJECT(TEMP.my_delayed).bucket_object</field>
+                    </index_remove>
+                  </then>
+                  <else>
+                    <call_proc_for_current_object>
+                      <name>'try_to_pipe_decision'</name>
+                      <param name='bucket_object'>OBJECT(TEMP.my_delayed).bucket_object</param>
+                      <param name='pipe_it'>TEMP.pipe_it</param>
+                    </call_proc_for_current_object>
+                    <if>
+                  <!-- If we got the locks, send the work to the slave. -->
+                      <condition>TEMP.pipe_it eq '1'</condition>
+                      <then>
+                        <print>'Piping delay ['~TEMP.my_delayed~']'</print>
+                        <pipe_row>TEMP.my_delayed</pipe_row>
+                      </then>
+                      <else>
+                        <!--<debug>'DELAYED WORK CANNOT RUN SO PIPING NULL ROW!!!!!!!!!'</debug>-->
+                        <pipe_row>''</pipe_row>
+                      </else>
+                    </if>
+                  </else>
+                </index_select>
+              </else>
+            </index_select>
+          </loop>
+          <else>
+            <print>'I am at the current priority['~TEMP.next_priority~']!!!!'</print>
+
+            <!-- Loop through decision instances by priority. -->
+            <index_select>
+              <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+              <field name='tier_priority'>TEMP.next_priority</field>
+              <cursor>TEMP.my_priority</cursor>
+              <loop>
+                <print>'HERE I AM WITH AGG_BUCKETS_BY_PRIORITY['~OBJECT(OBJECT(TEMP.my_priority).bucket_object).decision_unique_id~']!!!!!!!!!!!!!!!!!!!!!'</print>
+                <!-- Check if the decision instance has already been completed. -->
+                <index_select>
+                  <index>'COMPLETED_WORK'</index>
+                  <field name='bucket_object'>OBJECT(TEMP.my_priority).bucket_object</field>
+                  <cursor>TEMP.my_completed</cursor>
+                  <else>
+                    <index_select>
+                      <index>'PRECOMPLETED_WORK'</index>
+                      <field name='bucket_object'>OBJECT(TEMP.my_priority).bucket_object</field>
+                      <cursor>TEMP.my_precompleted</cursor>
+                      <else>
+                        <call_proc_for_current_object>
+                          <name>'try_to_pipe_decision'</name>
+                          <param name='bucket_object'>OBJECT(TEMP.my_priority).bucket_object</param>
+                          <param name='pipe_it'>TEMP.pipe_it</param>
+                        </call_proc_for_current_object>
+                        <if>
+                          <condition>TEMP.pipe_it eq '1'</condition>
+                          <then>
+			<debug>'Sending a decision to a slave for processing.'</debug>
+                        <!-- We got the locks, send the decision to the slave. -->
+                            <pipe_row>TEMP.my_priority</pipe_row>
+                          </then>
+                          <else>
+                            <print>'UNDELAYED WORK IS LOCKED SO NOT PIPING NULL ROW SO I KEEP GOING!!!!!!!!!'</print>
+                            <!--<pipe_row>''</pipe_row>-->
+                          </else>
+                        </if>
+                      </else>
+                    </index_select>
+                  </else>
+                </index_select>
+              </loop>
+            </index_select>
+
+            <index_select_keys>
+              <index>'DELAYED_WORK'</index>
+              <cursor>TEMP.my_also_delayed</cursor>
+              <else>
+                <print>'I AM IN THE ELSE'</print>
+                <do>TEMP.last_priority = TEMP.next_priority</do>
+                <call_proc_for_current_object>
+                  <name>'get_global_next_highest_priority'</name>
+                  <param name='priority'>TEMP.next_priority</param>
+                  <param name='next_priority'>TEMP.next_priority</param>
+                </call_proc_for_current_object>
+                <if>
+                  <condition>TEMP.next_priority eq TEMP.last_priority</condition>
+                  <then>
+                    <print>'I am all done!!!!!!!!!!!!!!!!!!!!!!!!'</print>
+                    <!--<return></return>-->
+                    <pipe_row>''</pipe_row>
+                  </then>
+                </if>
+                <if>
+                  <condition>TEMP.next_priority eq ''</condition>
+                  <then>
+                    <debug>'PIPING NULL ROW!!!!!!!!!'</debug>
+                    <pipe_row>''</pipe_row>
+                  </then>
+                </if>
+              </else>
+            </index_select_keys>
+          </else>
+        </index_select_keys>
+      </loop>
+    </while>
+    <debug>'Done distributing decisions to process to slaves.'</debug>
+  </proc>
+
+  <!-- ==================================================================== -->
+  <!-- This is the slave/consumer proc in the map-reduce model.             -->
+  <!-- This runs on the slave and takes a given decision that we must       -->
+  <!-- process.                                                             -->
+  <!--                                                                      -->
+  <!-- Results:                                                             -->
+  <!--   UNLOCKED_ACCOUNTS  - appended with the accounts that we no longer  -->
+  <!--                        need a lock on.                               -->
+  <!--   COMPLETED_WORK     - appended with all the decisions we completed. -->
+  <!-- ==================================================================== -->
+
+  <proc name='consume_decision_work'>
+    <debug>'Processing a decision for account ['~OBJECT(OBJECT.bucket_object).id_acc~']'</debug>
+    <!--<print>'consuming id_interval='~OBJECT.id_interval</print>-->
+
+    <!--<print>'Pushing decision ['~OBJECT.bucket_object~'] id_acc='~OBJECT(OBJECT.bucket_object).id_acc~'id_acc2='~OBJECT.id_acc</print>
+    <call_proc_for_current_object>
+      <name>'print_object'</name>
+      <param name='object_id'>OBJECT.object_id</param>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'print_object'</name>
+      <param name='object_id'>OBJECT.bucket_object</param>
+    </call_proc_for_current_object>-->
+
+    <!-- Process the given decision.  We might actual do more then just this -->
+    <!-- decision.  We'll ask the master about other decisions we'd like to  -->
+    <!-- while we have the lock on the given accounts.                       -->
+
+    <call_proc_for_current_object>
+      <name>'process_decision'</name>
+      <param name='bucket_object'>OBJECT.bucket_object</param>
+    </call_proc_for_current_object>
+
+    <print>'DONE consuming decision ['~OBJECT(OBJECT.bucket_object).decision_unique_id~'] id_acc['~OBJECT(OBJECT.bucket_object).id_acc~']'</print>
+
+    <index_select_keys>
+      <index>'CURRENT_ACCOUNTS'</index>
+      <cursor>TEMP.id_acc_csr</cursor>
+      <else>
+        <!--<print>'HERE NO CURRENT_ACCOUNTS, so return'</print>-->
+        <return/>
+      </else>
+    </index_select_keys>
+
+    <!--<index_select_keys>
+      <index>'CURRENT_WORK'</index>
+      <cursor>TEMP.csr1</cursor>
+      <loop>
+        <print>'I have ['~TEMP.csr1~']'</print>
+        <call_proc_for_current_object>
+          <name>'print_object'</name>
+          <param name="object_id">OBJECT(TEMP.csr1).bucket_object</param>
+        </call_proc_for_current_object>
+
+      </loop>
+    </index_select_keys>-->
+
+    <!--<print>'PRINTING COMPLETED_WORK FROM KID'</print>
+    <index_select_keys>
+      <index>'CURRENT_COMPLETED_WORK'</index>
+      <cursor>TEMP.csr1</cursor>
+      <loop>
+        <print>'I have ['~TEMP.csr1~']'</print>
+        <call_proc_for_current_object>
+          <name>'print_object'</name>
+          <param name="object_id">OBJECT(TEMP.csr1).bucket_object</param>
+        </call_proc_for_current_object>
+
+      </loop>
+    </index_select_keys>-->
+
+    <!--<dump_memory/>-->
+
+    <!-- We are running on the slave, so push from the slave all the work we -->
+    <!-- have completed (CURRENT_COMPLETED_WORK).  The master will append    -->
+    <!-- it's list of completed work.                                        --> 
+
+    <push_index>
+      <process_id>TEMP.caller_process_id</process_id>
+      <clear_source>1</clear_source>
+      <source>
+        <index>'CURRENT_COMPLETED_WORK'</index>
+      </source>
+      <target>
+        <index>'COMPLETED_WORK'</index>
+      </target>
+    </push_index>
+
+    <!-- Push to the master all the accounts that we had a lock account.     --> 
+    <!-- The master will later remove this accounts from the locked          --> 
+    <!-- account list.                                                       --> 
+
+    <push_index>
+      <process_id>TEMP.caller_process_id</process_id>
+      <clear_source>1</clear_source>
+      <source>
+        <index>'CURRENT_ACCOUNTS'</index>
+      </source>
+      <target>
+        <index>'UNLOCKED_ACCOUNTS'</index>
+      </target>
+    </push_index>
+    <debug>'Done processing a decision for account ['~OBJECT(OBJECT.bucket_object).id_acc~']'</debug>
+    </proc>
+
+  <!-- ==================================================================== -->
+  <!-- This is the reduce proc in the map-reduce model.                     -->
+  <!-- We take the UNLOCKED_ACCOUNTS that came from the slave and we        -->
+  <!-- remove them from our list of locked accounts.                        -->
+  <!-- ==================================================================== -->
+
+  <proc name='reduce_decision_work'>
+    <do>GLOBAL.reduce_ctr+=1</do>
+    <print>'reducing objid['~OBJECT.object_id~'] decision='~OBJECT.bucket_object~', total_reduce_ctr='~GLOBAL.reduce_ctr</print>
+    <print>'Checking for precompleted work ['~OBJECT.bucket_object~'] and ['~OBJECT(OBJECT.bucket_object).tier_priority~']'</print>
+    <index_select>
+      <index>'PRECOMPLETED_WORK_MAP'</index>
+      <field name='master_bucket_object'>OBJECT.bucket_object</field>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        
+        <index_select>
+          <index>'COMPLETED_WORK'</index>
+          <field name='bucket_object'>OBJECT(TEMP.csr).bucket_object</field>
+          <cursor>TEMP.my_completed</cursor>
+          <then>
+            <print>'Removing precompleted work ['~OBJECT(TEMP.csr).bucket_object~'] and ['~OBJECT(OBJECT(TEMP.csr).bucket_object).tier_priority~']'</print>
+            <index_remove>
+              <index>'PRECOMPLETED_WORK'</index>
+              <field name='bucket_object'>OBJECT(TEMP.my_completed).bucket_object</field>
+            </index_remove>
+          </then>
+          <else>
+            <print>'I HAVE PRECOMPLETED WORK ['~OBJECT(TEMP.csr).bucket_object~'] and ['~OBJECT(OBJECT(TEMP.csr).bucket_object).tier_priority~'] THAT IS NOT COMPLETE!!!!!'</print>
+            <print>'REMOVING ANYWAY'</print>
+            <index_remove>
+              <index>'PRECOMPLETED_WORK'</index>
+              <field name='bucket_object'>OBJECT(TEMP.my_completed).bucket_object</field>
+            </index_remove>
+          </else>
+        </index_select>
+      </loop>
+    </index_select>
+
+    <index_remove>
+      <index>'PRECOMPLETED_WORK_MAP'</index>
+      <field name='master_bucket_object'>OBJECT.bucket_object</field>
+    </index_remove>
+    
+    
+    <index_select_keys>
+      <index>'UNLOCKED_ACCOUNTS'</index>
+      <cursor>TEMP.csr1</cursor>
+      <loop>
+        <index_remove>
+          <index>'LOCKED_ACCOUNTS'</index>
+          <field name='id_acc'>OBJECT(TEMP.csr1).id_acc</field>
+        </index_remove>
+        <index_remove>
+          <index>'UNLOCKED_ACCOUNTS'</index>
+          <field name='id_acc'>OBJECT(TEMP.csr1).id_acc</field>
+        </index_remove>
+      </loop>
+    </index_select_keys>
+  </proc>
+</procs>

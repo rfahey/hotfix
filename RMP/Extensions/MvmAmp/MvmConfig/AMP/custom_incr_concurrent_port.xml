@@ -1,0 +1,604 @@
+<procs>
+  <proc name='custom_incr_concurrent_port'>
+    <param name='bucket_object'/>
+    <param name='usage_object'/>
+
+    <run_once>
+      <define_memory_index>
+        <index>'REMAINING_END_DATES'</index>
+        <key_field>'bucket_object'</key_field>
+        <key_field>'end_date'</key_field>
+        <field>'total_matches'</field>
+      </define_memory_index>
+
+      <push_after name='usage_hook_before_hook'>
+        <index_clear>
+          <index>'REMAINING_END_DATES'</index>
+        </index_clear>
+      </push_after>
+
+    </run_once>
+
+
+    <if>
+      <condition>OBJECT(TEMP.usage_object).master_start ne '' and OBJECT(TEMP.usage_object).master_end ne ''</condition>
+      <then>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).curr_concurrent_ports eq ''</condition>
+          <then>
+            <do>OBJECT(TEMP.bucket_object).curr_concurrent_ports = 0</do>
+            <do>OBJECT(TEMP.bucket_object).max_concurrent_ports = 0</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).concurrent_port_daily_max ne ''</condition>
+              <then>
+                <run_once>
+                  <define_memory_index>
+                    <index>'DAILY_MAX'</index>
+                    <key_field>'bucket_object'</key_field>
+                    <key_field>'day_end_date'</key_field>
+                    <field>'max_ports'</field>
+                  </define_memory_index>
+
+                  <push_after name='usage_hook_after_hook'>
+                    <call_proc_for_current_object>
+                      <name>'generate_concurrent_port_charges'</name>
+                    </call_proc_for_current_object>
+                  </push_after>
+
+                </run_once>
+                <do>OBJECT(TEMP.bucket_object).max_concurrent_port_date = GLOBAL.interval_start_date</do>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).start_date gt OBJECT(TEMP.bucket_object).max_concurrent_port_date</condition>
+                  <then>
+                    <do>OBJECT(TEMP.bucket_object).max_concurrent_port_date = OBJECT(TEMP.bucket_object).start_date</do>
+                  </then>
+                </if>
+                <date_add>
+                  <input>OBJECT(TEMP.bucket_object).max_concurrent_port_date</input>
+                  <unit>'DD'</unit>
+                  <increment>1</increment>
+                  <output>OBJECT(TEMP.bucket_object).max_concurrent_port_date</output>
+                </date_add>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).concurrent_port_cycle_max ne ''</condition>
+              <then>
+                <run_once>
+                  <define_memory_index>
+                    <index>'CYCLE_MAX'</index>
+                    <key_field>'bucket_object'</key_field>
+                    <field>'max_ports'</field>
+                  </define_memory_index>
+                  <push_after name='usage_hook_after_hook'>
+                    <call_proc_for_current_object>
+                      <name>'generate_concurrent_port_charges'</name>
+                    </call_proc_for_current_object>
+                  </push_after>
+                </run_once>
+              </then>
+            </if>
+          </then>
+        </if>
+
+        <index_select_keys>
+          <index>'REMAINING_END_DATES'</index>
+          <order_by direction='asc'>OBJECT(TEMP.end_csr).end_date</order_by>
+          <cursor>TEMP.end_csr</cursor>
+          <loop>
+            <if>
+              <condition>OBJECT(TEMP.end_csr).bucket_object eq TEMP.bucket_object and OBJECT(TEMP.usage_object).master_start gte OBJECT(TEMP.end_csr).end_date</condition>
+              <then>
+                <index_select>
+                  <index>'REMAINING_END_DATES'</index>
+                  <field name="bucket_object">TEMP.bucket_object</field>
+                  <field name="end_date">OBJECT(TEMP.end_csr).end_date</field>
+                  <cursor>TEMP.matches_csr</cursor>
+                  <then>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).concurrent_port_daily_max ne '' and OBJECT(TEMP.bucket_object).concurrent_port_daily_max lt OBJECT(TEMP.bucket_object).curr_concurrent_ports</condition>
+                      <then>
+                        <c>First check the max for any day that has now passed based on the end date we are consuming</c>
+                        <while>
+                          <condition>OBJECT(TEMP.end_csr).end_date gt OBJECT(TEMP.bucket_object).max_concurrent_port_date</condition>
+                          <loop>
+                            <index_select>
+                              <index>'DAILY_MAX'</index>
+                              <field name="bucket_object">TEMP.bucket_object</field>
+                              <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                              <cursor>TEMP.daily_csr</cursor>
+                              <then>
+                                <if>
+                                  <condition>OBJECT(TEMP.bucket_object).curr_concurrent_ports gt OBJECT(TEMP.daily_csr).max_ports</condition>
+                                  <then>
+                                    <index_remove>
+                                      <index>'DAILY_MAX'</index>
+                                      <field name="bucket_object">TEMP.bucket_object</field>
+                                      <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                                    </index_remove>
+                                    <index_insert>
+                                      <index>'DAILY_MAX'</index>
+                                      <field name="bucket_object">TEMP.bucket_object</field>
+                                      <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                                      <field name="max_ports">OBJECT(TEMP.bucket_object).curr_concurrent_ports</field>
+                                    </index_insert>
+                                  </then>
+                                </if>
+                              </then>
+                              <else>
+                                <index_insert>
+                                  <index>'DAILY_MAX'</index>
+                                  <field name="bucket_object">TEMP.bucket_object</field>
+                                  <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                                  <field name="max_ports">OBJECT(TEMP.bucket_object).curr_concurrent_ports</field>
+                                </index_insert>
+                              </else>
+                            </index_select>
+                            <date_add>
+                              <input>OBJECT(TEMP.bucket_object).max_concurrent_port_date</input>
+                              <unit>'DD'</unit>
+                              <increment>1</increment>
+                              <output>OBJECT(TEMP.bucket_object).max_concurrent_port_date</output>
+                            </date_add>
+                          </loop>
+                        </while>
+                        <c>Now check the max for the current day based on the end date being consumed</c>
+                        <index_select>
+                          <index>'DAILY_MAX'</index>
+                          <field name="bucket_object">TEMP.bucket_object</field>
+                          <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                          <cursor>TEMP.daily_csr</cursor>
+                          <then>
+                            <if>
+                              <condition>OBJECT(TEMP.bucket_object).curr_concurrent_ports gt OBJECT(TEMP.daily_csr).max_ports</condition>
+                              <then>
+                                <index_remove>
+                                  <index>'DAILY_MAX'</index>
+                                  <field name="bucket_object">TEMP.bucket_object</field>
+                                  <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                                </index_remove>
+                                <index_insert>
+                                  <index>'DAILY_MAX'</index>
+                                  <field name="bucket_object">TEMP.bucket_object</field>
+                                  <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                                  <field name="max_ports">OBJECT(TEMP.bucket_object).curr_concurrent_ports</field>
+                                </index_insert>
+                              </then>
+                            </if>
+                          </then>
+                          <else>
+                            <index_insert>
+                              <index>'DAILY_MAX'</index>
+                              <field name="bucket_object">TEMP.bucket_object</field>
+                              <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                              <field name="max_ports">OBJECT(TEMP.bucket_object).curr_concurrent_ports</field>
+                            </index_insert>
+                          </else>
+                        </index_select>
+                      </then>
+                    </if>
+                    <do>OBJECT(TEMP.bucket_object).curr_concurrent_ports -= OBJECT(TEMP.matches_csr).total_matches</do>
+                    <index_remove>
+                      <index>'REMAINING_END_DATES'</index>
+                      <field name="bucket_object">TEMP.bucket_object</field>
+                      <field name="end_date">OBJECT(TEMP.end_csr).end_date</field>
+                    </index_remove>
+                  </then>
+                </index_select>
+              </then>
+            </if>
+          </loop>
+        </index_select_keys>
+
+        <index_select>
+          <index>'REMAINING_END_DATES'</index>
+          <field name="bucket_object">TEMP.bucket_object</field>
+          <field name="end_date">OBJECT(TEMP.usage_object).master_end</field>
+          <cursor>TEMP.matches_csr</cursor>
+          <then>
+            <do>OBJECT(TEMP.matches_csr).total_matches += 1</do>
+            <index_remove>
+              <index>'REMAINING_END_DATES'</index>
+              <field name="bucket_object">TEMP.bucket_object</field>
+              <field name="end_date">OBJECT(TEMP.usage_object).master_end</field>
+            </index_remove>
+            <index_insert>
+              <index>'REMAINING_END_DATES'</index>
+              <field name="bucket_object">TEMP.bucket_object</field>
+              <field name="end_date">OBJECT(TEMP.usage_object).master_end</field>
+              <field name="total_matches">OBJECT(TEMP.matches_csr).total_matches</field>
+            </index_insert>
+          </then>
+          <else>
+            <index_insert>
+              <index>'REMAINING_END_DATES'</index>
+              <field name="bucket_object">TEMP.bucket_object</field>
+              <field name="end_date">OBJECT(TEMP.usage_object).master_end</field>
+              <field name="total_matches">'1'</field>
+            </index_insert>
+          </else>
+        </index_select>
+
+        <do>OBJECT(TEMP.bucket_object).curr_concurrent_ports += 1</do>
+
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).concurrent_port_daily_max ne '' and OBJECT(TEMP.bucket_object).concurrent_port_daily_max lt OBJECT(TEMP.bucket_object).curr_concurrent_ports</condition>
+          <then>
+            <do>OBJECT(TEMP.usage_object).concurrent_port_overage = '1'</do>
+            <c>Now check the max for the current day based on the count being incremented</c>
+            <index_select>
+              <index>'DAILY_MAX'</index>
+              <field name="bucket_object">TEMP.bucket_object</field>
+              <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+              <cursor>TEMP.daily_csr</cursor>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).curr_concurrent_ports gt OBJECT(TEMP.daily_csr).max_ports</condition>
+                  <then>
+                    <index_remove>
+                      <index>'DAILY_MAX'</index>
+                      <field name="bucket_object">TEMP.bucket_object</field>
+                      <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                    </index_remove>
+                    <index_insert>
+                      <index>'DAILY_MAX'</index>
+                      <field name="bucket_object">TEMP.bucket_object</field>
+                      <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                      <field name="max_ports">OBJECT(TEMP.bucket_object).curr_concurrent_ports</field>
+                    </index_insert>
+                  </then>
+                </if>
+              </then>
+              <else>
+                <index_insert>
+                  <index>'DAILY_MAX'</index>
+                  <field name="bucket_object">TEMP.bucket_object</field>
+                  <field name="day_end_date">OBJECT(TEMP.bucket_object).max_concurrent_port_date</field>
+                  <field name="max_ports">OBJECT(TEMP.bucket_object).curr_concurrent_ports</field>
+                </index_insert>
+              </else>
+            </index_select>
+          </then>
+        </if>
+
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).curr_concurrent_ports GT OBJECT(TEMP.bucket_object).max_concurrent_ports</condition>
+          <then>
+            <do>OBJECT(TEMP.bucket_object).max_concurrent_ports = OBJECT(TEMP.bucket_object).curr_concurrent_ports</do>
+            
+          </then>
+        </if>
+
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).concurrent_port_cycle_max ne '' and OBJECT(TEMP.bucket_object).concurrent_port_cycle_max lt OBJECT(TEMP.bucket_object).curr_concurrent_ports</condition>
+          <then>
+            <do>OBJECT(TEMP.usage_object).concurrent_port_overage = '1'</do>
+            <c>Now check the max for the cycle based on the count being incremented</c>
+            <index_select>
+              <index>'CYCLE_MAX'</index>
+              <field name="bucket_object">TEMP.bucket_object</field>
+              <cursor>TEMP.cycle_csr</cursor>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).curr_concurrent_ports gt OBJECT(TEMP.cycle_csr).max_ports</condition>
+                  <then>
+                    <index_remove>
+                      <index>'CYCLE_MAX'</index>
+                      <field name="bucket_object">TEMP.bucket_object</field>
+                    </index_remove>
+                    <index_insert>
+                      <index>'CYCLE_MAX'</index>
+                      <field name="bucket_object">TEMP.bucket_object</field>
+                      <field name="max_ports">OBJECT(TEMP.bucket_object).curr_concurrent_ports</field>
+                    </index_insert>
+                  </then>
+                </if>
+              </then>
+              <else>
+                <index_insert>
+                  <index>'CYCLE_MAX'</index>
+                  <field name="bucket_object">TEMP.bucket_object</field>
+                  <field name="max_ports">OBJECT(TEMP.bucket_object).curr_concurrent_ports</field>
+                </index_insert>
+              </else>
+            </index_select>
+          </then>
+        </if>
+      </then>
+    </if>
+
+    <do>OBJECT(TEMP.usage_object).curr_concurrent_ports = OBJECT(TEMP.bucket_object).curr_concurrent_ports</do>
+
+    
+  </proc>
+
+  <proc name='generate_concurrent_port_charges'>
+    <index_select_keys>
+      <index>'DAILY_MAX'</index>
+      <order_by direction='asc'>OBJECT(TEMP.daily_csr).day_end_date</order_by>
+      <cursor>TEMP.daily_csr</cursor>
+      <loop>
+        <do>TEMP.bucket_object = OBJECT(TEMP.daily_csr).bucket_object</do>
+        <index_select>
+          <index>'DAILY_MAX'</index>
+          <field name="bucket_object">OBJECT.bucket_object</field>
+          <field name="day_end_date">OBJECT(TEMP.daily_csr).day_end_date</field>
+          <cursor>TEMP.matches_csr</cursor>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).concurrent_port_daily_port_fee ne ''</condition>
+              <then>
+                <do>TEMP.port_overage_amount = (OBJECT(TEMP.matches_csr).max_ports - OBJECT(TEMP.bucket_object).concurrent_port_daily_max) * OBJECT(TEMP.bucket_object).concurrent_port_daily_port_fee</do>
+                <call_dynamic_proc_for_object>
+                  <name>'create_charge_'~OBJECT(TEMP.bucket_object).charge_type_id</name>
+                  <object_id>TEMP.bucket_object</object_id>
+                  <param name='charge_direction'>'precalc'</param>
+                  <param name='usage_object'>''</param>
+                  <param name='bucket_object'>TEMP.bucket_object</param>
+                  <param name='parent_object'>''</param>
+                  <param name='precalc_amount'>TEMP.port_overage_amount</param>
+                  <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+                </call_dynamic_proc_for_object>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).concurrent_port_daily_fee ne ''</condition>
+              <then>
+                <do>TEMP.port_overage_amount = OBJECT(TEMP.bucket_object).concurrent_port_daily_fee</do>
+                <call_dynamic_proc_for_object>
+                  <name>'create_charge_'~OBJECT(TEMP.bucket_object).charge_type_id</name>
+                  <object_id>TEMP.bucket_object</object_id>
+                  <param name='charge_direction'>'precalc'</param>
+                  <param name='usage_object'>''</param>
+                  <param name='bucket_object'>TEMP.bucket_object</param>
+                  <param name='parent_object'>''</param>
+                  <param name='precalc_amount'>TEMP.port_overage_amount</param>
+                  <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+                </call_dynamic_proc_for_object>
+              </then>
+            </if>
+          </then>
+        </index_select>
+      </loop>
+    </index_select_keys>
+    <index_select_keys>
+      <index>'CYCLE_MAX'</index>
+      <cursor>TEMP.cycle_csr</cursor>
+      <loop>
+        <do>TEMP.bucket_object = OBJECT(TEMP.daily_csr).bucket_object</do>
+        <index_select>
+          <index>'CYCLE_MAX'</index>
+          <field name="bucket_object">OBJECT.bucket_object</field>
+          <cursor>TEMP.matches_csr</cursor>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).concurrent_port_port_fee ne ''</condition>
+              <then>
+                <do>TEMP.port_overage_amount = (OBJECT(TEMP.matches_csr).max_ports - OBJECT(TEMP.bucket_object).concurrent_port_cycle_max) * OBJECT(TEMP.bucket_object).concurrent_port_port_fee</do>
+                <call_dynamic_proc_for_object>
+                  <name>'create_charge_'~OBJECT(TEMP.bucket_object).charge_type_id</name>
+                  <object_id>TEMP.bucket_object</object_id>
+                  <param name='charge_direction'>'precalc'</param>
+                  <param name='usage_object'>''</param>
+                  <param name='bucket_object'>TEMP.bucket_object</param>
+                  <param name='parent_object'>''</param>
+                  <param name='precalc_amount'>TEMP.port_overage_amount</param>
+                  <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+                </call_dynamic_proc_for_object>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).concurrent_port_fee ne ''</condition>
+              <then>
+                <do>TEMP.port_overage_amount = OBJECT(TEMP.bucket_object).concurrent_port_fee</do>
+                <call_dynamic_proc_for_object>
+                  <name>'create_charge_'~OBJECT(TEMP.bucket_object).charge_type_id</name>
+                  <object_id>TEMP.bucket_object</object_id>
+                  <param name='charge_direction'>'precalc'</param>
+                  <param name='usage_object'>''</param>
+                  <param name='bucket_object'>TEMP.bucket_object</param>
+                  <param name='parent_object'>''</param>
+                  <param name='precalc_amount'>TEMP.port_overage_amount</param>
+                  <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+                </call_dynamic_proc_for_object>
+              </then>
+            </if>
+          </then>
+        </index_select>
+      </loop>
+    </index_select_keys>
+  </proc>
+
+
+  <proc name='usage_mod_concurrent_port'>
+    <param name='bucket_object'/>
+    <param name='usage_object'/>
+    <if>
+      <condition>OBJECT(TEMP.usage_object).concurrent_port_overage eq '1' and OBJECT(TEMP.usage_object).percent_eligible GT '0'</condition>
+      <then>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).concurrent_port_overage_per_unit_rate ne ''</condition>
+          <then>
+            <do>TEMP.converted_units = (OBJECT(TEMP.usage_object).master_units eq ''?'0':OBJECT(TEMP.usage_object).master_units)</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).tier_uom ne ''</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.usage_object).master_uom ne ''</condition>
+                  <then>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).tier_uom Ne OBJECT(TEMP.usage_object).master_uom and TEMP.converted_units ne '0'</condition>
+                      <then>
+                        <c>Perform uom conversion</c>
+                        <call_proc_for_current_object>
+                          <name>'convert_uom_units'</name>
+                          <param name='source_field'>TEMP.converted_units</param>
+                          <param name='source_currency'>OBJECT(TEMP.usage_object).master_uom</param>
+                          <param name='target_field'>TEMP.converted_units</param>
+                          <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_uom</param>
+                        </call_proc_for_current_object>
+                      </then>
+                      <else>
+                        <c>Skip uom conversion because currencies are the same</c>
+                      </else>
+                    </if>
+                  </then>
+                  <else>
+                    <print>'Attempting to convert uom for bucket application but no uom exists on the usage event!'</print>
+                  </else>
+                </if>
+              </then>
+            </if>
+
+
+            <do>TEMP.converted_rate = OBJECT(TEMP.bucket_object).concurrent_port_overage_per_unit_rate</do>
+            <do>TEMP.deconverted_orig = OBJECT(TEMP.usage_object).domain_amount_orig</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).tier_currency ne ''</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.usage_object).master_currency ne ''</condition>
+                  <then>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).tier_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                      <then>
+                        <c>Perform currency conversion</c>
+                        <call_proc_for_current_object>
+                          <name>'convert_currency_amount'</name>
+                          <param name='source_field'>TEMP.converted_rate</param>
+                          <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                          <param name='target_field'>TEMP.converted_rate</param>
+                          <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                          <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                        </call_proc_for_current_object>
+                        <call_proc_for_current_object>
+                          <name>'convert_currency_amount'</name>
+                          <param name='source_field'>TEMP.deconverted_orig</param>
+                          <param name='source_currency'>OBJECT(TEMP.usage_object).tier_currency</param>
+                          <param name='target_field'>TEMP.deconverted_orig</param>
+                          <param name='target_currency'>OBJECT(TEMP.bucket_object).master_currency</param>
+                          <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                        </call_proc_for_current_object>
+                      </then>
+                      <else>
+                        <c>Skip currency conversion because currencies are the same</c>
+                      </else>
+                    </if>
+                  </then>
+                  <else>
+                    <print>'Attempting to convert currency for per_unit_rating but no currency exists on the usage event!'</print>
+                  </else>
+                </if>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.usage_object).percent_eligible LT '1'</condition>
+              <then>
+                <!--<print>'PARTIAL RATING!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+                <c>Since we don't rate the whole call, replace a proportion of the original (pipeline assigned) rate with the new rate</c>
+                
+                <do>TEMP.rate_amount_delta_usage = ((TEMP.converted_units * TEMP.converted_rate) * OBJECT(TEMP.usage_object).percent_eligible) - (OBJECT(TEMP.usage_object).percent_eligible *OBJECT(TEMP.usage_object).domain_amount_orig)</do>
+                <do>TEMP.rate_amount_delta_bucket = ((TEMP.converted_units * OBJECT(TEMP.bucket_object).concurrent_port_overage_per_unit_rate) * OBJECT(TEMP.usage_object).percent_eligible) - (OBJECT(TEMP.usage_object).percent_eligible *TEMP.deconverted_orig)</do>
+                
+                <do>OBJECT(TEMP.usage_object).master_amount += TEMP.rate_amount_delta_usage</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_delta = (OBJECT(TEMP.bucket_object).total_rated_amount_delta==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_delta) + TEMP.rate_amount_delta_bucket</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_units = (OBJECT(TEMP.bucket_object).total_rated_units==''?'0':OBJECT(TEMP.bucket_object).total_rated_units) + (TEMP.converted_units*OBJECT(TEMP.usage_object).percent_eligible)</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_events = (OBJECT(TEMP.bucket_object).total_rated_events==''?'0':OBJECT(TEMP.bucket_object).total_rated_events) + 1</do>
+              </then>
+              <else>
+                <do>OBJECT(TEMP.usage_object).master_amount = TEMP.converted_units * TEMP.converted_rate</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_amount_delta = (OBJECT(TEMP.bucket_object).total_rated_amount_delta==''?'0':OBJECT(TEMP.bucket_object).total_rated_amount_delta) + (TEMP.converted_units * OBJECT(TEMP.bucket_object).concurrent_port_overage_per_unit_rate) - TEMP.deconverted_orig)</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_units = (OBJECT(TEMP.bucket_object).total_rated_units==''?'0':OBJECT(TEMP.bucket_object).total_rated_units) + (TEMP.converted_units * OBJECT(TEMP.usage_object).percent_eligible)</do>
+                <do>OBJECT(TEMP.bucket_object).total_rated_events = (OBJECT(TEMP.bucket_object).total_rated_events==''?'0':OBJECT(TEMP.bucket_object).total_rated_events) + 1</do>
+              </else>
+            </if>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).concurrent_port_overage_per_event_rate ne ''</condition>
+          <then>
+            <do>TEMP.converted_units = (OBJECT(TEMP.usage_object).master_units eq ''?'0':OBJECT(TEMP.usage_object).master_units)</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).tier_uom ne ''</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.usage_object).master_uom ne ''</condition>
+                  <then>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).tier_uom Ne OBJECT(TEMP.usage_object).master_uom and TEMP.converted_units ne '0'</condition>
+                      <then>
+                        <c>Perform uom conversion</c>
+                        <call_proc_for_current_object>
+                          <name>'convert_uom_units'</name>
+                          <param name='source_field'>TEMP.converted_units</param>
+                          <param name='source_currency'>OBJECT(TEMP.usage_object).master_uom</param>
+                          <param name='target_field'>TEMP.converted_units</param>
+                          <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_uom</param>
+                        </call_proc_for_current_object>
+                      </then>
+                      <else>
+                        <c>Skip uom conversion because currencies are the same</c>
+                      </else>
+                    </if>
+                  </then>
+                  <else>
+                    <print>'Attempting to convert uom for bucket application but no uom exists on the usage event!'</print>
+                  </else>
+                </if>
+              </then>
+            </if>
+
+            <do>TEMP.converted_rate = OBJECT(TEMP.bucket_object).concurrent_port_overage_per_event_rate</do>
+            <do>TEMP.deconverted_orig = OBJECT(TEMP.usage_object).domain_amount_orig</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).tier_currency ne ''</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.usage_object).master_currency ne ''</condition>
+                  <then>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).tier_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                      <then>
+                        <c>Perform currency conversion</c>
+                        <call_proc_for_current_object>
+                          <name>'convert_currency_amount'</name>
+                          <param name='source_field'>TEMP.converted_rate</param>
+                          <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                          <param name='target_field'>TEMP.converted_rate</param>
+                          <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                          <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                        </call_proc_for_current_object>
+                        <call_proc_for_current_object>
+                          <name>'convert_currency_amount'</name>
+                          <param name='source_field'>TEMP.deconverted_orig</param>
+                          <param name='source_currency'>OBJECT(TEMP.usage_object).tier_currency</param>
+                          <param name='target_field'>TEMP.deconverted_orig</param>
+                          <param name='target_currency'>OBJECT(TEMP.bucket_object).master_currency</param>
+                          <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                        </call_proc_for_current_object>
+                      </then>
+                      <else>
+                        <c>Skip currency conversion because currencies are the same</c>
+                      </else>
+                    </if>
+                  </then>
+                  <else>
+                    <print>'Attempting to convert currency for per_unit_rating but no currency exists on the usage event!'</print>
+                  </else>
+                </if>
+              </then>
+            </if>
+            
+            <do>OBJECT(TEMP.usage_object).master_amount = TEMP.converted_rate</do>
+            <do>OBJECT(TEMP.bucket_object).total_event_amount = (OBJECT(TEMP.bucket_object).total_event_amount==''?'0':OBJECT(TEMP.bucket_object).total_event_amount) + OBJECT(TEMP.bucket_object).concurrent_port_overage_per_event_rate</do>
+            <do>OBJECT(TEMP.bucket_object).total_rated_units = (OBJECT(TEMP.bucket_object).total_rated_units==''?'0':OBJECT(TEMP.bucket_object).total_rated_units) + TEMP.converted_units</do>
+            <do>OBJECT(TEMP.bucket_object).total_rated_events = (OBJECT(TEMP.bucket_object).total_rated_events==''?'0':OBJECT(TEMP.bucket_object).total_rated_events) + 1</do>
+          </then>
+        </if>
+      </then>
+      <else>
+        <do>OBJECT(TEMP.usage_object).percent_eligible = '0'</do>
+      </else>
+    </if>
+  </proc>
+</procs>

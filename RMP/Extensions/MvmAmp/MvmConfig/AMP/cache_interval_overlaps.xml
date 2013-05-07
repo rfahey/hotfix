@@ -1,0 +1,52 @@
+<procs>
+  <proc name="cache_interval_overlaps">
+    <param name='master_interval_id'/>
+    <param name='slave_usage_cycle'/>
+
+    <run_once>
+      <define_memory_index>
+        <index>'INTERVAL_OVERLAPS_CHECKED'</index>
+        <key_field>'master_interval_id'</key_field>
+        <key_field>'slave_usage_cycle'</key_field>
+      </define_memory_index>
+      
+      <define_memory_index>
+        <index>'INTERVAL_OVERLAPS'</index>
+        <key_field>'master_interval_id'</key_field>
+        <key_field>'slave_usage_cycle'</key_field>
+        <field>'slave_interval_id'</field>
+      </define_memory_index>
+    </run_once>
+
+    <index_select>
+      <index>'INTERVAL_OVERLAPS_CHECKED'</index>
+      <field name="master_interval_id">TEMP.master_interval_id</field>
+      <field name="slave_usage_cycle">TEMP.slave_usage_cycle</field>
+      <cursor>TEMP.cached_interval_combos</cursor>
+      <else>
+        <index_insert>
+          <index>'INTERVAL_OVERLAPS_CHECKED'</index>
+          <field name='master_interval_id'>TEMP.master_interval_id</field>
+          <field name='slave_usage_cycle'>TEMP.slave_usage_cycle</field>
+        </index_insert>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select a.id_interval master_interval_id, b.id_usage_cycle slave_cycle, b.id_interval slave_interval_id from t_usage_interval a
+            inner join t_usage_interval b on a.dt_end > b.dt_start and b.dt_end > a.dt_start
+            where a.id_interval = $${TEMP.master_interval_id} and b.id_usage_cycle = $${TEMP.slave_usage_cycle}"
+          </query>
+          <cursor>TEMP.interval_overlaps</cursor>
+          <loop>
+            <index_insert>
+              <index>'INTERVAL_OVERLAPS'</index>
+              <field name='master_interval_id'>TEMP.master_interval_id</field>
+              <field name='slave_usage_cycle'>TEMP.slave_usage_cycle</field>
+              <field name='slave_interval_id'>OBJECT(TEMP.interval_overlaps).slave_interval_id</field>
+            </index_insert>
+          </loop>
+        </db_select>
+      </else>
+    </index_select>
+  </proc>
+</procs>

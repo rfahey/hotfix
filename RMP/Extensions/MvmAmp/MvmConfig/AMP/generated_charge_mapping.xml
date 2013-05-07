@@ -1,0 +1,34 @@
+<proc name="generated_charge_mapping">
+
+  <if>
+    <condition>OBJECT.productview_name ne ''</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'get_pv_id'</name>
+          <param name='id_view'>OBJECT.id_view</param>
+          <param name='table_name'>OBJECT.productview_name</param>
+        </call_proc_for_current_object>
+      </then>
+  </if>
+  <do>OBJECT.id_svc = OBJECT.id_view</do>
+
+  <if>
+    <condition>OBJECT.am_currency eq ''</condition>
+    <then>
+      <do>OBJECT.am_currency = 'USD'</do>
+    </then>
+  </if>
+
+  <if>
+    <condition>OBJECT.id_se eq ''</condition>
+    <then>
+      <do>OBJECT.id_se = OBJECT.id_payee</do>
+    </then>
+  </if>
+  
+  <get_guid>OBJECT.tx_uid</get_guid>
+
+  <do>OBJECT.id_sess = ''</do>
+  <do>OBJECT.parent_id_sess = ''</do>
+
+</proc>

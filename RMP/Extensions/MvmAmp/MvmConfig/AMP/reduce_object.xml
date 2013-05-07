@@ -1,0 +1,64 @@
+<procs>
+  <proc name="reduce_object">
+    <param name='object_id'/>
+    <initialize>
+      <define_memory_index>
+        <index>'GLOBAL_STRING_CACHE'</index>
+        <key_field>'key'</key_field>
+        <field>'value'</field>
+      </define_memory_index>
+    </initialize>
+    <object_field_value_select>
+      <object_id>TEMP.object_id</object_id>
+      <cursor_field>'field'</cursor_field>
+      <cursor_value>'value'</cursor_value>
+      <cursor>TEMP.field_cursor</cursor>
+      <loop>
+        <index_select>
+          <index>'GLOBAL_STRING_CACHE'</index>
+          <field name="key">OBJECT(TEMP.field_cursor).field</field>
+          <cursor>TEMP.str_cache_cur</cursor>
+          <then>
+            <do>TEMP.temp_val = OBJECT(TEMP.field_cursor).field</do>
+            <remove_object_field>
+              <object_id>TEMP.object_id</object_id>
+              <field_name>OBJECT(TEMP.field_cursor).field</field_name>
+              <output>TEMP.result</output>
+            </remove_object_field>
+            <set_object_field>
+              <input>TEMP.temp_val</input>
+              <object_id>TEMP.object_id</object_id>
+              <field_name>OBJECT(TEMP.str_cache_cur).value</field_name>
+            </set_object_field>
+          </then>
+          <else>
+            <index_insert>
+              <index>'GLOBAL_STRING_CACHE'</index>
+              <field name="key">OBJECT(TEMP.field_cursor).field</field>
+              <field name="value">OBJECT(TEMP.field_cursor).field</field>
+            </index_insert>
+          </else>
+        </index_select>
+        <index_select>
+          <index>'GLOBAL_STRING_CACHE'</index>
+          <field name="key">OBJECT(TEMP.field_cursor).value</field>
+          <cursor>TEMP.str_cache_cur</cursor>
+          <then>
+            <set_object_field>
+              <input>OBJECT(TEMP.str_cache_cur).value</input>
+              <object_id>TEMP.object_id</object_id>
+              <field_name>OBJECT(TEMP.field_cursor).field</field_name>
+            </set_object_field>
+          </then>
+          <else>
+            <index_insert>
+              <index>'GLOBAL_STRING_CACHE'</index>
+              <field name="key">OBJECT(TEMP.field_cursor).value</field>
+              <field name="value">OBJECT(TEMP.field_cursor).value</field>
+            </index_insert>
+          </else>
+        </index_select>
+      </loop>
+    </object_field_value_select>
+  </proc>
+</procs>

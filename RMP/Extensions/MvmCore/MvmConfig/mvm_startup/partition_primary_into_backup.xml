@@ -1,0 +1,3 @@
+<proc name="partition_primary_into_backup">
+  <fatal>'TBD:partition primary into backup'</fatal>
+</proc>

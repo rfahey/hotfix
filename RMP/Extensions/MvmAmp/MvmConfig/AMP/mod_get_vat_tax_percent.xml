@@ -1,0 +1,271 @@
+<procs>
+  <proc name='mod_get_vat_tax_percent'>
+    <param name='bucket_object'/>
+    <param name='usage_object'/>
+    <param name='charge_object' default='""'/>
+
+    <if>
+      <condition>TEMP.charge_object_id ne ''</condition>
+      <then>
+        <do>TEMP.usage_object = TEMP.charge_object</do>
+      </then>
+    </if>
+
+    <run_once>
+      <define_memory_index>
+        <index>'PGI_VAT_TAX_RATES'</index>
+        <key_field>'id_sched'</key_field>
+        <key_field>'c_billingcountry'</key_field>
+        <key_field>'c_billingstate'</key_field>
+        <field>'n_order'</field>
+        <field>'c_countrytaxrate'</field>
+        <field>'c_provincetaxrate'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'PGI_VAT_PL_SCHEDS'</index>
+        <key_field>'id_pricelist'</key_field>
+        <field>'start_date'</field>
+        <field>'end_date'</field>
+        <field>'id_sched'</field>
+      </define_memory_index>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select * from t_pt_VATTaxRates with (NOLOCK) where tt_end = dbo.MTMaxDate()"
+        </query>
+        <cursor>TEMP.vat_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'PGI_VAT_TAX_RATES'</index>
+            <field name="id_sched">OBJECT(TEMP.vat_csr).id_sched</field>
+            <field name="c_billingcountry">OBJECT(TEMP.vat_csr).c_billingcountry</field>
+            <field name="c_billingstate">OBJECT(TEMP.vat_csr).c_billingstate</field>
+            <field name="n_order">OBJECT(TEMP.vat_csr).n_order</field>
+            <field name="c_countrytaxrate">OBJECT(TEMP.vat_csr).c_countrytaxrate</field>
+            <field name="c_provincetaxrate">OBJECT(TEMP.vat_csr).c_provincetaxrate</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select distinct b.id_pricelist, b.id_sched, c.dt_start start_date, c.dt_end end_date from t_pt_VATTaxRates a with (NOLOCK)
+          inner join t_rsched b on a.id_sched = b.id_sched
+          inner join t_effectivedate c on b.id_eff_date = c.id_eff_date
+          where a.tt_end = dbo.MTMaxDate()"
+        </query>
+        <cursor>TEMP.sched_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'PGI_VAT_PL_SCHEDS'</index>
+            <field name="id_sched">OBJECT(TEMP.sched_csr).id_sched</field>
+            <field name="start_date">OBJECT(TEMP.sched_csr).start_date</field>
+            <field name="end_date">OBJECT(TEMP.sched_csr).end_date</field>
+            <field name="id_pricelist">OBJECT(TEMP.sched_csr).id_pricelist</field>
+          </index_insert>
+        </loop>
+      </db_select>
+      
+      <define_memory_index>
+        <index>'ACCOUNT_RESELLERS'</index>
+        <key_field>'id_acc'</key_field>
+        <key_field type='search'>'start_date'</key_field>
+        <field>'id_enterprise'</field>
+        <field>'b_retailpricing'</field>
+        <field>'b_retailtaxing'</field>
+        <field>'end_date'</field>
+      </define_memory_index>
+      
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select aa.id_descendent id_acc, pr.id_enterprise, b_retailpricing, b_retailtaxing, aa.vt_start start_date, aa.vt_end end_date
+	from t_account_ancestor aa with (NOLOCK)
+		inner join t_prem_resellers pr with (NOLOCK)
+		on aa.id_ancestor = pr.id_enterprise"
+        </query>
+        <cursor>TEMP.reseller_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'ACCOUNT_RESELLERS'</index>
+            <field name="id_acc">OBJECT(TEMP.reseller_csr).id_acc</field>
+            <field name="start_date">OBJECT(TEMP.reseller_csr).start_date</field>
+            <field name="end_date">OBJECT(TEMP.reseller_csr).end_date</field>
+            <field name="id_enterprise">OBJECT(TEMP.ownership_csr).id_enterprise</field>
+            <field name="b_retailpricing">OBJECT(TEMP.ownership_csr).b_retailpricing</field>
+            <field name="b_retailtaxing">OBJECT(TEMP.ownership_csr).b_retailtaxing</field>
+          </index_insert>
+        </loop>
+      </db_select>
+      
+      <define_memory_index>
+        <index>'ACCOUNT_TAX_KEYS'</index>
+        <key_field>'id_acc'</key_field>
+        <field>'c_taxexempt'</field>
+        <field>'c_country'</field>
+        <field>'c_state'</field>
+        <field>'c_pricelist'</field>
+      </define_memory_index>
+      
+    </run_once>
+
+    <index_select>
+      <index>'ACCOUNT_RESELLERS'</index>
+      <field name="id_acc">OBJECT(TEMP.usage_object).id_acc</field>
+      <field name="start_date">OBJECT(TEMP.usage_object).dt_session</field>
+      <cursor>TEMP.reseller_csr</cursor>
+      <then>
+        <do>OBJECT(TEMP.usage_object).lookup_retailpricing = OBJECT(TEMP.reseller_csr).b_retailpricing</do>
+        <do>OBJECT(TEMP.usage_object).lookup_retailtaxing = OBJECT(TEMP.reseller_csr).b_retailtaxing</do>
+      </then>
+    </index_select>
+
+    <index_select>
+      <index>'ACCOUNT_TAX_KEYS'</index>
+      <field name="id_acc">OBJECT(TEMP.usage_object).id_acc</field>
+      <cursor>TEMP.taxkey_csr</cursor>
+      <then>
+        <do>OBJECT(TEMP.usage_object).lookup_taxexempt = OBJECT(TEMP.taxkey_csr).c_taxexempt</do>
+        <do>OBJECT(TEMP.usage_object).lookup_country = OBJECT(TEMP.taxkey_csr).c_country</do>
+        <do>OBJECT(TEMP.usage_object).lookup_state = OBJECT(TEMP.taxkey_csr).c_state</do>
+        <do>OBJECT(TEMP.usage_object).lookup_pricelist = OBJECT(TEMP.taxkey_csr).c_pricelist</do>
+      </then>
+      <else>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select a.id_acc, a.c_taxexempt, ltrim(rtrim(b.c_country)) c_country, ltrim(rtrim(b.c_state)) c_state, a.c_pricelist
+            from t_av_internal a with (NOLOCK)
+            inner join t_av_contact b with (NOLOCK) on a.id_acc = b.id_acc
+            where a.id_acc = $${OBJECT(TEMP.usage_object).id_acc}"
+          </query>
+          <cursor>TEMP.db_taxkey_csr</cursor>
+          <then>
+            <do>OBJECT(TEMP.usage_object).lookup_taxexempt = OBJECT(TEMP.db_taxkey_csr).c_taxexempt</do>
+            <do>OBJECT(TEMP.usage_object).lookup_country = OBJECT(TEMP.db_taxkey_csr).c_country</do>
+            <do>OBJECT(TEMP.usage_object).lookup_state = OBJECT(TEMP.db_taxkey_csr).c_state</do>
+            <do>OBJECT(TEMP.usage_object).lookup_pricelist = OBJECT(TEMP.db_taxkey_csr).c_pricelist</do>
+            <index_insert>
+              <index>'ACCOUNT_TAX_KEYS'</index>
+              <field name="id_acc">OBJECT(TEMP.db_taxkey_csr).id_acc</field>
+              <field name="c_taxexempt">OBJECT(TEMP.db_taxkey_csr).c_taxexempt</field>
+              <field name="c_country">OBJECT(TEMP.db_taxkey_csr).c_country</field>
+              <field name="c_state">OBJECT(TEMP.db_taxkey_csr).c_state</field>
+              <field name="c_pricelist">OBJECT(TEMP.db_taxkey_csr).c_pricelist</field>
+            </index_insert>
+          </then>
+          <else>
+            <index_insert>
+              <index>'ACCOUNT_TAX_KEYS'</index>
+              <field name="id_acc">OBJECT(TEMP.db_taxkey_csr).id_acc</field>
+              <field name="c_taxexempt">'0'</field>
+              <field name="c_country">''</field>
+              <field name="c_state">''</field>
+              <field name="c_pricelist">''</field>
+            </index_insert>
+          </else>
+        </db_select>
+      </else>
+    </index_select>
+
+    <if>
+      <condition>(OBJECT(TEMP.usage_object).lookup_retailpricing eq '1' and OBJECT(TEMP.usage_object).lookup_retailtaxing eq '0') or OBJECT(TEMP.usage_object).lookup_taxexempt eq '1'</condition>
+      <then>
+        <c>Tax exempt</c>
+        <do>OBJECT(TEMP.usage_object).lookup_countrytaxrate = '0'</do>
+        <do>OBJECT(TEMP.usage_object).lookup_provincetaxrate = '0'</do>
+      </then>
+      <else>
+        <do>TEMP.max_found_start = ''</do>
+        <index_select>
+          <index>'PGI_VAT_PL_SCHEDS'</index>
+          <field name="id_pricelist">OBJECT(TEMP.usage_object).lookup_pricelist</field>
+          <cursor>TEMP.pl_sched_csr</cursor>
+          <loop>
+            <if>
+              <condition>(OBJECT(TEMP.usage_object).dt_session gt OBJECT(TEMP.pl_sched_csr).start_date or OBJECT(TEMP.pl_sched_csr).start_date eq '') and (OBJECT(TEMP.usage_object).dt_session lt OBJECT(TEMP.pl_sched_csr).end_date or OBJECT(TEMP.pl_sched_csr).end_date eq '') and (OBJECT(TEMP.pl_sched_csr).start_date gte TEMP.max_found_start)</condition>
+              <then>
+                <do>OBJECT(TEMP.usage_object).lookup_sched = OBJECT(TEMP.pl_sched_csr).id_sched</do>
+                <do>TEMP.max_found_start = OBJECT(TEMP.pl_sched_csr).start_date</do>
+              </then>
+            </if>
+          </loop>
+        </index_select>
+        <c>Find VAT tax rates</c>
+        <do>TEMP.min_n_order = 99999999</do>
+        <index_select>
+          <index>'PGI_VAT_TAX_RATES'</index>
+          <field name="id_sched">OBJECT(TEMP.usage_object).lookup_sched</field>
+          <field name="c_billingcountry">OBJECT(TEMP.usage_object).lookup_billingcountry</field>
+          <field name="c_billingstate">OBJECT(TEMP.usage_object).lookup_billingstate</field>
+          <cursor>TEMP.taxkey_csr</cursor>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.taxkey_csr).n_order LT TEMP.min_n_order</condition>
+              <then>
+                <do>OBJECT(TEMP.usage_object).lookup_countrytaxrate = OBJECT(TEMP.taxkey_csr).c_countrytaxrate</do>
+                <do>OBJECT(TEMP.usage_object).lookup_provincetaxrate = OBJECT(TEMP.taxkey_csr).c_provincetaxrate</do>
+                <do>TEMP.min_n_order = OBJECT(TEMP.taxkey_csr).n_order</do>
+              </then>
+            </if>
+          </then>
+        </index_select>
+        <index_select>
+          <index>'PGI_VAT_TAX_RATES'</index>
+          <field name="id_sched">OBJECT(TEMP.usage_object).lookup_sched</field>
+          <field name="c_billingcountry">OBJECT(TEMP.usage_object).lookup_billingcountry</field>
+          <field name="c_billingstate">''</field>
+          <cursor>TEMP.taxkey_csr</cursor>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.taxkey_csr).n_order LT TEMP.min_n_order</condition>
+              <then>
+                <do>OBJECT(TEMP.usage_object).lookup_countrytaxrate = OBJECT(TEMP.taxkey_csr).c_countrytaxrate</do>
+                <do>OBJECT(TEMP.usage_object).lookup_provincetaxrate = OBJECT(TEMP.taxkey_csr).c_provincetaxrate</do>
+                <do>TEMP.min_n_order = OBJECT(TEMP.taxkey_csr).n_order</do>
+              </then>
+            </if>
+          </then>
+        </index_select>
+        <index_select>
+          <index>'PGI_VAT_TAX_RATES'</index>
+          <field name="id_sched">OBJECT(TEMP.usage_object).lookup_sched</field>
+          <field name="c_billingcountry">''</field>
+          <field name="c_billingstate">OBJECT(TEMP.usage_object).lookup_billingstate</field>
+          <cursor>TEMP.taxkey_csr</cursor>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.taxkey_csr).n_order LT TEMP.min_n_order</condition>
+              <then>
+                <do>OBJECT(TEMP.usage_object).lookup_countrytaxrate = OBJECT(TEMP.taxkey_csr).c_countrytaxrate</do>
+                <do>OBJECT(TEMP.usage_object).lookup_provincetaxrate = OBJECT(TEMP.taxkey_csr).c_provincetaxrate</do>
+                <do>TEMP.min_n_order = OBJECT(TEMP.taxkey_csr).n_order</do>
+              </then>
+            </if>
+          </then>
+        </index_select>
+        <index_select>
+          <index>'PGI_VAT_TAX_RATES'</index>
+          <field name="id_sched">OBJECT(TEMP.usage_object).lookup_sched</field>
+          <field name="c_billingcountry">''</field>
+          <field name="c_billingstate">''</field>
+          <cursor>TEMP.taxkey_csr</cursor>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.taxkey_csr).n_order LT TEMP.min_n_order</condition>
+              <then>
+                <do>OBJECT(TEMP.usage_object).lookup_countrytaxrate = OBJECT(TEMP.taxkey_csr).c_countrytaxrate</do>
+                <do>OBJECT(TEMP.usage_object).lookup_provincetaxrate = OBJECT(TEMP.taxkey_csr).c_provincetaxrate</do>
+                <do>TEMP.min_n_order = OBJECT(TEMP.taxkey_csr).n_order</do>
+              </then>
+            </if>
+          </then>
+        </index_select>
+      </else>
+    </if>
+    
+  </proc>
+</procs>

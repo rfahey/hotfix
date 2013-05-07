@@ -1,0 +1,132 @@
+<procs>
+
+  <!-- Call execute_amp_for_interval passing in -->
+  <!-- the global interval id -->
+  <proc name='execute_amp_eop'>
+    <call_proc_for_current_object>
+      <name>'execute_amp_for_interval'</name>
+      <param name='id_interval'>GLOBAL.intervalid</param>
+    <param name='id_billgroup'>GLOBAL.billgroup</param>
+    </call_proc_for_current_object>
+  </proc>
+  
+  <proc name='execute_amp_for_interval'>
+    <param name='id_interval'/>
+    <param name='id_billgroup'/>
+
+    <initialize>
+
+      <!-- Create the global logger -->
+      <spawn>
+        <object_type>'LOGGER'</object_type>
+        <object_id>GLOBAL.logger</object_id>
+      </spawn>
+      <!--<do>OBJECT(GLOBAL.logger).log_type='console'</do> -->
+      <do>OBJECT(GLOBAL.logger).log_level='debug'</do>
+      <index_insert>
+        <index>'GLOBAL_OBJECTS'</index>
+        <field name="object_id">GLOBAL.logger</field>
+      </index_insert>
+
+
+      <do>GLOBAL.mvm_cluster_name=GLOBAL.mvm_cluster_name ne ''?GLOBAL.mvm_cluster_name:'default'</do>
+      <!--<mvm_cluster_set>
+        <login_object>GLOBAL.target_login</login_object>
+        <mvm_cluster_name>GLOBAL.mvm_cluster_name</mvm_cluster_name>
+        <node>
+          <server>'localhost'</server>
+          <num_instances>2</num_instances>
+        </node>
+        --><!--<node>
+          <server>'TRNG61TEST-RJP'</server>
+          <num_instances>2</num_instances>
+          <bin>'D:\MetraTech\RMP\Bin'</bin>
+        </node>--><!--
+      </mvm_cluster_set>-->
+      <server_credentials_get>
+        <login_object>GLOBAL.target_login</login_object>
+      </server_credentials_get>
+      <mvm_cluster_get>
+        <login_object>GLOBAL.target_login</login_object>
+        <mvm_cluster_name>GLOBAL.mvm_cluster_name</mvm_cluster_name>
+      </mvm_cluster_get>
+
+    </initialize>
+
+    <debug>'STARTING AMP FOR INTERVAL -------------------------------------------------'</debug>
+    <debug>'Going to execute decision for billing interval '~GLOBAL.passed_interval~' log_level='~OBJECT(GLOBAL.logger).log_level </debug>
+
+    <!-- Turn on running on the cluster defined above. -->
+    <set_server_mode_on/>
+
+    <!-- Start up all the slaves in the cluster -->
+    <startup_slaves>
+      <slave_count>'*'</slave_count>
+      <num_started>GLOBAL.slave_count</num_started>
+    </startup_slaves>
+    <debug>'Started up '~GLOBAL.slave_count~' slave(s)'</debug>
+
+    <!-- Call a proc to... -->
+    <debug>'About to start generating decision instances for the interval.'</debug>
+    <call_proc_for_current_object>
+      <name>'generate_work_for_interval'</name>
+      <param name='id_interval'>TEMP.id_interval</param>
+      <param name='id_billgroup'>TEMP.id_billgroup</param>
+      <param name='eop_mode'>'1'</param>
+    </call_proc_for_current_object>
+    <debug>'Done generating decision instances for the interval.'</debug>
+
+    <debug>'About to start processing the decision instances.'</debug>
+    <call_proc_for_current_object>
+      <name>'process_decision_work'</name>
+      <param name='id_interval'>TEMP.id_interval</param>
+    </call_proc_for_current_object>
+    <debug>'Done processing the decision instances.'</debug>
+
+    <debug>'Starting clean-up in preparation for stopping.'</debug>
+    <call_proc_for_current_object>
+      <name>'unapply_obsolete_work_for_interval'</name>
+      <param name='id_interval'>TEMP.id_interval</param>
+    </call_proc_for_current_object>
+
+    <debug>'Calling persist counters on each slave.'</debug>
+    
+    <slave_node_id_select>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.slave_id=OBJECT(TEMP.csr).node_id</do>
+        <debug>'call persist_counters on -'~TEMP.slave_id</debug>
+
+        <remote_queue_proc>
+          <name>'persist_counters'</name>
+          <process_id>TEMP.slave_id</process_id>
+          <batch_id>TEMP.my_batch_id</batch_id>
+          <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+          <param name='batch_id'>TEMP.my_batch_id</param>
+          <param name='node_id'>TEMP.slave_id</param>
+        </remote_queue_proc>
+
+        <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+        <debug>'done persist_counters on -'~TEMP.slave_id</debug>
+
+      </loop>
+    </slave_node_id_select>
+    <debug>'Done cleaning up.'</debug>
+
+    <debug>'Shutting down the cluster'</debug>
+    <set_server_mode_off/>
+    <shutdown_cluster/>
+    <debug>'DONE RUNNING AMP FOR INTERVAL ---------------------------------------------'</debug>
+    
+    <db_call_proc>
+      <login_object>GLOBAL.target_login</login_object>
+      <name>'mvm_complete_mvm_run_id'</name>
+      <param name="p_mvm_run_id">GLOBAL.mvm_run_id</param>
+      <param name="p_preserve_tables">'-1'</param>
+      <param name="p_preserve_offset">'31'</param>
+    </db_call_proc>
+    
+    <sleep>5000</sleep>
+
+  </proc>
+</procs>

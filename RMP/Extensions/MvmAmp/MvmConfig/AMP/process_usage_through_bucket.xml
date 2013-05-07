@@ -1,0 +1,196 @@
+  <!-- ==================================================================== -->
+  <!-- Process a usage event through a decision.                            -->
+  <!--                                                                      -->
+  <!-- Input:                                                               -->
+  <!--   bucket_object  - current instantiated decision                     -->
+  <!--   usage_object   - object containing a combination of t_acc_usage,   -->
+<!--                    t_pv_*, and fields created by AMP                 -->
+  <!--   lowest_included_priority - unused parameter                        -->
+  <!--                                                                      -->
+  <!-- Results:                                                             -->
+  <!-- ==================================================================== -->
+
+<procs>
+  <proc name='process_usage_through_bucket'>
+    <param name='bucket_object'/>
+    <param name='usage_object'/>
+
+    <!-- In debug mode, log the inputs to this proc -->
+    <!--<debug>'Processing usage through a decision.'</debug>-->
+    <!--<call_proc_for_object>
+      <name>'to_loggable'</name>
+      <object_id>TEMP.bucket_object</object_id>
+      <param name="result">TEMP.result</param>
+    </call_proc_for_object>
+    <debug>'Decision: '~TEMP.result</debug>-->
+    <debug switch='log_decisions'>'Starting through bucket with AQG ['~OBJECT(TEMP.bucket_object).account_qualification_group~'] and id_payee ['~OBJECT(TEMP.usage_object).id_payee~'] and id_sess ['~OBJECT(TEMP.usage_object).id_sess~'] and decision ['~OBJECT(TEMP.bucket_object).decision_unique_id~'] and priority ['~OBJECT(TEMP.bucket_object).tier_priority~']'</debug>
+    <!--
+
+    <call_proc_for_object>
+        <name>'to_loggable'</name>
+        <object_id>TEMP.usage_object</object_id>
+	<param name="result">TEMP.result</param>
+    </call_proc_for_object>
+    <debug>'Usage: '~TEMP.result</debug>
+    -->
+    <!-- <print>'LOOKHERE: I have aqg ['~OBJECT(TEMP.bucket_object).account_qualification_group~'] and I have id_payee ['~OBJECT(TEMP.usage_object).id_payee~'] and id_sess ['~OBJECT(TEMP.usage_object).id_sess~'] and decision ['~OBJECT(TEMP.bucket_object).decision_unique_id~'] and priority ['~OBJECT(TEMP.bucket_object).tier_priority~']'</print> -->
+
+    <!-- Determine if this usage event meets the criteria of the usage qualification group -->
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).usage_premodification_proc ne ''</condition>
+      <then>
+        <call_dynamic_proc_for_object>
+          <name>OBJECT(TEMP.bucket_object).usage_premodification_proc</name>
+          <object_id>TEMP.usage_object</object_id>
+          <param name='bucket_object'>TEMP.bucket_object</param>
+          <param name='usage_object'>TEMP.usage_object</param>
+        </call_dynamic_proc_for_object>
+      </then>
+    </if>
+    
+    
+    <call_dynamic_proc_for_object>
+      <name>'determine_usg_qual_'~OBJECT(TEMP.bucket_object).usage_qualification_group</name>
+      <object_id>TEMP.usage_object</object_id>
+            <param name='bucket_object'>TEMP.bucket_object</param>
+    </call_dynamic_proc_for_object>
+
+    <get_object_field>
+      <object_id>TEMP.usage_object</object_id>
+      <field_name>'usg_member_of_'~OBJECT(TEMP.bucket_object).usage_qualification_group</field_name>
+      <output>TEMP.is_in_usg_group</output>
+    </get_object_field>
+		   <!-- <print>'BEFORE AM I IN THE USG GROUP ['~OBJECT(TEMP.bucket_object).usage_qualification_group~']?['~TEMP.is_in_usg_group~']'</print> -->
+    <if>
+      <condition>TEMP.is_in_usg_group eq '1'</condition>
+      <then>
+        <debug switch='log_decisions'>'This usage event is in usage qualification group: '~OBJECT(TEMP.bucket_object).usage_qualification_group</debug>
+      </then>
+      <else>
+        <debug switch='log_decisions'>'This usage event is NOT in usage qualification group: '~OBJECT(TEMP.bucket_object).usage_qualification_group</debug>
+      </else>
+    </if>
+
+    <if>
+      <condition>TEMP.is_in_usg_group eq '1' and OBJECT(TEMP.bucket_object).decision_qualification_group ne ''</condition>
+      <then>
+        <debug switch='log_decisions'>'Since this decision specifies a decision qualification group, we need to check if the event is qualified.'</debug>
+        <call_dynamic_proc_for_object>
+          <name>'determine_dec_qual_'~OBJECT(TEMP.bucket_object).decision_qualification_group</name>
+          <object_id>TEMP.usage_object</object_id>
+          <param name='bucket_object'>TEMP.bucket_object</param>
+          <param name='qualifies'>TEMP.is_in_usg_group</param>
+        </call_dynamic_proc_for_object>
+        <if>
+          <condition>TEMP.is_in_usg_group eq '1'</condition>
+          <then>
+            <debug switch='log_decisions'>'This usage event is in decision qualification group: '~OBJECT(TEMP.bucket_object).decision_qualification_group</debug>
+      </then>
+          <else>
+            <debug switch='log_decisions'>'This usage event is NOT in decision qualification group: '~OBJECT(TEMP.bucket_object).decision_qualification_group</debug>
+          </else>
+    </if>
+      </then>
+    </if>
+	<!--<print>'I have a dimension 1 ref of ['~OBJECT(TEMP.bucket_object).dimension_ref_1~'] and tier start on there of ['~OBJECT(OBJECT(TEMP.bucket_object).dimension_ref_1).tier_start~']'</print>-->
+          <!--<print>'AM I IN THE DEC GROUP ['~OBJECT(TEMP.bucket_object).decision_qualification_group~']?['~TEMP.is_in_usg_group~']'</print>-->
+    <if>
+      <condition>TEMP.is_in_usg_group eq '1'</condition>
+      <then>
+        <to_lower>
+          <input>'normalize_charge_qual_'~OBJECT(TEMP.bucket_object).charge_qualification_group~'_'~OBJECT(TEMP.usage_object).id_view</input>
+          <output>TEMP.proc_name</output>
+        </to_lower>
+        <call_dynamic_proc_for_object>
+          <name>TEMP.proc_name</name>
+          <object_id>TEMP.usage_object</object_id>
+        </call_dynamic_proc_for_object>
+               <!--<print>'This record (id_sess=['~OBJECT(TEMP.usage_object).id_sess~']) is part of account group ['~OBJECT(TEMP.bucket_object).account_qualification_group~'] and usage group ['~OBJECT(TEMP.bucket_object).usage_qualification_group~'] decision ['~OBJECT(TEMP.bucket_object).decision_unique_id~']'</print>--> 
+        
+        <to_lower>
+          <input>'td_calc_remaining_'~OBJECT(TEMP.bucket_object).tier_domain</input>
+          <output>TEMP.proc_name</output>
+        </to_lower>
+        <call_dynamic_proc_for_object>
+          <name>TEMP.proc_name</name>
+          <object_id>TEMP.usage_object</object_id>
+          <param name='bucket_object'>TEMP.bucket_object</param>
+        </call_dynamic_proc_for_object>
+              <!-- <print>'percent remaining is ['~OBJECT(TEMP.usage_object).percent_remaining~']'</print> -->
+
+        
+        <to_lower>
+          <input>'apply_charge_qual_'~OBJECT(TEMP.bucket_object).charge_qualification_group~'_'~OBJECT(TEMP.usage_object).id_view</input>
+          <output>TEMP.proc_name</output>
+        </to_lower>
+        <call_dynamic_proc_for_current_object>
+          <name>TEMP.proc_name</name>
+          <param name='bucket_object'>TEMP.bucket_object</param>
+          <param name='usage_object'>TEMP.usage_object</param>
+        </call_dynamic_proc_for_current_object>
+        <debug switch='log_decisions'>'percent remaining is ['~OBJECT(TEMP.usage_object).percent_remaining~']'</debug>
+
+        <if>
+          <condition>GLOBAL.running_nrt_amp GT '0'</condition>
+          <then>
+            <call_proc_for_object>
+              <name>'persist_record_to_table'</name>
+              <object_id>TEMP.bucket_object</object_id>
+              <param name='transaction_id'>'not_done_yet'</param>
+              <param name='table_name'>'AGG_DECISION_AUDIT_TRAIL'</param>
+              <param name='is_update'>1</param>
+            </call_proc_for_object>
+          </then>
+        </if>
+        
+
+        <call_proc_for_current_object>
+          <name>'calc_percent_eligibility'</name>
+          <param name='bucket_object'>TEMP.bucket_object</param>
+          <param name='usage_object'>TEMP.usage_object</param>
+        </call_proc_for_current_object>
+			  <!-- <print>'Looking for tier domain apply'</print> -->
+              <if>
+                <condition>OBJECT(TEMP.bucket_object).tier_domain_apply ne ''</condition>
+                <then>
+				          <debug switch='log_decisions'>'Trying tier_domain_apply of ['~OBJECT(TEMP.bucket_object).tier_domain_apply~']'</debug>
+                  <to_lower>
+                    <input>'td_calc_remaining_'~OBJECT(TEMP.bucket_object).tier_domain_apply</input>
+                    <output>TEMP.proc_name</output>
+                  </to_lower>
+                  <debug switch='log_decisions'>'BEFORE I have percent remaining of ['~OBJECT(TEMP.usage_object).percent_remaining ~'] and eligible of ['~OBJECT(TEMP.usage_object).percent_eligible~']'</debug>
+                  <call_dynamic_proc_for_object>
+                    <name>TEMP.proc_name</name>
+                    <object_id>TEMP.usage_object</object_id>
+                    <param name='bucket_object'>TEMP.bucket_object</param>
+                  </call_dynamic_proc_for_object>
+                  <debug switch='log_decisions'>'AFTER I have percent remaining of ['~OBJECT(TEMP.usage_object).percent_remaining ~'] and eligible of ['~OBJECT(TEMP.usage_object).percent_eligible~']'</debug>
+                  <if>
+                    <condition>OBJECT(TEMP.usage_object).percent_remaining LT OBJECT(TEMP.usage_object).percent_eligible</condition>
+                    <then>
+                      <do>OBJECT(TEMP.usage_object).percent_eligible = OBJECT(TEMP.usage_object).percent_remaining</do>
+                      <debug switch='log_decisions'>'NOW I have percent remaining of ['~OBJECT(TEMP.usage_object).percent_remaining ~'] and eligible of ['~OBJECT(TEMP.usage_object).percent_eligible~']'</debug>
+                    </then>
+                  </if>
+                </then>
+              </if>
+
+        <call_proc_for_current_object>
+          <name>'apply_bucket_to_charge'</name>
+          <param name='bucket_object'>TEMP.bucket_object</param>
+          <param name='usage_object'>TEMP.usage_object</param>
+        </call_proc_for_current_object>
+
+        <call_proc_for_current_object>
+          <name>'check_for_bucket_triggers'</name>
+          <param name='bucket_object'>TEMP.bucket_object</param>
+          <param name='usage_object'>TEMP.usage_object</param>
+        </call_proc_for_current_object>
+
+        <!--<print>'bucket_object.qualified_total='~OBJECT(TEMP.bucket_object).qualified_total</print>-->
+        <debug switch='log_decisions'>'bucket_object.qualified_total='~OBJECT(TEMP.bucket_object).qualified_total</debug>
+      </then>
+    </if>
+  </proc>
+</procs>

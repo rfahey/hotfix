@@ -1,0 +1,82 @@
+<procs>
+
+  <proc name="route_to_all_nodes_on_node_change">
+    <param name="object"/>
+    <param name="pipe_cursor"/>
+
+    <!--<do>GLOBAL.junk_changes = (GLOBAL.junk_changes eq ''?0:GLOBAL.junk_changes) + 1</do>-->
+    <!--<print>'Checking boundary group change for ['~OBJECT(TEMP.object).boundary_group_id~'] for the ['~GLOBAL.junk_changes~'] time'</print>-->
+    <if>
+      <condition>(object_delta_get_original(TEMP.object,'logical_node_id') ne OBJECT(TEMP.object).logical_node_id and object_delta_get_original(TEMP.object,'logical_node_id') ne '') or (object_delta_get_original(TEMP.object,'boundary_group_id') ne OBJECT(TEMP.object).boundary_group_id and object_delta_get_original(TEMP.object,'boundary_group_id') ne '')</condition>
+      <then>
+        <index_select_keys>
+          <index>'MVM_LOGICAL_CLUSTER_NODES'</index>
+          <cursor>TEMP.my_logical_inst</cursor>
+          <loop>
+            <do>OBJECT(TEMP.object).node_id = OBJECT(TEMP.my_logical_inst).logical_node_id</do>
+            <pipe_row>TEMP.object</pipe_row>
+          </loop>
+        </index_select_keys>
+      </then>
+    </if>
+  </proc>
+
+  <proc name="incorporate_new_bg_row">
+    <initialize>
+      <if>
+        <condition>GLOBAL.running_nrt_amp eq '1'</condition>
+        <then>
+          <define_data_routing>
+            <table_name>'AGG_BOUNDARY_GROUPS'</table_name>
+            <routing_procedure>'route_to_all_nodes_on_node_change'</routing_procedure>
+            <integration_procedure>'incorporate_new_bg_row'</integration_procedure>
+            <operation_type_field>'operation_type'</operation_type_field>
+          </define_data_routing>
+        </then>
+      </if>
+    </initialize>
+    <!--<do>TEMP.orig_instance = object_delta_get_original(OBJECT.object_id,'logical_instance_id')</do>
+    <print>'Incorporating object ['~TEMP.orig_instance~'] and ['~OBJECT.logical_instance_id~'] into boundary groups ['~dump_object(OBJECT.object_id)~']'</print>-->
+    <do>TEMP.my_dummy_node_id = index_get(index => "BOUNDARY_GROUP_LOGICAL_INSTANCE_MAP", boundary_group_id=>OBJECT.boundary_group_id)</do>
+    <if>
+      <condition>object_delta_get_original(OBJECT.object_id,'boundary_group_id') ne OBJECT.boundary_group_id or object_delta_get_original(OBJECT.object_id,'logical_instance_id') ne OBJECT.logical_instance_id</condition>
+      <then>
+        <if>
+          <condition>object_delta_get_original(OBJECT.object_id,'boundary_group_id') ne ''</condition>
+          <then>
+            <do>TEMP.my_logical_instance_id = index_get(index => "BOUNDARY_GROUP_LOGICAL_INSTANCE_MAP", boundary_group_id=>object_delta_get_original(OBJECT.object_id,'boundary_group_id'))</do>
+            <if>
+              <condition>TEMP.my_logical_instance_id ne ''</condition>
+              <then>
+                <c>Remove the old row if it is different than the new row, not empty, and already in the cache</c>
+                <index_remove>
+                  <index>'BOUNDARY_GROUP_LOGICAL_INSTANCE_MAP'</index>
+                  <field name="boundary_group_id">object_delta_get_original(OBJECT.object_id,'boundary_group_id')</field>
+                </index_remove>
+              </then>
+            </if>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT.boundary_group_id ne '' and TEMP.my_dummy_node_id ne ''</condition>
+          <then>
+            <do>TEMP.my_logical_instance_id = index_get(index => "BOUNDARY_GROUP_LOGICAL_INSTANCE_MAP", boundary_group_id=>OBJECT.boundary_group_id)</do>
+            <if>
+              <condition>TEMP.my_logical_instance_id eq ''</condition>
+              <then>
+                <c>Add a new row if it is not already in the cache</c>
+                <index_insert>
+                  <index>'BOUNDARY_GROUP_LOGICAL_INSTANCE_MAP'</index>
+                  <field name="boundary_group_id">OBJECT.boundary_group_id</field>
+                  <field name="logical_node_id">OBJECT.logical_instance_id</field>
+                </index_insert>
+              </then>
+            </if>
+          </then>
+        </if>
+      </then>
+    </if>
+  </proc>
+  
+</procs>
+

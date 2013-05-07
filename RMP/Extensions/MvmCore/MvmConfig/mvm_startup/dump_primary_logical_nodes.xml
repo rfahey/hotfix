@@ -1,0 +1,10 @@
+<proc name="dump_primary_logical_nodes">
+  <info switch="log_startup">'PRIMARY_LOGICAL_NODES:'</info>
+  <index_select>
+    <index>'PRIMARY_LOGICAL_NODES'</index>
+    <cursor>TEMP.csr</cursor>
+    <loop>
+      <info switch="log_startup">dump_object(TEMP.csr)</info>
+    </loop>
+  </index_select>
+</proc>

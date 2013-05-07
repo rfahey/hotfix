@@ -1,0 +1,5 @@
+<procs>
+  <proc name='perform_map_init_counter'>
+    <do>OBJECT.qualified_total = OBJECT.charge_on_inbound - OBJECT.tier_reset</do>
+  </proc>
+</procs>

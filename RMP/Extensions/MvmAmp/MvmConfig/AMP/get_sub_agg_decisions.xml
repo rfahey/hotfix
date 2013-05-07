@@ -1,0 +1,592 @@
+<procs>
+
+  <!-- ===================================================================== -->
+  <!-- Inputs:                                                               -->
+  <!--     id_acc             The account to process                         -->
+  <!--     id_usage_interval  The interval we are interested in              -->
+  <!--                                                                       -->
+  <!-- This proc instantiates all the decisions that we are interested       -->
+  <!-- in. The term "BUCKET" means decision instance.                        -->
+  <!--                                                                       -->
+  <!-- Results:                                                              -->
+  <!--     AGG_BUCKETS_BY_ACCOUNT                                            -->
+  <!--     AGG_BUCKETS_BY_PRIORITY                                           -->
+  <!--     BUCKET_CHILDREN                                                   -->
+  <!--     ACCOUNTS_BY_AGG_BUCKET                                            -->
+  <!-- ===================================================================== -->
+
+
+
+
+
+
+  <proc name="get_sub_agg_decisions">
+    <param name='id_acc'/>
+    <param name='months_back' default='"6"'/>
+    <do>TEMP.months_back = 0 - TEMP.months_back</do>
+    <print>'Temp months back = ['~TEMP.months_back~']'</print>
+
+    <initialize>
+
+      <!-- Note that start_date/end_date is NOT yet supported! -->
+
+
+      <define_memory_index>
+        <index>'REBUILT_DECISIONS_FOR_ACC'</index>
+        <field type='object_id'>'decision_object_id'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'UNROLLED_AQG_ROWS'</index>
+        <field type='object_id'>'aqg_row'</field>
+      </define_memory_index>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type='sql'>
+          "SELECT getdate() my_current_date, dbo.mtmindate() my_min_date, dbo.mtmaxdate() my_max_date"
+        </query>
+        <query type='oracle'>
+          "SELECT sysdate my_current_date, mtmindate() my_min_date, mtmaxdate() my_max_date from dual"
+        </query>
+        <cursor>TEMP.interval_csr</cursor>
+        <then>
+          <do>GLOBAL.interval_start_date = OBJECT(TEMP.interval_csr).my_current_date</do>
+          <do>GLOBAL.interval_end_date = OBJECT(TEMP.interval_csr).my_current_date</do>
+          <do>GLOBAL.min_date = OBJECT(TEMP.interval_csr).my_min_date</do>
+          <do>GLOBAL.max_date = OBJECT(TEMP.interval_csr).my_max_date</do>
+        </then>
+      </db_select>
+
+
+    </initialize>
+
+
+    <debug switch="log_materialize_decisions">'Instantiating all decisions needed for account ['~TEMP.id_acc~']'</debug>
+
+    <index_clear>
+      <index>'NAMES_BY_SUB'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACC_QUAL_GROUPS'</index>
+    </index_clear>
+    <index_clear>
+      <index>'REBUILT_DECISIONS_FOR_ACC'</index>
+    </index_clear>
+    <index_clear>
+      <index>'UNROLLED_AQG_ROWS'</index>
+    </index_clear>
+
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query type="sql">
+        "select sub.id_sub, sub.id_group, 1 row_priority, sub.id_po id_po, gsub.vt_start gsub_start, gsub.vt_end gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_gsubmember gsub
+        inner join t_sub sub on sub.id_group = gsub.id_group
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_sub = plm.id_sub
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and gsub.id_acc = $${TEMP.id_acc}
+        and gsub.vt_end > dateadd(mm,cast($${TEMP.months_back} as integer),getdate())
+        and gsub.vt_end >= dateadd(dd,1,gsub.vt_start)
+        and sub.vt_end >= dateadd(dd,1,sub.vt_start)
+        and (rs_f_dt.dt_end > dateadd(mm,cast($${TEMP.months_back} as integer),getdate()) or rs_f_dt.dt_end IS NULL)
+        union all
+        select sub.id_sub, sub.id_group, 2 row_priority, sub.id_po id_po, NULL gsub_start, NULL gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_sub sub
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_sub = plm.id_sub
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and sub.id_acc = $${TEMP.id_acc}
+        and sub.vt_end > dateadd(mm,cast($${TEMP.months_back} as integer),getdate())
+        and sub.vt_end >= dateadd(dd,1,sub.vt_start)
+        and (rs_f_dt.dt_end > dateadd(mm,cast($${TEMP.months_back} as integer),getdate()) or rs_f_dt.dt_end IS NULL)
+        union all
+        select sub.id_sub, sub.id_group, 3 row_priority, sub.id_po id_po, gsub.vt_start gsub_start, gsub.vt_end gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_gsubmember gsub
+        inner join t_sub sub on sub.id_group = gsub.id_group
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_po = plm.id_po and plm.id_sub IS NULL and plm.id_acc IS NULL
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and gsub.id_acc = $${TEMP.id_acc}
+        and gsub.vt_end > dateadd(mm,cast($${TEMP.months_back} as integer),getdate())
+        and gsub.vt_end >= dateadd(dd,1,gsub.vt_start)
+        and sub.vt_end >= dateadd(dd,1,sub.vt_start)
+        and (rs_f_dt.dt_end > dateadd(mm,cast($${TEMP.months_back} as integer),getdate()) or rs_f_dt.dt_end IS NULL)
+        union all
+        select sub.id_sub, sub.id_group, 4 row_priority, sub.id_po id_po, NULL gsub_start, NULL gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_sub sub
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_po = plm.id_po and plm.id_sub IS NULL and plm.id_acc IS NULL
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and
+        sub.id_acc = $${TEMP.id_acc}
+        and sub.vt_end > dateadd(mm,cast($${TEMP.months_back} as integer),getdate())
+        and sub.vt_end >= dateadd(dd,1,sub.vt_start)
+        and (rs_f_dt.dt_end > dateadd(mm,cast($${TEMP.months_back} as integer),getdate()) or rs_f_dt.dt_end IS NULL)
+        order by row_priority, sub_start desc"
+      </query>
+      <query type="oracle">
+        "select /*+ ORDERED */ sub.id_sub, sub.id_group, 1 row_priority, sub.id_po id_po, gsub.vt_start gsub_start, gsub.vt_end gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_gsubmember gsub
+        inner join t_sub sub on sub.id_group = gsub.id_group
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_sub = plm.id_sub
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and gsub.id_acc = $${TEMP.id_acc}
+        and gsub.vt_end > (sysdate + (31 * $${TEMP.months_back})
+        and gsub.vt_end >= (gsub.vt_start + 1)
+        and sub.vt_end >= (sub.vt_start + 1)
+        and (rs_f_dt.dt_end > (sysdate + (31 * $${TEMP.months_back}) or rs_f_dt.dt_end IS NULL)
+        union all
+        select /*+ ORDERED */ sub.id_sub, sub.id_group, 2 row_priority, sub.id_po id_po, NULL gsub_start, NULL gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_sub sub
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_sub = plm.id_sub
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and sub.id_acc = $${TEMP.id_acc}
+        and sub.vt_end > (sysdate + (31 * $${TEMP.months_back})
+        and sub.vt_end >= (sub.vt_start + 1)
+        and (rs_f_dt.dt_end > (sysdate + (31 * $${TEMP.months_back}) or rs_f_dt.dt_end IS NULL)
+        union all
+        select /*+ ORDERED */ sub.id_sub, sub.id_group, 3 row_priority, sub.id_po id_po, gsub.vt_start gsub_start, gsub.vt_end gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_gsubmember gsub
+        inner join t_sub sub on sub.id_group = gsub.id_group
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_po = plm.id_po and NVL2(plm.id_sub,NULL,0) = 0 and plm.id_acc IS NULL
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and gsub.id_acc = $${TEMP.id_acc}
+        and gsub.vt_end > (sysdate + (31 * $${TEMP.months_back})
+        and gsub.vt_end >= (gsub.vt_start + 1)
+        and sub.vt_end >= (sub.vt_start + 1)
+        and (rs_f_dt.dt_end > (sysdate + (31 * $${TEMP.months_back}) or rs_f_dt.dt_end IS NULL)
+        union all
+        select /*+ ORDERED */ sub.id_sub, sub.id_group, 4 row_priority, sub.id_po id_po, NULL gsub_start, NULL gsub_end, sub.vt_start sub_start, sub.vt_end sub_end, rs_f_dt.dt_start rsched_start, rs_f_dt.dt_end rsched_end, rs.id_pt id_paramtable, rs.id_sched, plm.id_pi_instance, plm.id_pi_template
+        from t_sub sub
+        inner join agg_bundle_pos bpo on sub.id_po = bpo.id_po
+        inner join t_pl_map plm on sub.id_po = plm.id_po and NVL2(plm.id_sub,NULL,0) = 0 and plm.id_acc IS NULL
+        inner join t_rsched rs on plm.id_pricelist = rs.id_pricelist and plm.id_paramtable = rs.id_pt and plm.id_pi_template = rs.id_pi_template
+        inner join t_effectivedate rs_f_dt on rs.id_eff_date = rs_f_dt.id_eff_date
+        where plm.id_paramtable in("~GLOBAL.my_pt_list~") and
+        sub.id_acc = $${TEMP.id_acc}
+        and sub.vt_end > (sysdate + (31 * $${TEMP.months_back})
+        and sub.vt_end >= (sub.vt_start + 1)
+        and (rs_f_dt.dt_end > (sysdate + (31 * $${TEMP.months_back}) or rs_f_dt.dt_end IS NULL)
+        order by row_priority, sub_start desc"
+      </query>
+      <cursor>TEMP.rsched_csr</cursor>
+      <loop>
+        <print>'Got a row!'</print>
+        <do>OBJECT(TEMP.rsched_csr).id_acc = TEMP.id_acc</do>
+        <do>OBJECT(TEMP.rsched_csr).start_date = OBJECT(TEMP.rsched_csr).rsched_start</do>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).start_date eq ''</condition>
+          <then>
+            <string_to_date>
+              <input format='YYYYMMDDHH24MISS'>'19700101000000'</input>
+              <output>OBJECT(TEMP.rsched_csr).start_date</output>
+            </string_to_date>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).sub_start ne '' and OBJECT(TEMP.rsched_csr).sub_start gt OBJECT(TEMP.rsched_csr).start_date</condition>
+          <then>
+            <do>OBJECT(TEMP.rsched_csr).start_date = OBJECT(TEMP.rsched_csr).sub_start</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).gsub_start ne '' and OBJECT(TEMP.rsched_csr).gsub_start gt OBJECT(TEMP.rsched_csr).start_date</condition>
+          <then>
+            <do>OBJECT(TEMP.rsched_csr).start_date = OBJECT(TEMP.rsched_csr).gsub_start</do>
+          </then>
+        </if>
+        <do>OBJECT(TEMP.rsched_csr).end_date = OBJECT(TEMP.rsched_csr).rsched_end</do>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).end_date eq ''</condition>
+          <then>
+            <string_to_date>
+              <input format='YYYYMMDDHH24MISS'>'20380101000000'</input>
+              <output>OBJECT(TEMP.rsched_csr).end_date</output>
+            </string_to_date>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).sub_end ne '' and OBJECT(TEMP.rsched_csr).sub_end lt OBJECT(TEMP.rsched_csr).end_date</condition>
+          <then>
+            <do>OBJECT(TEMP.rsched_csr).end_date = OBJECT(TEMP.rsched_csr).sub_end</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.rsched_csr).gsub_end ne '' and OBJECT(TEMP.rsched_csr).gsub_end lt OBJECT(TEMP.rsched_csr).end_date</condition>
+          <then>
+            <do>OBJECT(TEMP.rsched_csr).end_date = OBJECT(TEMP.rsched_csr).gsub_end</do>
+          </then>
+        </if>
+
+        <index_select>
+          <index>'AGG_PT_ID_TO_NAME'</index>
+          <field name="id_paramtable">OBJECT(TEMP.rsched_csr).id_paramtable</field>
+          <cursor>TEMP.pt_name</cursor>
+          <then>
+            <db_select_dynamic>
+              <login_object>GLOBAL.target_login</login_object>
+              <query type="oracle">
+                'select * from ' ~OBJECT(TEMP.pt_name).paramtable_name~' where id_sched = '~OBJECT(TEMP.rsched_csr).id_sched ~'
+                and tt_end = mtmaxdate() order by n_order'
+              </query>
+              <query type="sql">
+                'select * from ' ~OBJECT(TEMP.pt_name).paramtable_name~' where id_sched = '~OBJECT(TEMP.rsched_csr).id_sched~'
+                and tt_end = dbo.mtmaxdate() order by n_order'
+              </query>
+              <cursor>TEMP.pt_row_csr</cursor>
+              <loop>
+                <debug switch="log_materialize_decisions">'I have n_order ['~OBJECT(TEMP.pt_row_csr).n_order~'] for id_sched ['~OBJECT(TEMP.pt_row_csr).id_sched~']'</debug>
+
+                <do>OBJECT(TEMP.pt_row_csr).id_acc = TEMP.id_acc</do>
+                <do>OBJECT(TEMP.pt_row_csr).start_date = OBJECT(TEMP.rsched_csr).start_date</do>
+                <do>OBJECT(TEMP.pt_row_csr).end_date = OBJECT(TEMP.rsched_csr).end_date</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_sched = OBJECT(TEMP.rsched_csr).id_sched</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_sub = OBJECT(TEMP.rsched_csr).id_sub</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_po = OBJECT(TEMP.rsched_csr).id_po</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_group = OBJECT(TEMP.rsched_csr).id_group</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_pi_template = OBJECT(TEMP.rsched_csr).id_pi_template</do>
+                <do>OBJECT(TEMP.pt_row_csr).id_pi_instance = OBJECT(TEMP.rsched_csr).id_pi_instance</do>
+                <index_clear>
+                  <index>'TEMP_AGG_BUCKETS'</index>
+                </index_clear>
+                <call_dynamic_proc_for_object>
+                  <name>'generate_tiers_'~OBJECT(TEMP.pt_name).paramtable_name</name>
+                  <object_id>TEMP.pt_row_csr</object_id>
+                </call_dynamic_proc_for_object>
+                <index_select>
+                  <index>'TEMP_AGG_BUCKETS'</index>
+                  <field name="id_acc">TEMP.id_acc</field>
+                  <cursor>TEMP.agg_buckets</cursor>
+                  <loop>
+                    <do>TEMP.my_bucket = OBJECT(TEMP.agg_buckets).bucket_object</do>
+                    <do>object_delta_set_state(TEMP.my_bucket,'SettingNew')</do>
+                    <object_delta_add_table>
+                      <object_id>TEMP.my_bucket</object_id>
+                      <table_name>'AGG_DECISION_INFO'</table_name>
+                    </object_delta_add_table>
+                    <do>OBJECT(TEMP.my_bucket).decision_object_id=TEMP.my_bucket</do>
+                    <do>OBJECT(TEMP.my_bucket).decision_unique_id=TEMP.my_bucket</do>
+                    <do>object_delta_add_object_ref_field(TEMP.my_bucket,"AGG_DECISION_INFO","decision_object_id")</do>
+
+                    <do>OBJECT(TEMP.my_bucket).id_acc = OBJECT(TEMP.pt_row_csr).id_acc</do>
+                    <if>
+                      <condition>OBJECT(TEMP.my_bucket).start_date eq ''</condition>
+                      <then>
+                        <do>OBJECT(TEMP.my_bucket).start_date = OBJECT(TEMP.rsched_csr).start_date</do>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.my_bucket).end_date eq ''</condition>
+                      <then>
+                        <do>OBJECT(TEMP.my_bucket).end_date = OBJECT(TEMP.rsched_csr).end_date</do>
+                      </then>
+                    </if>
+                    <do>OBJECT(TEMP.my_bucket).id_sched = OBJECT(TEMP.rsched_csr).id_sched</do>
+                    <do>OBJECT(TEMP.my_bucket).id_sub = OBJECT(TEMP.rsched_csr).id_sub</do>
+                    <do>OBJECT(TEMP.my_bucket).id_group = OBJECT(TEMP.rsched_csr).id_group</do>
+                    <do>OBJECT(TEMP.my_bucket).id_po = OBJECT(TEMP.rsched_csr).id_po</do>
+                    <do>OBJECT(TEMP.my_bucket).n_order = OBJECT(TEMP.pt_row_csr).n_order</do>
+                    <do>OBJECT(TEMP.my_bucket).tt_start = OBJECT(TEMP.pt_row_csr).tt_start</do>
+                    <do>TEMP.keep_it = '1'</do>
+                    <if>
+                      <condition>OBJECT(TEMP.my_bucket).tier_name ne ''</condition>
+                      <then>
+                        <do>TEMP.keep_it = '0'</do>
+                        <index_select>
+                          <index>'NAMES_BY_SUB'</index>
+                          <field name="id_sub">OBJECT(TEMP.rsched_csr).id_sub</field>
+                          <field name="id_pi_instance">OBJECT(TEMP.rsched_csr).id_pi_instance</field>
+                          <field name="tier_name">OBJECT(TEMP.my_bucket).tier_name</field>
+                          <cursor>TEMP.named_buckets</cursor>
+                          <loop>
+                            <debug switch="log_materialize_decisions">'I already have this name!!!!!'</debug>
+                            <if>
+                              <condition>OBJECT(TEMP.named_buckets).id_sched ne OBJECT(TEMP.my_bucket).id_sched and TEMP.keep_it ne '-1' and (OBJECT(TEMP.my_bucket).start_date gte OBJECT(TEMP.named_buckets).end_date or OBJECT(TEMP.my_bucket).end_date lte OBJECT(TEMP.named_buckets).start_date)</condition>
+                              <then>
+                                <debug switch="log_materialize_decisions">'But I am keeping it so far!!!!!'</debug>
+                                <do>TEMP.keep_it = '1'</do>
+                              </then>
+                              <else>
+                                <if>
+                                  <condition>OBJECT(TEMP.named_buckets).id_sched eq OBJECT(TEMP.my_bucket).id_sched and TEMP.keep_it ne '-1'</condition>
+                                  <then>
+
+                                    <do>TEMP.keep_it = '1'</do>
+                                  </then>
+                                  <else>
+                                    <debug switch="log_materialize_decisions">'And I am not keeping it!!!!!'</debug>
+                                    <do>TEMP.keep_it = '-1'</do>
+                                  </else>
+                                </if>
+                              </else>
+                            </if>
+                          </loop>
+                          <else>
+                            <do>TEMP.keep_it = '1'</do>
+                          </else>
+                        </index_select>
+                      </then>
+                    </if>
+
+                    <if>
+                      <condition>TEMP.keep_it eq '1' and OBJECT(TEMP.my_bucket).discard_decision ne '1'</condition>
+                      <then>
+
+                        <if>
+                          <condition>OBJECT(TEMP.my_bucket).tier_type Eq 'bulk'</condition>
+                          <then>
+                            <!--<do>OBJECT(TEMP.my_bucket).tier_priority += 1</do>-->
+                            <do>OBJECT(TEMP.my_bucket).tier_type = 'bulk_aggregate'</do>
+                            <do>OBJECT(TEMP.my_bucket).tier_priority = OBJECT(TEMP.my_bucket).tier_priority - 0.0000001</do>
+                          </then>
+                        </if>
+
+                        <do>OBJECT(TEMP.my_bucket).tier_dimension = '1'</do>
+
+                        <do>OBJECT(TEMP.my_bucket).id_acc = TEMP.id_acc</do>
+
+                        <if>
+                          <condition>TEMP.keep_it == 1</condition>
+                          <then>
+                            <index_insert>
+                              <index>'NAMES_BY_SUB'</index>
+                              <field name="id_sub">OBJECT(TEMP.rsched_csr).id_sub</field>
+                              <field name="id_pi_instance">OBJECT(TEMP.rsched_csr).id_pi_instance</field>
+                              <field name="tier_name">OBJECT(TEMP.my_bucket).tier_name</field>
+                              <field name="id_sched">OBJECT(TEMP.pt_row_csr).id_sched</field>
+                              <field name="n_order">OBJECT(TEMP.pt_row_csr).n_order</field>
+                              <field name="start_date">OBJECT(TEMP.my_bucket).start_date</field>
+                              <field name="end_date">OBJECT(TEMP.my_bucket).end_date</field>
+                            </index_insert>
+
+                            <index_select>
+                              <index>'ACC_QUAL_GROUPS'</index>
+                              <field name="id_acc">OBJECT(TEMP.my_bucket).id_acc</field>
+                              <field name="group">OBJECT(TEMP.my_bucket).account_qualification_group</field>
+                              <cursor>TEMP.named_buckets</cursor>
+                              <else>
+                                <call_proc_for_current_object>
+                                  <name>'generate_acc_qual_group_proc'</name>
+                                  <param name='account_qualification_group'>OBJECT(TEMP.my_bucket).account_qualification_group</param>
+                                </call_proc_for_current_object>
+                                <print>'JONAH CALLING generate_acc_qual ['~OBJECT(TEMP.my_bucket).account_qualification_group~'] for id_acc ['~OBJECT(TEMP.my_bucket).id_acc~']'</print>
+                                <call_dynamic_proc_for_current_object>
+                                  <name>'generate_acc_qual_'~OBJECT(TEMP.my_bucket).account_qualification_group</name>
+                                  <param name='id_acc'>OBJECT(TEMP.my_bucket).id_acc</param>
+                                  <param name='curr_decision'>TEMP.my_bucket</param>
+                                </call_dynamic_proc_for_current_object>
+                              </else>
+                            </index_select>
+                            <index_insert>
+                              <index>'REBUILT_DECISIONS_FOR_ACC'</index>
+                              <field name="decision_object_id">TEMP.my_bucket</field>
+                            </index_insert>
+                            <print>dump_object(TEMP.my_bucket)</print>
+
+                            <if>
+                              <condition>OBJECT(TEMP.my_bucket).tier_type Eq 'bulk_aggregate'</condition>
+                              <then>
+                                <call_proc_for_current_object>
+                                  <name>'split_sub_bulk_decision'</name>
+                                  <param name='bucket_object'>TEMP.my_bucket</param>
+                                </call_proc_for_current_object>
+                              </then>
+                            </if>
+
+                            <call_proc_for_current_object>
+                              <name>'create_sub_decision_dimension'</name>
+                              <param name='my_parent_bucket'>TEMP.my_bucket</param>
+                            </call_proc_for_current_object>
+
+                          </then>
+                        </if>
+                      </then>
+                    </if>
+                  </loop>
+                </index_select>
+              </loop>
+            </db_select_dynamic>
+          </then>
+        </index_select>
+      </loop>
+    </db_select>
+
+    <c>Here I need to persist deltas on AQGs and Decisions</c>
+
+    <index_select>
+      <index>'REBUILT_DECISIONS_FOR_ACC'</index>
+      <cursor>TEMP.c</cursor>
+      <loop>
+        <!--<print>'Before packing ['~dump_object(OBJECT(TEMP.c).decision_object_id)~']'</print>-->
+        <freeze_extended_properties>
+          <object_id>OBJECT(TEMP.c).decision_object_id</object_id>
+          <table_name>'AGG_DECISION_INFO'</table_name>
+          <field_name>'decision_object_id'</field_name>
+          <object_id_field_name>'decision_unique_id'</object_id_field_name>
+        </freeze_extended_properties>
+        <!--<print>'After packing ['~dump_object(OBJECT(TEMP.c).decision_object_id)~']'</print>-->
+      </loop>
+    </index_select>
+
+
+    <select>
+      <index_select>
+        <index>'REBUILT_DECISIONS_FOR_ACC'</index>
+      </index_select>
+      <pipeline>
+        <pipe_row>OBJECT.decision_object_id</pipe_row>
+        <order_by>OBJECT.decision_object_id</order_by>
+      </pipeline>
+      <cursor>TEMP.current_csr</cursor>
+      <run>
+        <db_select>
+          <query>"select * from agg_decision_info where id_acc = $${TEMP.id_acc}"</query>
+          <from_table>'AGG_DECISION_INFO'</from_table>
+          <order_by>OBJECT.decision_object_id</order_by>
+          <cursor>TEMP.persisted_csr</cursor>
+          <run>
+            <print>'I am in the loop with ['~dump_object(TEMP.current_csr)~'] and ['~dump_object(TEMP.persisted_csr)~']'</print>
+            <db_persist_cursor_changes>
+              <persisted_cursor>TEMP.persisted_csr</persisted_cursor>
+              <current_cursor>TEMP.current_csr</current_cursor>
+              <table_name>'AGG_DECISION_INFO'</table_name>
+              <join_key>'decision_unique_id'</join_key>
+            </db_persist_cursor_changes>
+          </run>
+        </db_select>
+      </run>
+    </select>
+
+    <index_select_keys>
+      <index>'ACC_QUAL_GROUPS'</index>
+      <cursor>TEMP.c</cursor>
+      <loop>
+        <index_select>
+          <index>'ACC_QUAL_GROUPS'</index>
+          <field name="id_acc">OBJECT(TEMP.c).id_acc</field>
+          <field name="group">OBJECT(TEMP.c).group</field>
+          <cursor>TEMP.c1</cursor>
+          <loop>
+            <do>OBJECT(TEMP.c1).start_date = GLOBAL.min_date</do>
+            <do>OBJECT(TEMP.c1).end_date = GLOBAL.max_date</do>
+            <do>OBJECT(TEMP.c1).account_qualification_group = OBJECT(TEMP.c1).group</do>
+            <print>'I have a row in AQG ['~dump_object(TEMP.c1)~']'</print>
+            <index_insert>
+              <index>'UNROLLED_AQG_ROWS'</index>
+              <field name="aqg_row">TEMP.c1</field>
+            </index_insert>
+          </loop>
+        </index_select>
+      </loop>
+    </index_select_keys>
+
+    <select>
+      <index_select>
+        <index>'UNROLLED_AQG_ROWS'</index>
+      </index_select>
+      <pipeline>
+        <pipe_row>OBJECT.aqg_row</pipe_row>
+        <order_by>OBJECT.account_qualification_group</order_by>
+        <order_by>OBJECT.child_id_acc</order_by>
+      </pipeline>
+      <cursor>TEMP.current_csr</cursor>
+      <run>
+        <db_select>
+          <query>"select * from agg_aqg_map where id_acc = $${TEMP.id_acc}"</query>
+          <from_table>'AGG_AQG_MAP'</from_table>
+          <order_by>OBJECT.account_qualification_group</order_by>
+          <order_by>OBJECT.child_id_acc</order_by>
+          <cursor>TEMP.persisted_csr</cursor>
+          <run>
+            <db_persist_cursor_changes>
+              <persisted_cursor>TEMP.persisted_csr</persisted_cursor>
+              <current_cursor>TEMP.current_csr</current_cursor>
+              <table_name>'AGG_AQG_MAP'</table_name>
+              <join_key>'id_acc'</join_key>
+              <join_key>'account_qualification_group'</join_key>
+              <join_key>'child_id_acc'</join_key>
+              <join_key>'start_date'</join_key>
+            </db_persist_cursor_changes>
+          </run>
+        </db_select>
+      </run>
+    </select>
+
+    <object_delta_flush_all/>
+    
+    <index_select_keys>
+      <index>'ACC_QUAL_GROUPS'</index>
+      <cursor>TEMP.c</cursor>
+      <loop>
+        <do>TEMP.my_boundary_group = ''</do>
+        <db_select>
+          <query>"select boundary_group_id from agg_boundary_group_aqg_map where id_acc = $${OBJECT(TEMP.c).id_acc} and account_qualification_group = $${OBJECT(TEMP.c).group}"</query>
+          <cursor>TEMP.bg_aqg_csr</cursor>
+          <then>
+            <do>TEMP.my_boundary_group = OBJECT(TEMP.bg_aqg_csr).boundary_group_id</do>
+          </then>
+        </db_select>
+        <print>'My boundary group is ['~TEMP.my_boundary_group~']'</print>
+        <db_select>
+          <query>
+            "select count(*) total_rows from agg_aqg_map a
+            left outer join agg_boundary_group_acc_map b on a.child_id_acc = b.id_acc and b.boundary_group_id = $${TEMP.my_boundary_group}
+            where a.id_acc = $${OBJECT(TEMP.c).id_acc} and a.account_qualification_group = $${OBJECT(TEMP.c).group} and b.id_acc IS NULL"
+          </query>
+          <cursor>TEMP.count_csr</cursor>
+          <then>
+            <print>'My count is ['~OBJECT(TEMP.count_csr).total_rows~']'</print>
+            <if>
+              <condition>OBJECT(TEMP.count_csr).total_rows GT 0</condition>
+              <then>
+                <call_proc_for_current_object>
+                  <name>'bg_remove_aqg_from_boundary_group'</name>
+                  <param name='id_acc'>OBJECT(TEMP.c).id_acc</param>
+                  <param name='account_qualification_group'>OBJECT(TEMP.c).group</param>
+                  <param name='boundary_group_id'>TEMP.old_boundary_group_id</param>
+                  <param name='force_remove'>1</param>
+                </call_proc_for_current_object>
+              </then>
+            </if>
+          </then>
+        </db_select>
+        <db_select>
+          <query>"select * from agg_boundary_group_aqg_map where id_acc = $${OBJECT(TEMP.c).id_acc} and account_qualification_group = $${OBJECT(TEMP.c).group}"</query>
+          <cursor>TEMP.bg_aqg_csr</cursor>
+          <else>
+            <print>'My ADDING boundary group is ['~TEMP.my_boundary_group~']'</print>
+            <call_proc_for_current_object>
+              <name>'bg_add_aqg_to_boundary_group'</name>
+              <param name='id_acc'>OBJECT(TEMP.c).id_acc</param>
+              <param name='account_qualification_group'>OBJECT(TEMP.c).group</param>
+              <param name='force_lock'>0</param>
+              <param name='boundary_group_id'>TEMP.my_boundary_group</param>
+            </call_proc_for_current_object>
+          </else>
+        </db_select>
+
+      </loop>
+    </index_select_keys>
+
+
+    <call_proc_for_current_object>
+      <name>'bg_unlock_boundary_groups'</name>
+      <param name='got_unlock'>TEMP.is_unlocked</param>
+    </call_proc_for_current_object>
+
+
+  </proc>
+
+</procs>

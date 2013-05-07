@@ -1,0 +1,45 @@
+<proc name="update_mvm_physical_cluster_nodes">
+
+  <db_execute>
+    <statement type="sql">
+      "
+      update MVM_PHYSICAL_CLUSTER_NODES set
+      port = $${GLOBAL.my_port},
+      pid = $${GLOBAL.pid},
+      status = 'run',
+      timeout_date = null,
+      status_date = getdate(),
+      starting_proc = $${GLOBAL.starting_proc},
+      assembly = $${GLOBAL.assembly},
+      is_x64 = $${GLOBAL.is_x64},
+      args = $${GLOBAL.args},
+      heartbeat_date = getdate()
+      where physical_node_id=$${GLOBAL.physical_node_id}
+      "
+    </statement>
+    <statement type="oracle">
+      "
+      update MVM_PHYSICAL_CLUSTER_NODES set
+      port = $${GLOBAL.my_port},
+      pid = $${GLOBAL.pid},
+      status = 'run',
+      timeout_date = null,
+      status_date = SYSDATE,
+      starting_proc = $${GLOBAL.starting_proc},
+      assembly = $${GLOBAL.assembly},
+      is_x64 = $${GLOBAL.is_x64},
+      args = $${GLOBAL.args},
+      heartbeat_date = SYSDATE
+      where physical_node_id=$${GLOBAL.physical_node_id}
+      "
+    </statement>
+    <num_rows>TEMP.num_rows</num_rows>
+  </db_execute>
+  <if>
+    <condition>TEMP.num_rows ne 1</condition>
+    <then>
+      <fatal>'Expecting to update 1 not ['~TEMP.num_rows~'] in MVM_PHYSICAL_CLUSTER_NODES'</fatal>
+    </then>
+  </if>
+</proc>
+

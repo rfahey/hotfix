@@ -1,0 +1,17 @@
+<proc name="generated_usage_mapping">
+  <if>
+    <condition>OBJECT.id_sess eq ''</condition>
+    <then>
+      <call_proc_for_current_object>
+        <name>'next_id_sess'</name>
+        <param name="batch_size">100</param>
+        <param name="id_sess">OBJECT.id_sess</param>
+      </call_proc_for_current_object>
+      <print>'Assigned new id_sess=['~OBJECT.id_sess~']'</print>
+    </then>
+    <else>
+      <print>'Reusing existing id_sess=['~OBJECT.id_sess~']'</print>
+    </else>
+  </if>
+
+</proc>

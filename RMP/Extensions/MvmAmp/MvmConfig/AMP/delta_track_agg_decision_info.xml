@@ -1,0 +1,182 @@
+<procs>
+
+  <proc name="determine_node_for_id_acc">
+    <param name="object"/>
+    <param name="pipe_cursor"/>
+
+    <call_proc_for_current_object>
+      <name>'determine_logical_node'</name>
+      <param name="id_acc">OBJECT(TEMP.object).id_acc</param>
+      <param name="logical_instance_id">OBJECT(TEMP.object).node_id</param>
+    </call_proc_for_current_object>
+
+    <if>
+      <condition>OBJECT(TEMP.object).node_id eq ''</condition>
+      <then>
+        <do>OBJECT(TEMP.object).node_id = random(1,2)</do>
+      </then>
+    </if>
+
+    <print>'Piping a row to node ['~OBJECT(TEMP.object).node_id~']'</print>
+    <pipe_row>TEMP.object</pipe_row>
+    
+  </proc>
+
+
+
+
+
+  <proc name="incorporate_new_decision_info_row">
+    <initialize>
+      <if>
+        <condition>GLOBAL.running_nrt_amp eq '1'</condition>
+        <then>
+          <define_data_routing>
+            <table_name>'AGG_DECISION_INFO'</table_name>
+            <routing_procedure>'determine_node_for_id_acc'</routing_procedure>
+            <integration_procedure>'incorporate_new_decision_info_row'</integration_procedure>
+            <operation_type_field>'operation_type'</operation_type_field>
+          </define_data_routing>
+        </then>
+      </if>
+    </initialize>
+
+    <if>
+      <condition>OBJECT.decision_unique_id ne ''</condition>
+      <then>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select distinct a.child_id_acc from AGG_AQG_MAP a
+            inner join agg_decision_info b on a.id_acc = b.id_acc and a.account_qualification_group = b.account_qualification_group
+            where b.decision_unique_id = $${OBJECT.decision_unique_id}"
+          </query>
+          <cursor>TEMP.aqg_csr</cursor>
+          <loop>
+            <print>'Inside query 1'</print>
+            <index_get>
+              <index>'CACHED_BUCKETS'</index>
+              <field name='bucket_object'>OBJECT.decision_unique_id</field>
+              <else>
+                <print>'inside ELSE 2'</print>
+                <db_select>
+                  <login_object>GLOBAL.target_login</login_object>
+                  <query>
+                    "SELECT * from agg_decision_info a
+                    where a.decision_unique_id = $${OBJECT.decision_unique_id}"
+                  </query>
+                  <cursor>TEMP.adi_csr</cursor>
+                  <then>
+                    <print>'inside query 3'</print>
+                    <if>
+                      <condition>OBJECT(TEMP.adi_csr).tier_responsiveness Eq 'realtime'</condition>
+                      <then>
+
+                        <spawn>
+                          <internal_type>'format_array_delta'</internal_type>
+                          <object_type>'TIER_BUCKET_INFO'</object_type>
+                          <input_object_id>OBJECT(TEMP.adi_csr).decision_unique_id</input_object_id>
+                          <object_id>TEMP.new_bucket_info_object</object_id>
+                          <inherit_mvm_format_string>OBJECT(TEMP.adi_csr).decision_object_id</inherit_mvm_format_string>
+                          <delta_tracking_support>'0'</delta_tracking_support>
+                          <delta_tracking_on>'0'</delta_tracking_on>
+                        </spawn>
+                        <inherit_object>
+                          <source>TEMP.adi_csr</source>
+                          <target>TEMP.new_bucket_info_object</target>
+                        </inherit_object>
+
+                        <print>'In here dumping object ['~OBJECT(TEMP.adi_csr).decision_unique_id~'] with ['~dump_object(OBJECT(TEMP.adi_csr).decision_unique_id)~']'</print>
+                        
+                        <index_insert>
+                          <index>'CACHED_BUCKETS'</index>
+                          <field name="bucket_object">TEMP.new_bucket_info_object</field>
+                        </index_insert>
+                        
+                        <db_select>
+                          <login_object>GLOBAL.target_login</login_object>
+                          <query type='sql'>
+                            "SELECT * from agg_decision_audit_trail
+                            where decision_unique_id = $${OBJECT.decision_unique_id} and getdate() > expiration_date
+                            order by start_date"
+                          </query>
+                          <query type='oracle'>
+                            "SELECT * from agg_decision_audit_trail
+                            where decision_unique_id = $${OBJECT.decision_unique_id} and sysdate > expiration_date
+                            order by start_date"
+                          </query>
+                          <cursor>TEMP.adat_csr</cursor>
+                          <loop>
+                            <spawn>
+                              <internal_type>'format_array_delta'</internal_type>
+                              <object_type>'TIER_BUCKET'</object_type>
+                              <object_id>TEMP.new_bucket_object</object_id>
+                              <delta_tracking_support>'1'</delta_tracking_support>
+                              <delta_tracking_on>'1'</delta_tracking_on>
+                            </spawn>
+                            <do>object_delta_set_state(TEMP.new_bucket_object,'SettingNew')</do>
+                            <object_delta_add_table>
+                              <object_id>TEMP.new_bucket_object</object_id>
+                              <table_name>'AGG_DECISION_AUDIT_TRAIL'</table_name>
+                            </object_delta_add_table>
+                            <inherit_object>
+                              <source>OBJECT.decision_object_id</source>
+                              <target>TEMP.new_bucket_object</target>
+                            </inherit_object>
+                            <inherit_object>
+                              <source>TEMP.adat_csr</source>
+                              <target>TEMP.new_bucket_object</target>
+                            </inherit_object>
+                            <index_insert>
+                              <index>'CACHED_BUCKET_SLICES'</index>
+                              <field name="bucket_object">OBJECT.decision_object_id</field>
+                              <field name="start_date">OBJECT(TEMP.new_bucket_object).start_date</field>
+                              <field name="bucket_object_slice">TEMP.new_bucket_object</field>
+                            </index_insert>
+                          </loop>
+                        </db_select>
+                      </then>
+                    </if>
+                  </then>
+                </db_select>
+              </else>
+            </index_get>
+            <index_insert>
+              <index>'CACHED_WORK_BY_ACC'</index>
+              <field name="id_acc">OBJECT(TEMP.aqg_csr).child_id_acc</field>
+              <field name="bucket_object">OBJECT.decision_unique_id</field>
+            </index_insert>
+          </loop>
+        </db_select>
+
+      </then>
+    </if>
+
+    <do>TEMP.old_decision_unique_id = object_delta_get_original(OBJECT.object_id,'decision_unique_id')</do>
+    <if>
+      <condition>TEMP.old_decision_unique_id ne '' and OBJECT.decision_unique_id ne TEMP.old_decision_unique_id</condition>
+      <then>
+        
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select distinct a.child_id_acc from AGG_AQG_MAP a
+            inner join agg_decision_info b on a.id_acc = b.id_acc and a.account_qualification_group = b.account_qualification_group
+            where b.decision_unique_id = $${TEMP.old_decision_unique_id}"
+          </query>
+          <cursor>TEMP.aqg_csr</cursor>
+          <loop>
+            <print>'JONAH TBD: This isn't going to work... This has to be a sorted list of decisions (according to priority) for the given id_acc and we need to be able to add/remove in-place'</print>
+            <index_remove>
+              <index>'CACHED_WORK_BY_ACC'</index>
+              <field name="id_acc">OBJECT(TEMP.aqg_csr).child_id_acc</field>
+              <field name="bucket_object">TEMP.old_decision_unique_id</field>
+            </index_remove>
+          </loop>
+        </db_select>
+      </then>
+    </if>
+  </proc>
+
+</procs>
+

@@ -1,0 +1,166 @@
+  <!-- ==================================================================== -->
+  <!-- Process a usage event and a decision, determine...                   -->
+  <!--                                                                      -->
+  <!-- Input:                                                               -->
+  <!--   bucket_object  - current instantiated decision                     -->
+  <!--   usage_object   - object containing a combination of t_acc_usage,   -->
+<!--                    t_pv_*, and fields created by AMP                 -->
+  <!--                                                                      -->
+  <!-- Results:                                                             -->
+  <!-- ==================================================================== -->
+
+<procs>
+  <proc name="calc_percent_eligibility">
+    <param name='bucket_object'/>
+    <param name='usage_object'/>
+
+    <!-- <debug>'tierStart='~OBJECT(TEMP.bucket_object).tier_start~', tierEnd='~OBJECT(TEMP.bucket_object).tier_end</debug>
+    <debug>'sumBeforeThisUsageEvent='~OBJECT(TEMP.bucket_object).last_qualified_total~', sumAfterThisUsageEvent='~OBJECT(TEMP.bucket_object).qualified_total~</debug>
+    <debug>'percent remaining = ['~OBJECT(TEMP.usage_object).percent_remaining~']'</debug> -->
+
+
+    <if>
+      <condition>
+        (OBJECT(TEMP.bucket_object).tier_start LT
+        (OBJECT(TEMP.bucket_object).qualified_total==''?'0':OBJECT(TEMP.bucket_object).qualified_total) or OBJECT(TEMP.bucket_object).tier_start eq '0')
+        and (OBJECT(TEMP.bucket_object).tier_end eq '' or
+        OBJECT(TEMP.bucket_object).tier_end GTE
+        (OBJECT(TEMP.bucket_object).last_qualified_total==''?'0':OBJECT(TEMP.bucket_object).last_qualified_total)
+        )
+      </condition>
+      <then>
+
+        <do>OBJECT(TEMP.bucket_object).qualified_total = (OBJECT(TEMP.bucket_object).qualified_total==''?'0':OBJECT(TEMP.bucket_object).qualified_total)</do>
+        <do>OBJECT(TEMP.bucket_object).last_qualified_total = (OBJECT(TEMP.bucket_object).last_qualified_total==''?'0':OBJECT(TEMP.bucket_object).last_qualified_total)</do>
+        <c>This bucket applies to this event!</c>
+        <do>TEMP.upper_bound = (OBJECT(TEMP.bucket_object).tier_end LT OBJECT(TEMP.bucket_object).qualified_total?OBJECT(TEMP.bucket_object).tier_end:OBJECT(TEMP.bucket_object).qualified_total)</do>
+        <do>TEMP.lower_bound = (OBJECT(TEMP.bucket_object).tier_start LT OBJECT(TEMP.bucket_object).last_qualified_total?OBJECT(TEMP.bucket_object).last_qualified_total:(OBJECT(TEMP.bucket_object).tier_start))</do>
+        <if>
+          <condition>TEMP.upper_bound LT TEMP.lower_bound</condition>
+          <then>
+            <do>TEMP.upper_bound = TEMP.lower_bound</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).qualified_total == OBJECT(TEMP.bucket_object).last_qualified_total</condition>
+          <then>
+            <do>OBJECT(TEMP.usage_object).percent_eligible = '1'</do>
+          </then>
+          <else>
+            <!--<debug>'Upper bound is ['~TEMP.upper_bound~'] lower bound is ['~TEMP.lower_bound~']'</debug>-->
+            <!-- <do>OBJECT(TEMP.usage_object).percent_eligible = (TEMP.upper_bound - TEMP.lower_bound)/(OBJECT(TEMP.bucket_object).qualified_total - OBJECT(TEMP.bucket_object).last_qualified_total)</do> -->
+            <!--<print>'Checking for units in calcpercentelig'</print>-->
+            <if>
+            	<condition>OBJECT(TEMP.bucket_object).tier_metric Eq 'units'</condition>
+            	<then>
+                <!--<print>'Found units in calcpercentelig'</print>-->
+                <do>TEMP.converted_units = (OBJECT(TEMP.usage_object).master_units eq ''?'0':OBJECT(TEMP.usage_object).master_units)</do>
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).tier_uom ne ''</condition>
+                  <then>
+                    <if>
+                      <condition>OBJECT(TEMP.usage_object).master_uom ne ''</condition>
+                      <then>
+                        <if>
+                          <condition>OBJECT(TEMP.bucket_object).tier_uom Ne OBJECT(TEMP.usage_object).master_uom and TEMP.converted_units ne '0'</condition>
+                          <then>
+                            <c>Perform uom conversion</c>
+                            <call_proc_for_current_object>
+                              <name>'convert_uom_units'</name>
+                              <param name='source_field'>TEMP.converted_units</param>
+                              <param name='source_currency'>OBJECT(TEMP.usage_object).master_uom</param>
+                              <param name='target_field'>TEMP.converted_units</param>
+                              <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_uom</param>
+                            </call_proc_for_current_object>
+            	</then>
+                          <else>
+                            <c>Skip uom conversion because currencies are the same</c>
+                          </else>
+            </if>
+                      </then>
+                      <else>
+                        <print>'Attempting to convert uom for calc_percent_eligibility but no uom exists on the usage event!'</print>
+                      </else>
+                    </if>
+                  </then>
+                </if>
+            <if>
+                  <condition>TEMP.converted_units ne '0'</condition>
+                  <then>
+                    <do>OBJECT(TEMP.usage_object).percent_eligible = (TEMP.upper_bound - TEMP.lower_bound)/(TEMP.converted_units)</do>
+                  </then>
+                  <else>
+                    <do>OBJECT(TEMP.usage_object).percent_eligible = 0</do>
+                  </else>
+                </if>
+              </then>
+            </if>
+            <if>
+	        <condition>OBJECT(TEMP.bucket_object).tier_metric Eq 'events'</condition>
+	        <then>
+	          <do>OBJECT(TEMP.usage_object).percent_eligible = (TEMP.upper_bound - TEMP.lower_bound)</do>
+	        </then>
+            </if>
+            <if>
+	        <condition>OBJECT(TEMP.bucket_object).tier_metric Eq 'amount'</condition>
+	        <then>
+                <do>TEMP.converted_amount = OBJECT(TEMP.usage_object).master_amount</do>
+                <!--<print>'Master amount = ['~TEMP.converted_amount~']'</print>-->
+                <if>
+                  <condition>OBJECT(TEMP.bucket_object).tier_currency ne ''</condition>
+                  <then>
+                    <if>
+                      <condition>OBJECT(TEMP.usage_object).master_currency ne ''</condition>
+                      <then>
+                        <if>
+                          <condition>OBJECT(TEMP.bucket_object).tier_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                          <then>
+                            <c>Perform currency conversion</c>
+                            <call_proc_for_current_object>
+                              <name>'convert_currency_amount'</name>
+                              <param name='source_field'>TEMP.converted_amount</param>
+                              <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                              <param name='target_field'>TEMP.converted_amount</param>
+                              <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                              <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                            </call_proc_for_current_object>
+	        </then>
+                          <else>
+                            <c>Skip currency conversion because currencies are the same</c>
+                          </else>
+            </if>	
+                      </then>
+                      <else>
+                        <print>'Attempting to convert currency for percent_eligibility but no currency exists on the usage event!'</print>
+          </else>
+        </if>
+                  </then>
+                </if>
+        <if>
+                  <condition>TEMP.converted_amount ne '0'</condition>
+                  <then>
+                    <do>OBJECT(TEMP.usage_object).percent_eligible = (TEMP.upper_bound - TEMP.lower_bound)/(TEMP.converted_amount)</do>
+                  </then>
+                  <else>
+                    <do>OBJECT(TEMP.usage_object).percent_eligible = 0</do>
+                  </else>
+                </if>
+              </then>
+            </if>
+          </else>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.usage_object).percent_remaining LT OBJECT(TEMP.usage_object).percent_eligible</condition>
+          <then>
+            <do>OBJECT(TEMP.usage_object).percent_eligible = OBJECT(TEMP.usage_object).percent_remaining</do>
+          </then>
+        </if>
+      </then>
+      <else>
+        <do>OBJECT(TEMP.usage_object).percent_eligible = 0</do>
+      </else>
+    </if>
+    <!--<debug>'Percent eligible is ['~OBJECT(TEMP.usage_object).percent_eligible~']'</debug>-->
+  </proc>
+
+</procs>

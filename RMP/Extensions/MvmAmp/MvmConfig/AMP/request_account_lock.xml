@@ -1,0 +1,44 @@
+<procs>
+  <proc name="request_account_lock">
+    <param name='id_acc'/>
+    <param name='lock_granted' mode='out'/>
+
+    <!--<print>'Starting request_account_lock for id_acc ['~TEMP.id_acc~']'</print>-->
+    <do>TEMP.lock_granted = 'notset'</do>
+    <remote_queue_proc>
+      <name>'check_account_lock'</name>
+      <process_id>GLOBAL.master_id</process_id>
+      <batch_id>TEMP.my_batch_id</batch_id>
+      <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+      <param name='id_acc'>TEMP.id_acc</param>
+    </remote_queue_proc>
+    <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+
+    <batch_output_select>
+      <batch_id>TEMP.my_batch_id</batch_id>
+      <cursor>TEMP.cursor_junk</cursor>
+      <loop>
+        <do>TEMP.lock_granted = OBJECT(TEMP.cursor_junk).got_lock</do>
+      </loop>
+    </batch_output_select>
+    
+    <!--<print>'Got lock = ['~TEMP.lock_granted~']'</print>-->
+  </proc>
+
+  <proc name="request_release_account_lock">
+    <param name='id_acc'/>
+
+    <!--<print>'Starting request_release_account_lock'</print>-->
+    <remote_queue_proc>
+      <name>'release_account_lock'</name>
+      <process_id>GLOBAL.master_id</process_id>
+      <batch_id>TEMP.my_batch_id</batch_id>
+      <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+      <param name='id_acc'>TEMP.id_acc</param>
+    </remote_queue_proc>
+    <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+
+    <!--<print>'Ending request_release_account_lock'</print>-->
+  </proc>
+
+</procs>

@@ -1,0 +1,5 @@
+<proc name='call_proc_sync_complete' work_type='finally'>
+  <!--<print>'START call_proc_sync_complete'</print>-->
+  <do>CallProcSyncCompleteEventSet()</do>
+  <!--<print>'END call_proc_sync_complete'</print>-->
+</proc>

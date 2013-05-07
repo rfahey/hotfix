@@ -1,0 +1,126 @@
+<proc name="bg_lock_boundary_group">
+  <param name='boundary_group_id'/>
+  <param name='got_lock' mode='out'/>
+
+  <initialize>
+    <define_memory_index>
+      <index>'BOUNDARY_GROUP_LOCKS'</index>
+      <key_field>'boundary_group_id'</key_field>
+      <field>'lock_guid'</field>
+    </define_memory_index>
+  </initialize>
+
+  <print>'Top of bg_lock_boundary_group has id of ['~TEMP.boundary_group_id~'] and got lock of ['~TEMP.got_lock~']'</print>
+  <do>TEMP.need_to_relock = 0</do>
+  <index_select_keys>
+    <index>'BOUNDARY_GROUP_LOCKS'</index>
+    <cursor>TEMP.bg_locks</cursor>
+    <loop>
+      <index_select>
+        <index>'BOUNDARY_GROUP_LOCKS'</index>
+        <field name="boundary_group_id">OBJECT(TEMP.bg_locks).boundary_group_id</field>
+        <cursor>TEMP.bg_lock_row</cursor>
+        <then>
+          <if>
+            <condition>OBJECT(TEMP.bg_lock_row).lock_guid ne '' and TEMP.boundary_group_id LT OBJECT(TEMP.bg_locks).boundary_group_id</condition>
+            <then>
+              <print>'I need to relock because lock guid ['~OBJECT(TEMP.bg_lock_row).lock_guid~'] exists on bg ['~OBJECT(TEMP.bg_locks).boundary_group_id~']'</print>
+              <do>TEMP.need_to_relock = 1</do>
+            </then>
+          </if>
+        </then>
+      </index_select>
+    </loop>
+  </index_select_keys>
+
+  <do>TEMP.got_lock = 0</do>
+  <index_select>
+    <index>'BOUNDARY_GROUP_LOCKS'</index>
+    <field name="boundary_group_id">TEMP.boundary_group_id</field>
+    <cursor>TEMP.bg_lock_temp</cursor>
+    <then>
+      <if>
+        <condition>OBJECT(TEMP.bg_lock_temp).lock_guid ne ''</condition>
+        <then>
+          <do>TEMP.need_to_relock = 0</do>
+          <do>TEMP.got_lock = 1</do>
+        </then>
+      </if>
+    </then>
+  </index_select>
+
+  <if>
+    <condition>TEMP.need_to_relock eq 1</condition>
+    <then>
+      <index_insert>
+        <index>'BOUNDARY_GROUP_LOCKS'</index>
+        <field name="boundary_group_id">TEMP.boundary_group_id</field>
+        <field name="lock_guid">''</field>
+      </index_insert>
+      <call_proc_for_current_object>
+        <name>'bg_relock_boundary_groups'</name>
+        <param name='got_lock'>TEMP.got_lock</param>
+      </call_proc_for_current_object>
+    </then>
+    <else>
+      <if>
+        <condition>TEMP.got_lock ne 1</condition>
+        <then>
+          <get_guid>TEMP.my_lock_guid</get_guid>
+          <do>TEMP.got_lock = 0</do>
+          <while>
+            <condition>TEMP.got_lock eq 0</condition>
+            <loop>
+              <db_execute>
+                <login_object>GLOBAL.target_login</login_object>
+                <statement type="sql">
+                  "update agg_boundary_groups set lock_date = getdate(), lock_guid = $${TEMP.my_lock_guid} where boundary_group_id = $${TEMP.boundary_group_id}
+                  and (lock_guid IS NULL or (getdate() - 1.0/1440.0) > lock_date)"
+                </statement>
+                <statement type="oracle">
+                  "update agg_boundary_groups set lock_date = sysdate, lock_guid = $${TEMP.my_lock_guid} where boundary_group_id = $${TEMP.boundary_group_id}
+                  and (lock_guid IS NULL or (sysdate - 1.0/1440.0) > lock_date)"
+                </statement>
+                <num_rows>TEMP.num_rows</num_rows>
+              </db_execute>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from agg_boundary_groups where boundary_group_id = $${TEMP.boundary_group_id}"
+                </query>
+                <cursor>TEMP.bg_csr</cursor>
+                <then>
+                  <if>
+                    <condition>OBJECT(TEMP.bg_csr).lock_guid eq TEMP.my_lock_guid</condition>
+                    <then>
+                      <do>TEMP.got_lock = 1</do>
+                      <index_remove>
+                        <index>'BOUNDARY_GROUP_LOCKS'</index>
+                        <field name="boundary_group_id">TEMP.boundary_group_id</field>
+                      </index_remove>
+                      <index_insert>
+                        <index>'BOUNDARY_GROUP_LOCKS'</index>
+                        <field name="boundary_group_id">TEMP.boundary_group_id</field>
+                        <field name="lock_guid">TEMP.my_lock_guid</field>
+                      </index_insert>
+                    </then>
+                    <else>
+                      <sleep>50</sleep>
+                    </else>
+                  </if>
+                </then>
+                <else>
+                  <do>TEMP.got_lock = '-1'</do>
+                </else>
+              </db_select>
+            </loop>
+          </while>
+        </then>
+      </if>
+
+    </else>
+  </if>
+
+
+
+</proc>

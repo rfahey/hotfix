@@ -1,0 +1,140 @@
+<procs>
+  <proc name='custom_incr_push_usage'>
+    <param name='bucket_object'/>
+    <param name='usage_object'/>
+
+    <run_once>
+      <define_memory_index>
+        <index>'NEXT_INTERVAL'</index>
+        <key_field>'id_interval'</key_field>
+        <field>'next_interval'</field>
+      </define_memory_index>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select a.id_interval, b.id_interval next_interval from t_usage_interval a inner join t_usage_interval b on a.id_usage_cycle = b.id_usage_cycle and (a.dt_end + 1/86400) = b.dt_start and b.tx_interval_status != 'H'"
+        </query>
+        <query type="sql">
+          "select a.id_interval, b.id_interval next_interval from t_usage_interval a inner join t_usage_interval b on a.id_usage_cycle = b.id_usage_cycle and dateadd(ss,1,a.dt_end) = b.dt_start and b.tx_interval_status != 'H'"
+        </query>
+        <cursor>TEMP.interval_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'NEXT_INTERVAL'</index>
+            <field name="id_interval">OBJECT(TEMP.interval_csr).id_interval</field>
+            <field name="next_interval">OBJECT(TEMP.interval_csr).next_interval</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <define_memory_index>
+        <index>'INTERVALS_BETWEEN'</index>
+        <key_field>'source_id_interval'</key_field>
+        <key_field>'target_id_interval'</key_field>
+        <field>'intervals_between'</field>
+      </define_memory_index>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select a.id_interval source_id_interval, b.id_interval target_id_interval, count(*) intervals_between from t_usage_interval a
+          inner join t_usage_interval b on a.id_usage_cycle = b.id_usage_cycle and b.dt_start > a.dt_start and b.tx_interval_status != 'H'
+          inner join t_usage_interval c on a.id_usage_cycle = c.id_usage_cycle and b.dt_end >= c.dt_end and c.dt_start >= a.dt_end
+          group by a.id_interval, b.id_interval"
+        </query>
+        <cursor>TEMP.interval_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'INTERVALS_BETWEEN'</index>
+            <field name="source_id_interval">OBJECT(TEMP.interval_csr).source_id_interval</field>
+            <field name="target_id_interval">OBJECT(TEMP.interval_csr).target_id_interval</field>
+            <field name="intervals_between">OBJECT(TEMP.interval_csr).intervals_between</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+
+    </run_once>
+
+    <if>
+      <condition>OBJECT(TEMP.usage_object).orig_usage_interval eq ''</condition>
+      <then>
+        <do>TEMP.orig_usage_interval = OBJECT(TEMP.usage_object).id_usage_interval</do>
+      </then>
+      <else>
+        <do>TEMP.orig_usage_interval = OBJECT(TEMP.usage_object).orig_usage_interval</do>
+      </else>
+    </if>
+
+    <index_select>
+      <index>'INTERVALS_BETWEEN'</index>
+      <field name="source_id_interval">TEMP.orig_usage_interval</field>
+      <field name="target_id_interval">OBJECT(TEMP.next_interval_csr).id_usage_interval</field>
+      <cursor>TEMP.interval_gap_csr</cursor>
+      <then>
+        <if>
+          <condition>OBJECT(TEMP.interval_gap_csr).intervals_between GTE OBJECT(TEMP.bucket_object).max_intervals_to_push</condition>
+          <then>
+            <do>OBJECT(TEMP.bucket_object).skip_work = '1'</do>
+          </then>
+        </if>
+      </then>
+      <else>
+        <if>
+          <condition>0 GTE OBJECT(TEMP.bucket_object).max_intervals_to_push</condition>
+          <then>
+            <do>OBJECT(TEMP.bucket_object).skip_work = '1'</do>
+          </then>
+        </if>
+      </else>
+    </index_select>
+
+  </proc>
+
+  <proc name='usage_mod_push_usage'>
+    <param name='bucket_object'/>
+    <param name='usage_object'/>
+
+
+
+    <index_select>
+      <index>'NEXT_INTERVAL'</index>
+      <field name="id_interval">OBJECT(TEMP.usage_object).id_usage_interval</field>
+      <cursor>TEMP.next_interval_csr</cursor>
+      <then>
+        <if>
+          <condition>OBJECT(TEMP.usage_object).orig_usage_interval eq ''</condition>
+          <then>
+            <do>TEMP.orig_usage_interval = OBJECT(TEMP.usage_object).id_usage_interval</do>
+          </then>
+          <else>
+            <do>TEMP.orig_usage_interval = OBJECT(TEMP.usage_object).orig_usage_interval</do>
+          </else>
+        </if>
+		<print>'Trying to push usage across intervals!'</print>
+        <index_select>
+          <index>'INTERVALS_BETWEEN'</index>
+          <field name="source_id_interval">TEMP.orig_usage_interval</field>
+          <field name="target_id_interval">OBJECT(TEMP.next_interval_csr).next_interval</field>
+          <cursor>TEMP.interval_gap_csr</cursor>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.interval_gap_csr).intervals_between GT OBJECT(TEMP.bucket_object).max_intervals_to_push_per_event</condition>
+              <else>
+                <do>OBJECT(TEMP.usage_object).id_usage_interval = OBJECT(TEMP.next_interval_csr).next_interval</do>
+              </else>
+            </if>
+          </then>
+          <else>
+            <do>OBJECT(TEMP.usage_object).id_usage_interval = OBJECT(TEMP.next_interval_csr).next_interval</do>
+          </else>
+        </index_select>
+      </then>
+      <else>
+        <print>'Attempting to push the interval for ['~OBJECT(TEMP.usage_object).id_usage_interval~'] but no open interval was found!'</print>
+      </else>
+    </index_select>
+  </proc>
+
+</procs>

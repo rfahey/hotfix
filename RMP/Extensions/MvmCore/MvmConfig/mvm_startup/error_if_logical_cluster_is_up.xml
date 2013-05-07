@@ -1,0 +1,25 @@
+<proc name="error_if_logical_cluster_is_up">
+  
+  <!--<do>TEMP.error_count=0</do>
+  <db_select>
+    <login_object>GLOBAL.target_login</login_object>
+    <query type="sql">
+      "select
+      a.*
+      from mvm_cluster_map a
+      where mvm_logical_cluster_name =$${OBJECT.logical_cluster} and status not in ('shutdown')"
+    </query>
+    <cursor>TEMP.csr</cursor>
+    <loop>
+      <warning>'CANNOT LAUNCH NODE THAT IS NOT SHUTDOWN:'~dump_object(TEMP.csr)</warning>
+      <do>TEMP.error_count+=1</do>
+    </loop>
+  </db_select>
+  <if>
+    <condition>TEMP.error_count GT 0</condition>
+    <then>
+      <fatal>'Cannot start logical cluster where there are '~TEMP.error~' logical nodes still up'</fatal>
+    </then>
+  </if>-->
+  
+</proc>

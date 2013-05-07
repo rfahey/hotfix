@@ -1,0 +1,18 @@
+<proc name="dump_mvm_physical_cluster_nodes">
+  <info switch="log_startup">'MVM_PHYSICAL_CLUSTER_NODES:'</info>
+  <index_select_keys>
+    <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+    <order_by type="string">OBJECT.physical_node_id</order_by>
+    <cursor>TEMP.keys</cursor>
+    <loop>
+      <index_select>
+        <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+        <field name="physical_node_id">OBJECT(TEMP.keys).physical_node_id</field>
+        <cursor>TEMP.csr</cursor>
+        <loop>
+          <info switch="log_startup">dump_object(TEMP.csr)</info>
+        </loop>
+      </index_select>
+    </loop>
+  </index_select_keys>
+</proc>

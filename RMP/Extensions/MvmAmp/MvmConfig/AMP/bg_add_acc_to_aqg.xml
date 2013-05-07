@@ -1,0 +1,57 @@
+<proc name="bg_add_acc_to_aqg">
+  <param name='child_id_acc'/>
+  <param name='id_acc'/>
+  <param name='account_qualification_group'/>
+  <param name='boundary_group_id' mode='out'/>
+
+  <do>TEMP.incremented_acc = 0</do>
+  <do>TEMP.created_boundary_group = 0</do>
+  <do>TEMP.boundary_group_id = ''</do>
+  <call_proc_for_current_object>
+    <name>'bg_add_aqg_to_boundary_group'</name>
+    <param name='id_acc'>TEMP.id_acc</param>
+    <param name='account_qualification_group'>TEMP.account_qualification_group</param>
+    <param name='force_lock'>1</param>
+    <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+  </call_proc_for_current_object>
+
+  <if>
+    <condition>TEMP.boundary_group_id ne ''</condition>
+    <then>
+      <print>'Firing the update to count!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>
+      <db_execute>
+        <login_object>GLOBAL.target_login</login_object>
+        <statement type='sql'>
+          "insert into agg_boundary_group_acc_map (boundary_group_id, id_acc, group_counter) select $${TEMP.boundary_group_id}, $${TEMP.child_id_acc}, 1
+          where 0 in (select count(*) from agg_boundary_group_acc_map where boundary_group_id = $${TEMP.boundary_group_id} and id_acc = $${TEMP.child_id_acc})"
+        </statement>
+        <statement type='oracle'>
+          "insert into agg_boundary_group_acc_map (boundary_group_id, id_acc, group_counter) select $${TEMP.boundary_group_id}, $${TEMP.child_id_acc}, 1 from dual
+          where 0 in (select count(*) from agg_boundary_group_acc_map where boundary_group_id = $${TEMP.boundary_group_id} and id_acc = $${TEMP.child_id_acc})"
+        </statement>
+        <num_rows>TEMP.num_rows</num_rows>
+      </db_execute>
+      <if>
+        <condition>TEMP.num_rows eq 0</condition>
+        <then>
+          <db_execute>
+            <login_object>GLOBAL.target_login</login_object>
+            <statement>
+              "update agg_boundary_group_acc_map set group_counter = (
+              select count(*) from agg_boundary_group_aqg_map a
+              inner join agg_aqg_map b on a.id_acc = b.id_acc and a.account_qualification_group = b.account_qualification_group and b.child_id_acc = $${TEMP.child_id_acc}
+              where a.boundary_group_id = $${TEMP.boundary_group_id})
+              where agg_boundary_group_acc_map.id_acc = $${TEMP.child_id_acc} and agg_boundary_group_acc_map.boundary_group_id = $${TEMP.boundary_group_id}"
+            </statement>
+            <num_rows>TEMP.num_rows</num_rows>
+          </db_execute>
+        </then>
+      </if>
+      <call_proc_for_current_object>
+        <name>'bg_manage_boundary_group_overlaps'</name>
+        <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+      </call_proc_for_current_object>
+    </then>
+  </if>
+
+</proc>

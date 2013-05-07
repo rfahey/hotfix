@@ -1,0 +1,122 @@
+<proc name="id_acc_is_complete">
+  <param name="id_acc"/>
+  <param name="is_complete" mode="out"/>
+
+  <initialize>
+    <define_memory_index>
+      <index>'ACCOUNT_IS_COMPLETE_FLAGS'</index>
+      <key_field>'id_acc'</key_field>
+      <field>'is_complete'</field>
+    </define_memory_index>
+  </initialize>
+
+  <index_select>
+    <index>'ACCOUNT_IS_COMPLETE_FLAGS'</index>
+    <field name="id_acc">TEMP.id_acc</field>
+    <cursor>TEMP.flag_csr</cursor>
+    <then>
+      <do>TEMP.is_complete = OBJECT(TEMP.flag_csr).is_complete</do>
+    </then>
+    <else>
+      <do>TEMP.is_complete = 1</do>
+      <do>TEMP.might_not_be_complete = 0</do>
+      <do>TEMP.highest_priority = '-9999999999'</do>
+      <do>TEMP.lowest_priority = '9999999999'</do>
+      <index_select>
+        <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+        <field name="id_acc">TEMP.id_acc</field>
+        <cursor>TEMP.acc_agg_buckets</cursor>
+        <loop>
+          <print>'Here I have bucket ['~OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).decision_unique_id~']'</print>
+          <index_select>
+            <index>'CURRENT_COMPLETED_WORK'</index>
+            <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+            <cursor>TEMP.completed_work</cursor>
+            <then>
+              <if>
+                <condition>OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).tier_priority GT TEMP.highest_priority</condition>
+                <then>
+                  <do>TEMP.highest_priority = OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).tier_priority</do>
+                  <print>'My highest priority is ['~TEMP.highest_priority~']'</print>
+                </then>
+              </if>
+              <if>
+                <condition>OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).tier_priority LT TEMP.lowest_priority</condition>
+                <then>
+                  <do>TEMP.lowest_priority = OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).tier_priority</do>
+                  <print>'My lowest priority is ['~TEMP.highest_priority~']'</print>
+                </then>
+              </if>
+            </then>
+          </index_select>
+        </loop>
+      </index_select>
+
+      <index_select>
+        <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+        <field name="id_acc">TEMP.id_acc</field>
+        <cursor>TEMP.acc_agg_buckets</cursor>
+        <loop>
+          <print>'My bucket is ['~OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).decision_unique_id~'] priority ['~OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).tier_priority~']'</print>
+          <if>
+            <condition>TEMP.highest_priority LT OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).tier_priority</condition>
+            <then>
+              <index_select>
+                <index>'CURRENT_COMPLETED_WORK'</index>
+                <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+                <cursor>TEMP.completed_work</cursor>
+                <else>
+                  <do>TEMP.is_complete = '0'</do>
+                </else>
+              </index_select>
+            </then>
+          </if>
+          <if>
+            <condition>TEMP.highest_priority EQ OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).tier_priority and TEMP.lowest_priority NE TEMP.highest_priority</condition>
+            <then>
+              <index_select>
+                <index>'CURRENT_COMPLETED_WORK'</index>
+                <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+                <cursor>TEMP.completed_work</cursor>
+                <else>
+                  <do>TEMP.is_complete = '0'</do>
+                </else>
+              </index_select>
+            </then>
+          </if>
+          <if>
+            <condition>TEMP.highest_priority EQ OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).tier_priority and TEMP.lowest_priority EQ TEMP.highest_priority</condition>
+            <then>
+              <index_select>
+                <index>'CURRENT_COMPLETED_WORK'</index>
+                <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+                <cursor>TEMP.completed_work</cursor>
+                <else>
+                  <do>TEMP.might_not_be_complete = '1'</do>
+                </else>
+              </index_select>
+            </then>
+          </if>
+        </loop>
+      </index_select>
+
+      <print>'Is my account ['~TEMP.id_acc~'] complete? ['~TEMP.is_complete~']'</print>
+
+      <if>
+        <condition>TEMP.is_complete EQ '1' and TEMP.might_not_be_complete EQ '1'</condition>
+        <then>
+          <print>'YOU SHOULD NOT SEE THIS! It means we had multiple decisions at the lowest possible priority for a given account that could not be processed on the same usage hook pass'</print>
+          <!--<print>'Before that, we should ensure that we have only processed a single priority on the entire pass otherwise we can ignore this ambiguity'</print>-->
+        </then>
+      </if>
+
+      <index_insert>
+        <index>'ACCOUNT_IS_COMPLETE_FLAGS'</index>
+        <field name="id_acc">TEMP.id_acc</field>
+        <field name="is_complete">TEMP.is_complete</field>
+      </index_insert>
+    </else>
+  </index_select>
+  
+</proc>
+

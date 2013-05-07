@@ -1,0 +1,281 @@
+<procs>
+  <proc name='generate_mapping_chain_procs'>
+    <initialize>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select distinct * from agg_mapping_tables"
+        </query>
+        <cursor>TEMP.mapping_names</cursor>
+        <loop>
+          <do>
+            TEMP.my_mn_proc="<![CDATA[
+<proc name='perform_map_"~OBJECT(TEMP.mapping_names).mapping_name~"'>
+            ]]>"
+          </do>
+          <if>
+            <condition>OBJECT(TEMP.mapping_names).is_cached eq '1'</condition>
+            <then>
+              <do>
+                TEMP.my_mn_proc~="<![CDATA[
+  <run_once>
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query>
+        'select * from "~OBJECT(TEMP.mapping_names).table_name~"'
+      </query>
+      <cursor>TEMP.table_cache_csr</cursor>
+      <run>
+        <create_memory_index_from_cursor>
+          <index>'AGG_MAP_"~OBJECT(TEMP.mapping_names).mapping_name~"'</index>
+          <cursor>TEMP.table_cache_csr</cursor>]]>"
+              </do>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from agg_mapping_table_rules where mapping_name = $${OBJECT(TEMP.mapping_names).mapping_name} and is_key = 1"
+                </query>
+                <cursor>TEMP.mapping_keys</cursor>
+                <loop>
+                  <do>
+                    TEMP.my_mn_proc~="<![CDATA[
+          <key_field>'"~OBJECT(TEMP.mapping_keys).table_field_name~"'</key_field>]]>"
+                  </do>
+                </loop>
+              </db_select>
+              <do>
+                TEMP.my_mn_proc~="<![CDATA[
+        </create_memory_index_from_cursor>
+      </run>
+    </db_select>
+  </run_once>
+            ]]>"
+              </do>
+              <do>
+                TEMP.my_mn_proc~="<![CDATA[ 
+  <index_select>
+    <index>'AGG_MAP_"~OBJECT(TEMP.mapping_names).mapping_name~"'</index>]]>"
+              </do>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from agg_mapping_table_rules where mapping_name = $${OBJECT(TEMP.mapping_names).mapping_name} and is_key = 1 and object_field_name IS NOT NULL"
+                </query>
+                <cursor>TEMP.mapping_keys</cursor>
+                <loop>
+                  <do>
+                    TEMP.my_mn_proc~="<![CDATA[
+    <field name='"~OBJECT(TEMP.mapping_keys).table_field_name~"'>OBJECT."~OBJECT(TEMP.mapping_keys).object_field_name~"</field>]]>"
+                  </do>
+                </loop>
+              </db_select>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from agg_mapping_table_rules where mapping_name = $${OBJECT(TEMP.mapping_names).mapping_name} and is_key = 1 and object_field_name IS NULL"
+                </query>
+                <cursor>TEMP.mapping_keys</cursor>
+                <loop>
+                  <do>
+                    TEMP.my_mn_proc~="<![CDATA[
+    <field name='"~OBJECT(TEMP.mapping_keys).table_field_name~"'>"~OBJECT(TEMP.mapping_keys).population_string~"</field>]]>"
+                  </do>
+                </loop>
+              </db_select>
+              <do>
+                TEMP.my_mn_proc~="<![CDATA[
+    <cursor>TEMP.mapping_cursor</cursor>
+    <then>]]>"
+              </do>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from agg_mapping_table_rules where mapping_name = $${OBJECT(TEMP.mapping_names).mapping_name} and is_key = 0 and table_field_name IS NOT NULL"
+                </query>
+                <cursor>TEMP.mapping_values</cursor>
+                <loop>
+                  <do>
+                    TEMP.my_mn_proc~="<![CDATA[
+      <do>OBJECT."~OBJECT(TEMP.mapping_values).object_field_name~" = OBJECT(TEMP.mapping_cursor)."~OBJECT(TEMP.mapping_values).table_field_name~"</do>]]>"
+                  </do>
+                </loop>
+              </db_select>
+
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from agg_mapping_table_rules where mapping_name = $${OBJECT(TEMP.mapping_names).mapping_name} and is_key = 0 and (population_string IS NOT NULL or procedure_name IS NOT NULL) order by rule_order"
+                </query>
+                <cursor>TEMP.mapping_values</cursor>
+                <loop>
+                  <if>
+                    <condition>OBJECT(TEMP.mapping_values).population_string ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_mn_proc~="<![CDATA[
+      <do>OBJECT."~OBJECT(TEMP.mapping_values).object_field_name~" = "~OBJECT(TEMP.mapping_values).population_string~"</do>]]>"
+                      </do>
+                    </then>
+                  </if>
+                  <if>
+                    <condition>OBJECT(TEMP.mapping_values).procedure_name ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_mn_proc~="<![CDATA[
+      <call_proc_for_current_object>
+        <name>'"~OBJECT(TEMP.mapping_values).procedure_name~"'</name>
+      </call_proc_for_current_object>]]>"
+                      </do>
+                    </then>
+                  </if>
+
+                </loop>
+              </db_select>
+              <do>
+                TEMP.my_mn_proc~="<![CDATA[
+    </then>
+  </index_select>]]>"
+              </do>
+            </then>
+            <else>
+              <do>
+                TEMP.my_mn_proc~="<![CDATA[
+  <db_select>
+    <login_object>GLOBAL.target_login</login_object>
+    <query>
+      'select * from "~OBJECT(TEMP.mapping_names).table_name~" where 1 = 1 ]]>"
+              </do>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from agg_mapping_table_rules where mapping_name = $${OBJECT(TEMP.mapping_names).mapping_name} and is_key = 1 and object_field_name IS NOT NULL"
+                </query>
+                <cursor>TEMP.mapping_keys</cursor>
+                <loop>
+                  <do>
+                    TEMP.my_mn_proc~="<![CDATA[ and "~OBJECT(TEMP.mapping_keys).table_field_name~" = $${OBJECT."~OBJECT(TEMP.mapping_keys).object_field_name~"} ]]>"
+                  </do>
+                </loop>
+              </db_select>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from agg_mapping_table_rules where mapping_name = $${OBJECT(TEMP.mapping_names).mapping_name} and is_key = 1 and object_field_name IS NULL"
+                </query>
+                <cursor>TEMP.mapping_keys</cursor>
+                <loop>
+                  <do>
+                    TEMP.my_mn_proc~="<![CDATA[ and "~OBJECT(TEMP.mapping_keys).table_field_name~" = "~OBJECT(TEMP.mapping_keys).population_string~" ]]>"
+                  </do>
+                </loop>
+              </db_select>
+              <do>
+                TEMP.my_mn_proc~="<![CDATA['
+    </query>
+    <cursor>TEMP.dynamic_table_csr</cursor>
+    <then>]]>"
+              </do>
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from agg_mapping_table_rules where mapping_name = $${OBJECT(TEMP.mapping_names).mapping_name} and is_key = 0 and table_field_name IS NOT NULL"
+                </query>
+                <cursor>TEMP.mapping_values</cursor>
+                <loop>
+                  <do>
+                    TEMP.my_mn_proc~="<![CDATA[
+      <do>OBJECT."~OBJECT(TEMP.mapping_values).object_field_name~" = OBJECT(TEMP.dynamic_table_csr)."~OBJECT(TEMP.mapping_values).table_field_name~"</do>]]>"
+                  </do>
+                </loop>
+              </db_select>
+
+              <db_select>
+                <login_object>GLOBAL.target_login</login_object>
+                <query>
+                  "select * from agg_mapping_table_rules where mapping_name = $${OBJECT(TEMP.mapping_names).mapping_name} and is_key = 0 and (population_string IS NOT NULL or procedure_name IS NOT NULL) order by rule_order"
+                </query>
+                <cursor>TEMP.mapping_values</cursor>
+                <loop>
+                  <if>
+                    <condition>OBJECT(TEMP.mapping_values).population_string ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_mn_proc~="<![CDATA[
+      <do>OBJECT."~OBJECT(TEMP.mapping_values).object_field_name~" = "~OBJECT(TEMP.mapping_values).population_string~"</do>]]>"
+                      </do>
+                    </then>
+                  </if>
+                  <if>
+                    <condition>OBJECT(TEMP.mapping_values).procedure_name ne ''</condition>
+                    <then>
+                      <do>
+                        TEMP.my_mn_proc~="<![CDATA[
+      <call_proc_for_current_object>
+        <name>'"~OBJECT(TEMP.mapping_values).procedure_name~"'</name>
+      </call_proc_for_current_object>    
+                        ]]>"
+                      </do>
+                    </then>
+                  </if>
+
+                </loop>
+              </db_select>
+              <do>
+                TEMP.my_mn_proc~="<![CDATA[
+    </then>
+  </db_select>]]>"
+              </do>
+
+            </else>
+          </if>
+          <do>
+            TEMP.my_mn_proc~="<![CDATA[
+</proc>
+      ]]>"
+          </do>
+          <!--<print>'DOING MAPPING TABLE ['~OBJECT(TEMP.mapping_names).mapping_name~']!!!!!'</print>  
+	        <print>TEMP.my_mn_proc</print>-->
+          <execute_immediate>TEMP.my_mn_proc</execute_immediate>
+        </loop>
+      </db_select>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select distinct * from agg_mapping_chains"
+        </query>
+        <cursor>TEMP.mapping_chains</cursor>
+        <loop>
+          <do>
+            TEMP.my_mc_proc="<![CDATA[
+<proc name='perform_map_"~OBJECT(TEMP.mapping_chains).mapping_chain~"'>]]>"
+          </do>
+          <db_select>
+            <login_object>GLOBAL.target_login</login_object>
+            <query>
+              "select * from agg_mapping_chain_members where mapping_chain = $${OBJECT(TEMP.mapping_chains).mapping_chain} order by mapping_order"
+            </query>
+            <cursor>TEMP.mapping_links</cursor>
+            <loop>
+              <do>
+                TEMP.my_mc_proc~="<![CDATA[
+  <call_proc_for_current_object>
+    <name>'perform_map_"~OBJECT(TEMP.mapping_links).mapping_name~"'</name>
+  </call_proc_for_current_object>]]>"
+              </do>
+            </loop>
+          </db_select>
+          <do>
+            TEMP.my_mc_proc~="<![CDATA[
+</proc>
+ ]]>"
+          </do>
+          <!--<print>'DOING MAPPING CHAIN ['~OBJECT(TEMP.mapping_chains).mapping_chain~']!!!!!'</print>
+          <print>TEMP.my_mc_proc</print>-->
+          <execute_immediate>TEMP.my_mc_proc</execute_immediate>
+        </loop>
+      </db_select>
+    </initialize>
+  </proc>
+</procs>

@@ -1,0 +1,77 @@
+<procs>
+  <proc name="inject_custom_enums">
+
+    <run_once>
+      <do>TEMP.dummy = 'junk'</do>
+      <call_proc_for_current_object>
+        <name>'convert_to_enum'</name>
+        <param name='value'>TEMP.dummy</param>
+        <param name='namespace'>TEMP.dummy</param>
+        <param name='success'>TEMP.dummy</param>
+      </call_proc_for_current_object>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select table_name, namespace, enum_value, enum_id, filter from AGG_CUSTOM_ENUMS"
+        </query>
+        <cursor>TEMP.custom_enum_cur</cursor>
+        <loop>
+          <if>
+            <condition>OBJECT(TEMP.custom_enum_cur).filter eq ''</condition>
+            <then>
+              <do>OBJECT(TEMP.custom_enum_cur).filter = ' 1 != 0'</do>
+            </then>
+          </if>
+          <do>TEMP.have_enum = '1'</do>
+          <if>
+            <condition>OBJECT(TEMP.custom_enum_cur).enum_value eq ''</condition>
+            <then>
+              <do>TEMP.have_enum = '0'</do>
+              <do>OBJECT(TEMP.custom_enum_cur).enum_value = '1'</do>
+            </then>
+          </if>
+          <do>TEMP.have_id = '1'</do>
+          <if>
+            <condition>OBJECT(TEMP.custom_enum_cur).enum_id eq ''</condition>
+            <then>
+              <do>TEMP.have_id = '0'</do>
+              <do>OBJECT(TEMP.custom_enum_cur).enum_id = '1'</do>
+            </then>
+          </if>
+          <db_select_dynamic>
+            <login_object>GLOBAL.target_login</login_object>
+            <query>
+              'select '~OBJECT(TEMP.custom_enum_cur).namespace~' namespace, '~OBJECT(TEMP.custom_enum_cur).enum_value~' enum_value, '~OBJECT(TEMP.custom_enum_cur).enum_id~' enum_id from '~OBJECT(TEMP.custom_enum_cur).table_name~' where '~OBJECT(TEMP.custom_enum_cur).where
+            </query>
+            <cursor>TEMP.custom_enum_val_cur</cursor>
+            <loop>
+              <if>
+                <condition>TEMP.have_enum eq '1'</condition>
+                <then>
+                  <index_insert>
+                    <index>'ENUMS_BY_NAME'</index>
+                    <field name="namespace">OBJECT(TEMP.custom_enum_val_cur).namespace</field>
+                    <field name="enum_value">OBJECT(TEMP.custom_enum_val_cur).enum_value</field>
+                    <field name="id_enum_data">OBJECT(TEMP.custom_enum_val_cur).enum_id</field>
+                  </index_insert>
+                </then>
+              </if>
+              <if>
+                <condition>TEMP.have_id eq '1'</condition>
+                <then>
+                  <index_insert>
+                    <index>'ENUMS_BY_NAME'</index>
+                    <field name="namespace">OBJECT(TEMP.custom_enum_val_cur).namespace</field>
+                    <field name="enum_value">OBJECT(TEMP.custom_enum_val_cur).enum_id</field>
+                    <field name="id_enum_data">OBJECT(TEMP.custom_enum_val_cur).enum_value</field>
+                  </index_insert>
+                </then>
+              </if>
+            </loop>
+          </db_select_dynamic>
+        </loop>
+      </db_select>
+    </run_once>
+  </proc>
+</procs>

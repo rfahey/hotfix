@@ -1,0 +1,111 @@
+<procs>
+  <proc name='generate_charge_permutations'>
+    <param name='charge_direction'/>
+    <param name='usage_object'/>
+    <param name='bucket_object'/>
+    <param name='parent_object'/>
+    <param name='precalc_amount'/>
+    <param name='charge_object_id' mode='out'/>
+
+    <initialize>
+      <define_memory_index>
+        <index>'CHARGE_PERMUTATIONS'</index>
+        <key_field>'bucket_object'</key_field>
+        <key_field>'id_payer'</key_field>
+        <key_field>'id_payee'</key_field>
+        <field>'total_amount'</field>
+        <field>'service_code'</field>
+      </define_memory_index>
+      <do>GLOBAL.in_final_block = '0'</do>
+    </initialize>
+
+    <do>GLOBAL.in_final_block = '1'</do>
+    <index_select_keys>
+      <index>'CHARGE_PERMUTATIONS'</index>
+      <cursor>TEMP.my_permutations</cursor>
+      <loop>
+        <if>
+          <condition>OBJECT(TEMP.my_permutations).bucket_object eq TEMP.bucket_object</condition>
+          <then>
+            <index_get>
+              <index>'CHARGE_PERMUTATIONS'</index>
+              <field name='bucket_object'>TEMP.bucket_object</field>
+              <field name='id_payer'>OBJECT(TEMP.my_permutations).id_payer</field>
+              <field name='id_payee'>OBJECT(TEMP.my_permutations).id_payee</field>
+              <field name='total_amount'>TEMP.my_total_amount</field>
+              <field name='service_code'>TEMP.my_service_code</field>
+              <then>
+                <do>TEMP.precalc_amount = TEMP.my_total_amount * OBJECT(TEMP.bucket_object).charge_on_final</do>
+                <call_dynamic_proc_for_object>
+                  <name>'create_charge_'~OBJECT(TEMP.bucket_object).charge_type_id</name>
+                  <object_id>TEMP.bucket_object</object_id>
+                  <param name='charge_direction'>'final'</param>
+                  <param name='usage_object'>TEMP.usage_object</param>
+                  <param name='bucket_object'>TEMP.bucket_object</param>
+                  <param name='parent_object'>''</param>
+                  <param name='precalc_amount'>TEMP.precalc_amount</param>
+                  <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+                </call_dynamic_proc_for_object>
+                <do>TEMP.charge_obj = OBJECT(TEMP.bucket_object).charge_object_id</do>
+                <do>OBJECT(TEMP.charge_obj).id_acc = OBJECT(TEMP.my_permutations).id_payer</do>
+                <do>OBJECT(TEMP.charge_obj).c_servicecode = TEMP.my_service_code</do>
+              </then>
+            </index_get>
+            <index_remove>
+              <index>'CHARGE_PERMUTATIONS'</index>
+              <field name='bucket_object'>TEMP.bucket_object</field>
+              <field name='id_payer'>OBJECT(TEMP.usage_object).id_acc</field>
+              <field name='id_payee'>OBJECT(TEMP.usage_object).id_payee</field>
+            </index_remove>
+          </then>
+        </if>
+      </loop>
+    </index_select_keys>
+
+  </proc>
+
+  <proc name='calculate_charge_permutations'>
+    <param name='usage_object'/>
+    <param name='bucket_object'/>
+
+    <if>
+      <condition>GLOBAL.in_final_block eq '1'</condition>
+      <then>
+        <index_clear>
+          <index>'CHARGE_PERMUTATIONS'</index>
+        </index_clear>
+        <do>GLOBAL.in_final_block = 0</do>
+      </then>
+    </if>
+    <do>TEMP.total_amount = 0</do>
+    <index_get>
+      <index>'CHARGE_PERMUTATIONS'</index>
+      <field name='bucket_object'>TEMP.bucket_object</field>
+      <field name='id_payer'>OBJECT(TEMP.usage_object).id_acc</field>
+      <field name='id_payee'>OBJECT(TEMP.usage_object).id_payee</field>
+      <field name='total_amount'>TEMP.my_total_amount</field>
+      <field name='service_code'>TEMP.my_service_code</field>
+      <then>
+        <do>TEMP.total_amount = TEMP.my_total_amount</do>
+        <index_remove>
+          <index>'CHARGE_PERMUTATIONS'</index>
+          <field name='bucket_object'>TEMP.bucket_object</field>
+          <field name='id_payer'>OBJECT(TEMP.usage_object).id_acc</field>
+          <field name='id_payee'>OBJECT(TEMP.usage_object).id_payee</field>
+        </index_remove>
+      </then>
+    </index_get>
+
+    <do>TEMP.total_amount += OBJECT(TEMP.usage_object).master_amount</do>
+
+    <index_insert>
+      <index>'CHARGE_PERMUTATIONS'</index>
+      <field name='bucket_object'>TEMP.bucket_object</field>
+      <field name='id_payer'>OBJECT(TEMP.usage_object).id_acc</field>
+      <field name='id_payee'>OBJECT(TEMP.usage_object).id_payee</field>
+      <field name='total_amount'>TEMP.total_amount</field>
+      <field name='service_code'>OBJECT(TEMP.usage_object).c_servicecode</field>
+    </index_insert>
+
+  </proc>
+</procs>

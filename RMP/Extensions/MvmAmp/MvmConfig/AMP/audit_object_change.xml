@@ -1,0 +1,246 @@
+<procs>
+
+  <proc name="test_audit_object_change">
+    <param name='field_name'/>
+    <param name='field_value'/>
+    <param name='bogus'/>
+
+    <print>'Calling set with field name ['~TEMP.field_name~'] value ['~TEMP.field_value~'] for object['~OBJECT.object_id~']'</print>
+    <call_proc_for_current_object>
+      <name>'print_object'</name>
+      <param name='object_id'>OBJECT.object_id</param>
+    </call_proc_for_current_object>
+  <set_object_field>
+    <input>TEMP.field_value</input>
+    <object_id>OBJECT.object_id</object_id>
+    <field_name>TEMP.field_name</field_name>
+  </set_object_field>
+    <!--<object_delta_select>
+      <object_id>OBJECT.object_id</object_id>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <print>'OBJECTDELTA ['~OBJECT.object_id~'] INSIDE changed '~OBJECT(TEMP.csr).field_name~' from ['~OBJECT(TEMP.csr).original~'] to ['~OBJECT(TEMP.csr).current~']'</print>
+      </loop>
+    </object_delta_select>-->
+    <print>'Called set with field name ['~TEMP.field_name~'] value ['~TEMP.field_value~'] to ['~OBJECT(OBJECT.object_id).agg_tier_1_amount_before~'] for id_sess['~OBJECT.id_sess~'] view ['~OBJECT.id_view~']'</print>
+  </proc>
+  
+  <proc name="audit_object_change">
+    <param name='field_name'/>
+    <param name='field_value'/>
+    <initialize>
+      <define_memory_index>
+        <index>'PERSISTED_FIELDS'</index>
+        <key_field>'field_name'</key_field>
+        <field>'table_name'</field>
+        <field>'field_id'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'PERSISTED_TABLES'</index>
+        <key_field>'table_name'</key_field>
+        <field>'field_name'</field>
+        <field>'field_id'</field>
+        <field>'real_table_name'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'PERSISTED_FIELD_IDS'</index>
+        <key_field>'field_id'</key_field>
+        <field>'table_name'</field>
+        <field>'field_name'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'PERSISTED_TABLE_FIELDS'</index>
+        <key_field>'field_name'</key_field>
+        <key_field>'table_name'</key_field>
+        <field>'real_table_name'</field>
+        <field>'field_id'</field>
+      </define_memory_index>
+
+      <db_select_dynamic>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "SELECT lower(nm_table_name) table_name, lower(CSCONVERT(nm_column_name,'CHAR_CS')) column_name, a.id_prod_view, id_prod_view_prop FROM t_prod_view a
+          INNER JOIN t_prod_view_prop b ON a.id_prod_view = b.id_prod_view
+          UNION ALL
+          SELECT lower(a.table_name) table_name, lower(a.column_name) column_name, (1 + (SELECT MAX(id_prod_view) FROM t_prod_view)) id_prod_view, (rownum + (SELECT MAX(id_prod_view_prop) FROM t_prod_view_prop)) id_prod_view_prop
+          FROM user_tab_columns a where a.table_name = 'T_ACC_USAGE'
+          UNION ALL
+          SELECT lower(a.table_name) table_name, lower(a.column_name) column_name, (2 + (SELECT MAX(id_prod_view) FROM t_prod_view)) id_prod_view, (rownum + (SELECT MAX(id_prod_view_prop) FROM t_prod_view_prop) + (select count(*) from user_tab_columns a where a.table_name = 'T_ACC_USAGE')) id_prod_view_prop
+          FROM user_tab_columns a where a.table_name = 'AGG_USAGE_AUDIT_TRAIL'
+          order by table_name, id_prod_view_prop
+          "
+        </query>
+        <query type="sql">
+          "SELECT lower(nm_table_name) table_name, lower(nm_column_name) column_name, a.id_prod_view, id_prod_view_prop FROM t_prod_view a
+          INNER JOIN t_prod_view_prop b ON a.id_prod_view = b.id_prod_view
+          UNION ALL
+          SELECT lower(a.name) table_name, lower(b.name) column_name, (1 + (SELECT MAX(id_prod_view) FROM t_prod_view)) id_prod_view, (colorder + (SELECT MAX(id_prod_view_prop) FROM t_prod_view_prop)) id_prod_view_prop
+          FROM sysobjects a INNER JOIN syscolumns b ON a.id = b.id AND a.name = 'T_ACC_USAGE'
+          UNION ALL
+          SELECT lower(a.name) table_name, lower(b.name) column_name, (2 + (SELECT MAX(id_prod_view) FROM t_prod_view)) id_prod_view, (colorder + (SELECT MAX(id_prod_view_prop) FROM t_prod_view_prop) + (select count(*) from sysobjects a INNER JOIN syscolumns b ON a.id = b.id AND a.name = 'T_ACC_USAGE')) id_prod_view_prop
+          FROM sysobjects a INNER JOIN syscolumns b ON a.id = b.id AND a.name = 'AGG_USAGE_AUDIT_TRAIL'
+          order by table_name, id_prod_view_prop"
+        </query>
+        <cursor>TEMP.pv_fields</cursor>
+        <loop>
+          <do>TEMP.field_id = OBJECT(TEMP.pv_fields).id_prod_view_prop</do>
+          <index_select>
+            <index>'PERSISTED_FIELDS'</index>
+            <field name="field_name">OBJECT(TEMP.pv_fields).column_name</field>
+            <cursor>TEMP.field_check</cursor>
+            <then>
+              <do>TEMP.field_id = OBJECT(TEMP.field_check).field_id</do>
+            </then>
+          </index_select>
+          <index_insert>
+            <index>'PERSISTED_TABLES'</index>
+            <field name='field_name'>OBJECT(TEMP.pv_fields).column_name</field>
+            <field name='table_name'>OBJECT(TEMP.pv_fields).table_name</field>
+            <field name='field_id'>TEMP.field_id</field>
+          </index_insert>
+          <index_insert>
+            <index>'PERSISTED_FIELDS'</index>
+            <field name='field_name'>OBJECT(TEMP.pv_fields).column_name</field>
+            <field name='table_name'>OBJECT(TEMP.pv_fields).table_name</field>
+            <field name='field_id'>TEMP.field_id</field>
+          </index_insert>
+          <index_insert>
+            <index>'PERSISTED_FIELD_IDS'</index>
+            <field name='field_name'>OBJECT(TEMP.pv_fields).column_name</field>
+            <field name='table_name'>OBJECT(TEMP.pv_fields).table_name</field>
+            <field name='field_id'>TEMP.field_id</field>
+          </index_insert>
+          <index_insert>
+            <index>'PERSISTED_TABLE_FIELDS'</index>
+            <field name='field_name'>OBJECT(TEMP.pv_fields).column_name</field>
+            <field name='table_name'>OBJECT(TEMP.pv_fields).table_name</field>
+            <field name='field_id'>TEMP.field_id</field>
+            <field name='real_table_name'>OBJECT(TEMP.pv_fields).table_name</field>
+          </index_insert>
+          <substring>
+            <input>OBJECT(TEMP.pv_fields).table_name</input>
+            <offset>5</offset>
+            <length>100</length>
+            <output>TEMP.pv_name</output>
+          </substring>
+          <index_insert>
+            <index>'PERSISTED_TABLE_FIELDS'</index>
+            <field name='field_name'>OBJECT(TEMP.pv_fields).column_name</field>
+            <field name='table_name'>TEMP.pv_name</field>
+            <field name='field_id'>TEMP.field_id</field>
+            <field name='real_table_name'>OBJECT(TEMP.pv_fields).table_name</field>
+          </index_insert>
+          <index_insert>
+            <index>'PERSISTED_TABLES'</index>
+            <field name='field_name'>OBJECT(TEMP.pv_fields).column_name</field>
+            <field name='table_name'>TEMP.pv_name</field>
+            <field name='field_id'>TEMP.field_id</field>
+            <field name='real_table_name'>OBJECT(TEMP.pv_fields).table_name</field>
+          </index_insert>
+        </loop>
+      </db_select_dynamic>
+
+      <index_select_keys>
+        <index>'PERSISTED_TABLES'</index>
+        <cursor>TEMP.my_table</cursor>
+        <loop>
+          <index_select>
+            <index>'PERSISTED_TABLES'</index>
+            <field name="table_name">'T_ACC_USAGE'</field>
+            <cursor>TEMP.au_fields</cursor>
+            <loop>
+              <index_insert>
+                <index>'PERSISTED_TABLE_FIELDS'</index>
+                <field name='field_name'>OBJECT(TEMP.au_fields).field_name</field>
+                <field name='table_name'>OBJECT(TEMP.my_table).table_name</field>
+                <field name='field_id'>OBJECT(TEMP.au_fields).field_id</field>
+                <field name='real_table_name'>OBJECT(TEMP.au_fields).table_name</field>
+              </index_insert>
+            </loop>
+          </index_select>
+          <c>Leave this commented out if we don't want to actually force audit trail logging for fields in the logging table</c>
+          <c>It feels a bit circular... But there's a chance that the audit trail will change when the table doesn't and</c>
+          <c> we won't catch that case... </c>
+          <!--<index_select>
+            <index>'PERSISTED_TABLES'</index>
+            <field name="table_name">'AGG_USAGE_AUDIT_TRAIL'</field>
+            <cursor>TEMP.au_fields</cursor>
+            <loop>
+              <index_insert>
+                <index>'PERSISTED_TABLE_FIELDS'</index>
+                <field name='field_name'>OBJECT(TEMP.au_fields).field_name</field>
+                <field name='table_name'>OBJECT(TEMP.my_table).table_name</field>
+                <field name='field_id'>OBJECT(TEMP.au_fields).field_id</field>
+                <field name='real_table_name'>OBJECT(TEMP.au_fields).table_name</field>
+              </index_insert>
+            </loop>
+          </index_select>-->
+        </loop>
+      </index_select_keys>
+    </initialize>
+
+    <index_select>
+      <index>'PERSISTED_TABLE_FIELDS'</index>
+      <field name="table_name">OBJECT.productview_name</field>
+      <field name="field_name">TEMP.field_name</field>
+      <cursor>TEMP.field_check</cursor>
+      <then>
+        <if>
+          <condition>OBJECT.field_audit == ''</condition>
+          <then>
+            <do>OBJECT.field_audit = '|'</do>
+          </then>
+        </if>
+        <get_object_field>
+          <object_id>OBJECT.object_id</object_id>
+          <field_name>'curr_val_'~TEMP.field_name</field_name>
+          <output>TEMP.current_db_value</output>
+        </get_object_field>
+
+        <if>
+          <condition>TEMP.current_db_value eq ''</condition>
+          <then>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>TEMP.field_name</field_name>
+              <output>TEMP.current_db_value</output>
+            </get_object_field>
+          </then>
+        </if>
+        <if>
+          <condition>TEMP.current_db_value ne TEMP.field_value</condition>
+          <then>
+            <match>
+              <input>OBJECT.field_audit</input>
+              <regex>'\|'~OBJECT(TEMP.field_check).field_id~'\|'</regex>
+              <success>TEMP.success</success>
+            </match>
+            <if>
+              <condition>!(TEMP.success)</condition>
+              <then>
+                <do>OBJECT.field_audit ~= OBJECT(TEMP.field_check).field_id~"|"</do>
+              </then>
+            </if>
+          </then>
+          <else>
+            <replace>
+              <input>OBJECT.field_audit</input>
+              <old_value>"\|"~OBJECT(TEMP.field_check).field_id~"\|"</old_value>
+              <new_value>"|"</new_value>
+              <output>OBJECT.field_audit</output>
+            </replace>
+          </else>
+        </if>
+      </then>
+    </index_select>
+    <set_object_field>
+      <input>TEMP.field_value</input>
+      <object_id>OBJECT.object_id</object_id>
+      <field_name>TEMP.field_name</field_name>
+    </set_object_field>
+  </proc>
+
+</procs>

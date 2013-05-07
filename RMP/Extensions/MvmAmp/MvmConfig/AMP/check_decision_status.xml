@@ -1,0 +1,18 @@
+<procs>
+  <proc name="check_decision_status">
+    <param name='bucket_object'/>
+    <param name='decision_status' mode='out'/>
+
+    <!--<print>'Starting check_decision_status'</print>-->
+    <do>TEMP.decision_status = '0'</do>
+    <index_select>
+      <index>'COMPLETED_WORK'</index>
+      <field name='bucket_object'>TEMP.bucket_object</field>
+      <cursor>TEMP.my_completed</cursor>
+      <then>
+        <do>TEMP.decision_status = '1'</do>
+      </then>
+    </index_select>
+    <!--<print>'Ending check_decision_status'</print>-->
+  </proc>
+</procs>

@@ -1,0 +1,83 @@
+<proc name="read_cluster_info_from_db">
+  <param name="logical_cluster"/>
+
+  <print>'reading mvm_logical_cluster_nodes for logical_cluster=['~TEMP.logical_cluster~']'</print>
+  
+  <do>GLOBAL.num_logical_nodes=0</do>
+  <do>GLOBAL.num_physical_nodes=0</do>
+  <do>GLOBAL.num_slave_physical_nodes=0</do>
+  
+  <db_select>
+    <login_object>GLOBAL.target_login</login_object>
+    <query>
+      "select
+      a.logical_node_id as logical_node_id,
+      a.physical_node_id as physical_node_id,
+      1 as is_primary
+      from mvm_logical_cluster_nodes a
+      where logical_cluster=$${TEMP.logical_cluster}"
+    </query>
+    <cursor>TEMP.csr</cursor>
+    <loop>
+
+      <print>'logical node ['~OBJECT(TEMP.csr).logical_node_id~'] maps to physical node ['~OBJECT(TEMP.csr).physical_node_id~']'</print>
+      <if>
+        <condition>OBJECT(TEMP.csr).physical_node_id eq GLOBAL.node_id</condition>
+        <then>
+          <do>OBJECT(TEMP.csr).physical_node_id='me'</do>
+        </then>
+      </if>
+
+      <index_insert_if_none>
+        <index>'PHYSICAL_NODE_IDS'</index>
+        <field name="physical_node_id">OBJECT(TEMP.csr).physical_node_id</field>
+        <result>TEMP.inserted</result>
+      </index_insert_if_none>
+      <if>
+        <condition>TEMP.inserted</condition>
+        <then>
+          <do>GLOBAL.num_physical_nodes+=1</do>
+        </then>
+      </if>
+
+
+      <if>
+        <condition>OBJECT(TEMP.csr).physical_node_id ne 'me'</condition>
+        <then>
+          <index_insert_if_none>
+            <index>'SLAVE_PHYSICAL_NODE_IDS'</index>
+            <field name="physical_node_id">OBJECT(TEMP.csr).physical_node_id</field>
+            <result>TEMP.inserted</result>
+          </index_insert_if_none>
+          <if>
+            <condition>TEMP.inserted</condition>
+            <then>
+              <do>GLOBAL.num_slave_physical_nodes+=1</do>
+            </then>
+          </if>
+        </then>
+      </if>
+      
+      
+      <index_insert>
+        <index>'LOGICAL_TO_PHYSICAL_NODE_MAP'</index>
+        <field name="logical_node_id">OBJECT(TEMP.csr).logical_node_id</field>
+        <field name="physical_node_id">OBJECT(TEMP.csr).physical_node_id</field>
+        <field name="is_primary">OBJECT(TEMP.csr).is_primary</field>
+      </index_insert>
+      <index_insert_if_none>
+        <index>'LOGICAL_NODE_IDS'</index>
+        <field name="logical_node_id">OBJECT(TEMP.csr).logical_node_id</field>
+        <result>TEMP.inserted</result>
+      </index_insert_if_none>
+      <if>
+        <condition>TEMP.inserted</condition>
+        <then>
+          <do>GLOBAL.num_logical_nodes+=1</do>
+        </then>
+      </if>
+    </loop>
+  </db_select>
+</proc>
+
+

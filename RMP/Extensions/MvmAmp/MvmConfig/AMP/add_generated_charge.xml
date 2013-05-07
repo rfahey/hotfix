@@ -1,0 +1,11 @@
+<proc name="add_generated_charge">
+  <param name="hook_id"></param>
+  <param name="object_id"></param>
+  
+  <do>OBJECT(TEMP.object_id).is_generated_charge=1</do>
+  <usage_hook_add_object>
+    <hook_id>TEMP.hook_id</hook_id>
+    <object_id>TEMP.object_id</object_id>
+  </usage_hook_add_object>
+  
+</proc>

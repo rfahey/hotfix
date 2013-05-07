@@ -1,0 +1,23 @@
+<proc name="next_id_sess">
+  <param name="batch_size" default="1"/>
+  <param name="id_sess" mode="out"/>
+  <run_once>
+    <do>GLOBAL.next_id_sess_start=0</do>
+    <do>GLOBAL.next_id_sess_end='-1'</do>
+  </run_once>
+  <if>
+    <condition>GLOBAL.next_id_sess_start GTE GLOBAL.next_id_sess_end</condition>
+    <then>
+      <db_call_proc>
+        <login_object>GLOBAL.target_login</login_object>
+        <name>'mvm_get_long_id'</name>
+        <param name="p_nm_current">'id_sess'</param>
+        <param name="p_batch_size">TEMP.batch_size</param>
+        <param name="p_id_start">GLOBAL.next_id_sess_start</param>
+        <param name="p_id_end">GLOBAL.next_id_sess_end</param>
+      </db_call_proc>
+    </then>
+  </if>
+  <do>TEMP.id_sess=GLOBAL.next_id_sess_start</do>
+  <do>GLOBAL.next_id_sess_start+=1</do>
+</proc>

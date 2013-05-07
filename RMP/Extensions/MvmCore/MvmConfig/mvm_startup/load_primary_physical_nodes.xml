@@ -1,0 +1,37 @@
+<proc name="load_primary_physical_nodes">
+  
+      <do>OBJECT.primary_physical_nodes_count=0</do>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "
+          select 
+          server,
+          num_cores
+          from mvm_physical_cluster_def
+          where physical_cluster = $${OBJECT.physical_cluster}
+          order by server"
+        </query>
+        <cursor>TEMP.csr</cursor>
+        <loop>
+          <counter_select>
+            <from>1</from>
+            <to>OBJECT(TEMP.csr).num_cores</to>
+            <cursor>TEMP.ctr_csr</cursor>
+            <loop>
+              <do>TEMP.ctr=OBJECT(TEMP.ctr_csr).value</do>
+              <do>TEMP.physical_node_id=next_physical_node_id()</do>
+              <!--TBD, use the sequence! -->
+              <index_insert>
+                <index>'PRIMARY_PHYSICAL_NODES'</index>
+                <field name="physical_node_id">TEMP.physical_node_id</field>
+                <field name="physical_cluster">OBJECT.physical_cluster</field>
+                <field name="server">OBJECT(TEMP.csr).server</field>
+              </index_insert>
+              <do>OBJECT.primary_physical_nodes_count+=1</do>
+            </loop>
+          </counter_select>
+        </loop>
+      </db_select>
+  
+</proc>

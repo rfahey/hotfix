@@ -1,0 +1,20 @@
+<procs>
+  <proc name="get_next_highest_priority">
+    <param name='priority'/>
+    <param name='next_priority' mode='out'/>
+    <do>TEMP.next_priority = ''</do>
+    <index_select_keys>
+      <index>'CURRENT_PRIORITIES'</index>
+      <cursor>TEMP.my_priority</cursor>
+      <loop>
+        <if>
+          <condition>OBJECT(TEMP.my_priority).priority GT TEMP.priority and (OBJECT(TEMP.my_priority).priority LT TEMP.next_priority or TEMP.next_priority eq '')</condition>
+          <then>
+            <do>TEMP.next_priority = OBJECT(TEMP.my_priority).priority</do>
+          </then>
+        </if>
+      </loop>
+    </index_select_keys>
+  </proc>
+
+</procs>

@@ -1,0 +1,51 @@
+<procs>
+  <proc name ='persist_gen_charge_audit_to_db'>
+    <!--<index_select_keys>
+      <index>'GENERATED_CHARGES'</index>
+      <cursor>TEMP.my_gen_charge_outer</cursor>
+      <loop>
+        <index_select>
+          <index>'GENERATED_CHARGES'</index>
+          <field name='decision_unique_id'>OBJECT(TEMP.my_gen_charge_outer).decision_unique_id</field>
+          <field name='tier_start'>OBJECT(TEMP.my_gen_charge_outer).tier_start</field>
+          <field name='tier_end'>OBJECT(TEMP.my_gen_charge_outer).tier_end</field>
+          <field name='charge_direction'>OBJECT(TEMP.my_gen_charge_outer).charge_direction</field>
+          <cursor>TEMP.my_gen_charge_inner</cursor>
+          <loop>
+            <do>TEMP.usage_object = OBJECT(TEMP.my_gen_charge_inner).usage_object_id</do>
+            <if>
+              <condition>OBJECT(TEMP.usage_object).is_generated ne '1' and OBJECT(TEMP.usage_object).is_obsolete ne '1'</condition>
+              <then>
+                <c>I Need to delete this row from the db!</c>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.usage_object).is_generated eq '1' and OBJECT(TEMP.usage_object).prev_object_id eq ''</condition>
+              <then>
+                <c>I Need to insert this row from the db!</c>
+                <call_proc_for_current_object>
+                  <name>'get_id'</name>
+                  <param name="id">OBJECT(TEMP.usage_object).id_sess</param>
+                  <param name="namespace">'id_sess'</param>
+                </call_proc_for_current_object>
+                <db_bulk_insert>
+                  <login_object>GLOBAL.target_login</login_object>
+                  <name>'AGG_CHARGE_AUDIT_TRAIL'</name>
+                  <object_id>TEMP.usage_object</object_id>
+                </db_bulk_insert>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.usage_object).is_generated eq '1' and OBJECT(TEMP.usage_object).prev_object_id ne ''</condition>
+              <then>
+                <c>I Need to update this row from the db!</c>
+              </then>
+            </if>
+          </loop>
+        </index_select>
+      </loop>
+    </index_select_keys>
+    <db_bulk_insert_flush_all/>-->
+  </proc>
+
+</procs>

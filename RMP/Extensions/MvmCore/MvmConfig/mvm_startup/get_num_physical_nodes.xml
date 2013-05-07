@@ -1,0 +1,19 @@
+<proc name="get_num_physical_nodes" namespace="mvm_startup">
+  <param name="physical_cluster"></param>
+  <param name="result" mode="out"></param>
+  <if>
+    <condition>TEMP.physical_cluster eq 'localhost'</condition>
+    <then>
+      <do>TEMP.result=1</do>
+    </then>
+    <else>
+      <db_select>
+        <query>'select SUM(num_cores) as num_cores from mvm_physical_cluster_def where physical_cluster=$${TEMP.physical_cluster}'</query>
+        <cursor>TEMP.csr</cursor>
+        <then>
+          <do>TEMP.result=OBJECT(TEMP.csr).num_cores</do>
+        </then>
+      </db_select>
+    </else>
+  </if>
+</proc>

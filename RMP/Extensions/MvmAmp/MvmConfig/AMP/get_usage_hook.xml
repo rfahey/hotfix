@@ -1,0 +1,179 @@
+
+  <!-- ==================================================================== -->
+  <!-- Gets the usage needed for a given set of accounts.                   -->
+  <!--                                                                      -->
+  <!-- Input:                                                               -->
+  <!--   id_acc_csr     - a cusor identifying accounts that you want usage  -->
+  <!--                    for.                                              -->
+  <!--   id_usage_interval - identifies the interval you are interested in. -->
+  <!--                                                                      -->
+  <!-- Results:                                                             -->
+  <!--   hook_id        - set to the ID of the return usage?                -->
+  <!-- ==================================================================== -->
+
+<procs>
+  <proc name="get_usage_hook">
+    <param name="id_acc_csr"/>
+    <param name="id_usage_interval"/>
+    <param name="hook_id" mode="out"/>
+
+    <!--<initialize>
+      <if>
+        <condition>GLOBAL.node_id eq 0</condition>
+        <then>
+          <debug>'Initialize AMP for cluster'</debug>
+          <db_execute>
+            <login_object>GLOBAL.target_login</login_object>
+            <statement>
+              "truncate table AMP_LOCAL_USAGE"
+            </statement>
+            <num_rows>TEMP.num_rows</num_rows>
+          </db_execute>
+        </then>
+      </if>
+    </initialize>-->
+    
+    <info switch='log_erd'>'in get_usage_hook with id_usage_interval='~TEMP.id_usage_interval</info>
+    <run_once>
+      <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).get_usage_hook_run_once_timer'>
+        <call_proc>'initialize_core_procs'</call_proc>
+        <do>GLOBAL.internal_usage_hook_id=0</do>
+        
+        <define_memory_index>
+          <index>'ALL_ID_ACCS'</index>
+          <field>'id_acc'</field>
+        </define_memory_index>
+
+        <define_memory_index>
+          <index>'MISSING_ID_ACCS'</index>
+          <field>'id_acc'</field>
+        </define_memory_index>
+
+        <do>GLOBAL.hook_id_accs_count=0</do>
+
+        <c>=== performance parameters ===</c>
+        <do>GLOBAL.hook_max_open_files=280</do>
+        <do>GLOBAL.usage_hook_batch_sort_size=100000</do>
+        <do>GLOBAL.bfs_max_files=300</do>
+        <do>GLOBAL.bfs_write_buffer_start_bytes=1024*1024</do>
+        <do>GLOBAL.bfs_write_buffer_increment_bytes=1024*1024</do>
+        <do>GLOBAL.bfs_write_buffer_max_bytes=1024*1024</do>
+        <do>GLOBAL.bfs_read_buffer_bytes=1024*1024</do>
+
+        <setup_buffered_file_system>
+          <max_files>GLOBAL.bfs_max_files</max_files>
+          <write_buffer_start_bytes>GLOBAL.bfs_write_buffer_start_bytes</write_buffer_start_bytes>
+          <write_buffer_increment_bytes>GLOBAL.bfs_write_buffer_increment_bytes</write_buffer_increment_bytes>
+          <write_buffer_max_bytes>GLOBAL.bfs_write_buffer_max_bytes</write_buffer_max_bytes>
+          <read_buffer_bytes>GLOBAL.bfs_read_buffer_bytes</read_buffer_bytes>
+        </setup_buffered_file_system>
+
+        <c>Setup node specific directories</c>
+        <do>GLOBAL.usage_hook_sort_field='sortkey'</do>
+        <do>GLOBAL.erd_data_dir='c:\erd_data1\'~GLOBAL.node_id</do>
+        <do>GLOBAL.usage_released_dir=GLOBAL.erd_data_dir~'\released'</do>
+        <do>GLOBAL.usage_persisted_dir=GLOBAL.erd_data_dir~'\persisted'</do>
+
+        <info switch='log_erd'>'delete usage hook dir from last run: '~GLOBAL.erd_data_dir</info>
+        <directory_delete>GLOBAL.erd_data_dir</directory_delete>
+        <info switch='log_erd'>'DONE delete usage hook dir from last run: '~GLOBAL.erd_data_dir</info>
+      </stopwatch>
+    </run_once>
+
+    <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).get_usage_hook_timer'>
+
+
+      <c> get the next hook id</c>
+      <do>GLOBAL.internal_usage_hook_id+=1</do>
+      <do>TEMP.hook_id=GLOBAL.internal_usage_hook_id</do>
+     <info switch='log_erd'>'in get_usage_hook, assigned hook_id='~TEMP.hook_id</info>
+
+      <c>Setup hook specific directories</c>
+      <do>GLOBAL.usage_hook_dir=GLOBAL.erd_data_dir~'\usage\'~TEMP.hook_id</do>
+      <do>GLOBAL.usage_tables_dir=GLOBAL.usage_hook_dir~'\tables'</do>
+      <do>GLOBAL.usage_join_dir=GLOBAL.usage_hook_dir~'\join'</do>
+      <do>GLOBAL.usage_cursor_1_dir=GLOBAL.usage_hook_dir~'\cursor_1'</do>
+      <do>GLOBAL.usage_cursor_2_dir=GLOBAL.usage_hook_dir~'\cursor_2'</do>
+      <do>GLOBAL.usage_partitioning_dir=GLOBAL.usage_hook_dir~'\partitioning'</do>
+      <do>GLOBAL.usage_streaming_dir=GLOBAL.usage_hook_dir~'\streaming'</do>
+
+      <c>clear structures</c>
+      <do>GLOBAL.hook_id_accs_count=0</do>
+      <index_clear>
+        <index>'MISSING_ID_ACCS'</index>
+      </index_clear>
+      <index_clear>
+        <index>'ALL_ID_ACCS'</index>
+      </index_clear>
+
+      <!--<debug>'Figure out if usage is missing or cached somewhere...'</debug>-->
+      <do>TEMP.missing_count=0</do>
+     <!--<info>'ID_ACC_CSR='~TEMP.id_acc_csr</info>-->
+      <while>
+        <condition>TEMP.id_acc_csr ne ''</condition>
+        <loop>
+          <do>TEMP.usage_node_id=OBJECT(TEMP.id_acc_csr).usage_node_id</do>
+          <do>TEMP.id_acc=OBJECT(TEMP.id_acc_csr).id_acc</do>
+          <index_insert>
+            <index>'ALL_ID_ACCS'</index>
+            <field name="id_acc">TEMP.id_acc</field>
+          </index_insert>
+          <do>GLOBAL.hook_id_accs_count+=1</do>
+          <if>
+            <condition>TEMP.usage_node_id eq ''</condition>
+            <then>
+              <do>TEMP.missing_count+=1</do>
+              <index_insert>
+                <index>'MISSING_ID_ACCS'</index>
+                <field name="id_acc">TEMP.id_acc</field>
+              </index_insert>
+            </then>
+            <else>
+              <c>TBD:queue up the message to get usage...</c>
+            </else>
+          </if>
+          <cursor_next>TEMP.id_acc_csr</cursor_next>
+         <!--<info>'ID_ACC_CSR='~TEMP.id_acc_csr</info>-->
+        </loop>
+      </while>
+
+      <info switch='log_erd'>'Calling usage_hook_create module'</info>
+      <usage_hook_create>
+        <hook_id>TEMP.hook_id</hook_id>
+        <sort_field>GLOBAL.usage_hook_sort_field</sort_field>
+        <id_acc_count>GLOBAL.hook_id_accs_count</id_acc_count>
+        <max_open_files>GLOBAL.hook_max_open_files</max_open_files>
+        <max_sort_objects>GLOBAL.usage_hook_batch_sort_size</max_sort_objects>
+        <usage_tables_dir>GLOBAL.usage_tables_dir</usage_tables_dir>
+        <usage_join_dir>GLOBAL.usage_join_dir</usage_join_dir>
+        <usage_cursor_1_dir>GLOBAL.usage_cursor_1_dir</usage_cursor_1_dir>
+        <usage_cursor_2_dir>GLOBAL.usage_cursor_2_dir</usage_cursor_2_dir>
+        <usage_partitioning_dir>GLOBAL.usage_partitioning_dir</usage_partitioning_dir>
+        <usage_streaming_dir>GLOBAL.usage_streaming_dir</usage_streaming_dir>
+        <usage_released_dir>GLOBAL.usage_released_dir</usage_released_dir>
+        <usage_persisted_dir>GLOBAL.usage_persisted_dir</usage_persisted_dir>
+      </usage_hook_create>
+
+      
+      <debug>'Asking for usage for ['~TEMP.missing_count~'] accounts involved in the decision.'</debug>
+      <index_select>
+        <index>'MISSING_ID_ACCS'</index>
+        <cursor>TEMP.missing_id_acc_csr</cursor>
+        <then>
+          <call_proc_for_current_object>
+            <name>'usage_cursor_miss_proc'</name>
+            <param name="hook_id">TEMP.hook_id</param>
+            <param name="id_acc_csr">TEMP.missing_id_acc_csr</param>
+            <param name="id_usage_interval">TEMP.id_usage_interval</param>
+          </call_proc_for_current_object>
+        </then>
+      </index_select>
+
+      <c>now make sure all the nodes have responded</c>
+    </stopwatch>
+
+    <info switch="log_erd">'exiting get_usage_hook, still hook_id='~TEMP.hook_id</info>
+  </proc>
+
+
+</procs>

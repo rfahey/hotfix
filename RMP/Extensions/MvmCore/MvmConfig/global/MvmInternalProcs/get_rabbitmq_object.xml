@@ -1,0 +1,82 @@
+<proc name="get_rabbitmq_object" namespace="xx">
+  <param name="queue_type"></param>
+  <param name="queue_object" mode="out"></param>
+
+  <print>'Lookup queue_type ['~TEMP.queue_type~'] in database...'</print>
+
+  <spawn>
+    <object_type>'RABBITMQ'</object_type>
+    <object_id>TEMP.queue_object</object_id>
+  </spawn>
+  <index_insert>
+    <index>'GLOBAL_OBJECTS'</index>
+    <field name="object_id">TEMP.queue_object</field>
+  </index_insert>
+
+  <!--<print>'GLOBAL.logical_cluster='~GLOBAL.logical_cluster</print>-->
+
+  <do>
+    TEMP.query= "select q.queue, n.rabbitmq_nodename,n.username,n.password,n.server,n.port,n.vhost
+    from mvm_rabbitmq_map m
+    inner join t_rabbitmq_queues q on m.queue=q.queue
+    inner join t_rabbitmq_nodes n on q.rabbitmq_nodename=n.rabbitmq_nodename
+    where m.queue_type=$${TEMP.queue_type} and m.logical_cluster=$${GLOBAL.logical_cluster}
+    "
+  </do>
+  <db_select>
+    <query>TEMP.query</query>
+    <cursor>TEMP.csr</cursor>
+    <then>
+      <do>TEMP.rabbitmq_nodename=OBJECT(TEMP.csr).rabbitmq_nodename</do>
+      <do>TEMP.username=nvl(OBJECT(TEMP.csr).username,'guest')</do>
+      <do>TEMP.password=nvl(OBJECT(TEMP.csr).password,'guest')</do>
+      <!--<print>'got password='~TEMP.password</print>
+            <print>'got rabbitmq_nodename='~TEMP.rabbitmq_nodename</print>-->
+      <if>
+        <condition>starts_with(TEMP.password,'encrypted:')</condition>
+        <then>
+          <do>TEMP.encrypted=substr(TEMP.password,10)</do>
+          <!--<print>'got encrypted=['~TEMP.encrypted~']'</print>-->
+          <do>TEMP.password=decrypt(TEMP.encrypted)</do>
+          <!--<print>'got decrypted=['~TEMP.password~']'</print>-->
+        </then>
+        <else>
+          <do>TEMP.encrypted='encrypted:'~encrypt(TEMP.password)</do>
+          <!--<print>'got encrypted=['~TEMP.encrypted~']'</print>-->
+          <db_execute>
+            <statement>
+              'update t_rabbitmq_nodes set password=$${TEMP.encrypted} where rabbitmq_nodename=$${TEMP.rabbitmq_nodename} and password=$${TEMP.password}'
+            </statement>
+            <num_rows>TEMP.num_rows</num_rows>
+          </db_execute>
+          <if>
+            <condition>TEMP.num_rows</condition>
+            <then>
+              <print>'Looks like we encrypted the queue password.'</print>
+            </then>
+          </if>
+        </else>
+      </if>
+
+      <do>TEMP.server=nvl(OBJECT(TEMP.csr).server,'localhost')</do>
+      <do>TEMP.port=nvl(OBJECT(TEMP.csr).port,'5672')</do>
+      <do>TEMP.vhost=nvl(OBJECT(TEMP.csr).vhost,'%2f')</do>
+      <do>OBJECT(TEMP.queue_object).queue=OBJECT(TEMP.csr).queue</do>
+      <do>
+        OBJECT(TEMP.queue_object).uri=
+        'amqp://'
+        ~ TEMP.username
+        ~ ':' ~TEMP.password
+        ~ '@' ~TEMP.server
+        ~ ':' ~TEMP.port
+        ~ '/' ~TEMP.vhost
+      </do>
+    </then>
+    <else>
+      <fatal>'Error, could not find entry for queue_type=['~TEMP.queue_type~'] query=['~TEMP.query~'] logical_cluster=['~GLOBAL.logical_cluster~']'</fatal>
+    </else>
+  </db_select>
+
+  <print>'queue_object:'~dump_object(TEMP.queue_object)</print>
+
+</proc>

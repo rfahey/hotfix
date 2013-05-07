@@ -1,0 +1,5 @@
+<procs>
+  <proc name='set_decision_unique_id'>
+    <do>OBJECT.decision_unique_id = OBJECT.id_acc~'|'~OBJECT.id_sub~'|'~OBJECT.start_date~'|'~OBJECT.id_po~'|'~OBJECT.id_sched~'|'~OBJECT.n_order~'|'~OBJECT.tt_start~'|'~OBJECT.tier_column_group~'|'~OBJECT.tier_priority~OBJECT.tier_category</do>
+  </proc>
+</procs>

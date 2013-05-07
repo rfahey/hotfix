@@ -1,0 +1,3 @@
+<proc name="hello_world">
+  <print>'hello world!'</print>
+</proc>

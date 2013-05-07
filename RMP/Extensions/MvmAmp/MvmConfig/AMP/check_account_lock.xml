@@ -1,0 +1,35 @@
+<procs>
+  <proc name="check_account_lock">
+    <param name='id_acc'/>
+    <param name='got_lock' mode='out'/>
+
+    <!--<print>'Starting check_account_lock'</print>-->
+    <do>TEMP.got_lock = '1'</do>
+    <index_select>
+      <index>'LOCKED_ACCOUNTS'</index>
+      <field name='id_acc'>TEMP.id_acc</field>
+      <cursor>TEMP.my_account</cursor>
+      <then>
+        <!--<debug>'account ['~OBJECT(TEMP.my_bucket).id_acc~'] is locked'</debug>-->
+        <do>TEMP.got_lock = '0'</do>
+      </then>
+      <else>
+        <index_insert>
+          <index>'LOCKED_ACCOUNTS'</index>
+          <field name="id_acc">TEMP.id_acc</field>
+        </index_insert>
+        <do>TEMP.got_lock = '1'</do>
+      </else>
+    </index_select>
+    <!--<print>'Ending check_account_lock'</print>-->
+  </proc>
+
+  <proc name="release_account_lock">
+    <param name='id_acc'/>
+    <!--<print>'Starting release_account_lock'</print>-->
+        <index_remove>
+          <index>'LOCKED_ACCOUNTS'</index>
+          <field name="id_acc">TEMP.id_acc</field>
+        </index_remove>
+  </proc>
+</procs>

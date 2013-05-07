@@ -1,0 +1,21 @@
+<procs>
+  <proc name="round_amount">
+    <param name='source_field'/>
+    <param name='precision'/>
+    <param name='target_field' mode='out'/>
+
+    <!--<stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).round_amount_timer'>-->
+      <if>
+        <condition>TEMP.precision ne '-99'</condition>
+        <then>
+          <round>
+            <input>TEMP.source_field</input>
+            <precision>TEMP.precision</precision>
+            <output>TEMP.target_field</output>
+          </round>
+          <!--<print>'Rounding ['~TEMP.source_field~'] to ['~TEMP.target_field~'] with precision ['~TEMP.precision~']'</print>-->
+        </then>
+      </if>
+    <!--</stopwatch>-->
+  </proc>
+</procs>

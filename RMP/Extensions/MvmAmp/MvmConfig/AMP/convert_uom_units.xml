@@ -1,0 +1,74 @@
+<procs>
+  <proc name="convert_uom_units">
+    <param name='source_field'/>
+    <param name='source_uom'/>
+    <param name='target_field' mode='out'/>
+    <param name='target_uom'/>
+
+    
+    <run_once>
+      <define_memory_index>
+        <index>'ALL_UOM_CONVERSIONS'</index>
+        <key_field>'source_uom'</key_field>
+        <key_field>'target_uom'</key_field>
+        <field>'conversion_rate'</field>
+        <field>'precision'</field>
+        <field>'rounding'</field>
+      </define_memory_index>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">"select c_sourceuom /*enum*/, c_targetuom /*enum*/, c_conversionrate /*decimal*/, c_roundup /*boolean*/, c_precision /*integer*/ from t_pt_uomconversion a where 1=1 and a.tt_end = MTMaxDate()"</query>
+        <query type="sql">"select c_sourceuom /*enum*/, c_targetuom /*enum*/, c_conversionrate /*decimal*/, c_roundup /*boolean*/, c_precision /*integer*/ from t_pt_uomconversion a where 1=1 and a.tt_end = dbo.MTMaxDate()"</query>
+        <cursor>TEMP.uom_cur</cursor>
+        <loop>
+				<to_lower>
+					<input>OBJECT(TEMP.uom_cur).c_sourceuom</input>
+					<output>OBJECT(TEMP.uom_cur).c_sourceuom</output>
+				</to_lower>
+				<to_lower>
+					<input>OBJECT(TEMP.uom_cur).c_targetuom</input>
+					<output>OBJECT(TEMP.uom_cur).c_targetuom</output>
+				</to_lower>
+              <index_insert>
+                <index>'ALL_UOM_CONVERSIONS'</index>
+                <field name='source_uom'>OBJECT(TEMP.uom_cur).c_sourceuom</field>
+                <field name='target_uom'>OBJECT(TEMP.uom_cur).c_targetuom</field>
+                <field name='conversion_rate'>OBJECT(TEMP.uom_cur).c_conversionrate</field>
+                <field name='precision'>OBJECT(TEMP.uom_cur).c_precision</field>
+                <field name='rounding'>OBJECT(TEMP.uom_cur).c_roundup</field>
+              </index_insert>
+        </loop>
+      </db_select>
+    </run_once>
+	
+	<to_lower>
+		<input>TEMP.source_uom</input>
+		<output>TEMP.source_uom</output>
+	</to_lower>
+	<to_lower>
+		<input>TEMP.target_uom</input>
+		<output>TEMP.target_uom</output>
+	</to_lower>
+    
+    <index_select>
+      <index>'ALL_UOM_CONVERSIONS'</index>
+      <field name="source_uom">TEMP.source_uom</field>
+      <field name="target_uom">TEMP.target_uom</field>
+      <cursor>TEMP.uom_cur</cursor>
+      <then>
+        <do>TEMP.target_field = TEMP.source_field * OBJECT(TEMP.uom_cur).conversion_rate</do>
+        <round>
+          <input>TEMP.target_field</input>
+          <precision>OBJECT(TEMP.uom_cur).precision</precision>
+          <output>TEMP.target_field</output>
+        </round>
+        <print>'STILL NEED TO HANDLE ROUNDUP/DOWN!!!!!!!'</print>
+        <!--<print>'UOM Converting inside ['~TEMP.source_field~'] from ['~TEMP.source_uom~'] to ['~TEMP.target_uom~'] giving ['~TEMP.target_field~']'</print>-->
+      </then>
+      <else>
+        <print>'UOM CONVERSION ERROR: No conversion rate found for ['~TEMP.source_uom~'] to ['~TEMP.target_uom~']!!!!!!!!!!!!'</print>
+      </else>
+    </index_select>
+    <!--<print>'Exchanging outside ['~TEMP.source_field~'] from ['~TEMP.source_uom~'] to ['~TEMP.target_uom~'] giving ['~TEMP.target_field~']'</print>-->
+  </proc>
+</procs>

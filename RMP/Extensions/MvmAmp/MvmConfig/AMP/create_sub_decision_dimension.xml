@@ -1,0 +1,203 @@
+<procs>
+
+  <proc name='create_sub_decision_dimension'>
+    <param name='my_parent_bucket'/>
+
+
+    <do>TEMP.found_matches = '0'</do>
+	<do>OBJECT(TEMP.my_parent_bucket).tier_dimension = (OBJECT(TEMP.my_parent_bucket).tier_dimension eq ''?1:OBJECT(TEMP.my_parent_bucket).tier_dimension)</do>
+    <do>TEMP.tier_dimension = OBJECT(TEMP.my_parent_bucket).tier_dimension + 1</do>
+
+    <!--<print>'Creating decision dimension for ['~OBJECT(TEMP.my_parent_bucket).decision_unique_id~']['~TEMP.tier_dimension~'] and priority ['~OBJECT(TEMP.my_parent_bucket).tier_priority~']'</print>-->
+    <object_field_value_select>
+      <object_id>TEMP.my_parent_bucket</object_id>
+      <cursor_field>'field'</cursor_field>
+      <cursor_value>'value'</cursor_value>
+      <cursor>TEMP.field_cursor</cursor>
+      <loop>
+        <!--<print>'Checking field ['~OBJECT(TEMP.field_cursor).field~'] for dimension ['~TEMP.tier_dimension~']'</print>-->
+        <match>
+          <input>OBJECT(TEMP.field_cursor).field</input>
+          <regex>"^(.+)_"~TEMP.tier_dimension~"$"</regex>
+          <success>TEMP.success</success>
+          <capture>TEMP.my_field</capture>
+        </match>
+        <if>
+          <condition>TEMP.success eq '1'</condition>
+          <then>
+            <!--<print>'Found a match with field ['~OBJECT(TEMP.field_cursor).field~'] for dimension ['~TEMP.tier_dimension~']'</print>-->
+            <do>TEMP.found_matches = '1'</do>
+          </then>
+        </if>
+      </loop>
+    </object_field_value_select>
+
+    <if>
+      <condition>TEMP.found_matches eq '1'</condition>
+      <then>
+        <spawn>
+          <internal_type>'format_array_delta'</internal_type>
+          <object_type>'TIER_BUCKET'</object_type>
+          <object_id>TEMP.new_bucket_object</object_id>
+        </spawn>
+        <do>object_delta_set_state(TEMP.new_bucket_object,'SettingNew')</do>
+        <object_delta_add_table>
+          <object_id>TEMP.new_bucket_object</object_id>
+          <table_name>'AGG_DECISION_INFO'</table_name>
+        </object_delta_add_table>
+        <do>object_delta_add_object_ref_field(TEMP.new_bucket_object,"AGG_DECISION_INFO","decision_object_id")</do>
+
+        <inherit_object>
+          <source>TEMP.my_parent_bucket</source>
+          <target>TEMP.new_bucket_object</target>
+        </inherit_object>
+
+        <object_field_value_select>
+          <object_id>TEMP.my_parent_bucket</object_id>
+          <cursor_field>'field'</cursor_field>
+          <cursor_value>'value'</cursor_value>
+          <cursor>TEMP.field_cursor</cursor>
+          <loop>
+            <match>
+              <input>OBJECT(TEMP.field_cursor).field</input>
+              <regex>"^(.+)_"~TEMP.tier_dimension~"$"</regex>
+              <success>TEMP.success</success>
+              <capture>TEMP.my_field</capture>
+            </match>
+            <if>
+              <condition>TEMP.success eq '1'</condition>
+              <then>
+                <!--<print>'Found a second match with field ['~OBJECT(TEMP.field_cursor).field~'] for dimension ['~TEMP.tier_dimension~'] and value['~OBJECT(TEMP.field_cursor).value~']'</print>-->
+                <set_object_field>
+                  <input>OBJECT(TEMP.field_cursor).value</input>
+                  <object_id>TEMP.new_bucket_object</object_id>
+                  <field_name>TEMP.my_field</field_name>
+                </set_object_field>
+              </then>
+            </if>
+          </loop>
+        </object_field_value_select>
+
+        <do>OBJECT(TEMP.new_bucket_object).tier_dimension = TEMP.tier_dimension</do>
+
+        <if>
+          <condition>OBJECT(TEMP.new_bucket_object).tier_priority eq OBJECT(TEMP.my_parent_bucket).tier_priority</condition>
+          <then>
+            <do>OBJECT(TEMP.new_bucket_object).tier_priority = (OBJECT(TEMP.my_parent_bucket).orig_tier_priority==''?OBJECT(TEMP.my_parent_bucket).tier_priority:OBJECT(TEMP.my_parent_bucket).orig_tier_priority) + 0.000001</do>
+          </then>
+        </if>
+
+        <if>
+          <condition>OBJECT(TEMP.new_bucket_object).tier_type Eq 'bulk'</condition>
+          <then>
+            <!--<do>OBJECT(TEMP.my_bucket).tier_priority += 1</do>-->
+            <do>OBJECT(TEMP.new_bucket_object).tier_type = 'bulk_aggregate'</do>
+            <do>OBJECT(TEMP.new_bucket_object).tier_priority = OBJECT(TEMP.new_bucket_object).tier_priority - 0.0000001</do>
+          </then>
+        </if>
+
+
+        <set_object_field>
+          <input>TEMP.new_bucket_object</input>
+          <object_id>TEMP.new_bucket_object</object_id>
+          <field_name>'dimension_ref_'~OBJECT(TEMP.new_bucket_object).tier_dimension</field_name>
+        </set_object_field>
+
+        <set_object_field>
+          <input>TEMP.my_parent_bucket</input>
+          <object_id>TEMP.new_bucket_object</object_id>
+          <field_name>'dimension_ref_'~OBJECT(TEMP.my_parent_bucket).tier_dimension</field_name>
+        </set_object_field>
+
+        <set_object_field>
+          <input>TEMP.my_parent_bucket</input>
+          <object_id>TEMP.my_parent_bucket</object_id>
+          <field_name>'dimension_ref_'~OBJECT(TEMP.my_parent_bucket).tier_dimension</field_name>
+        </set_object_field>
+
+        <set_object_field>
+          <input>TEMP.new_bucket_object</input>
+          <object_id>TEMP.my_parent_bucket</object_id>
+          <field_name>'dimension_ref_'~OBJECT(TEMP.new_bucket_object).tier_dimension</field_name>
+        </set_object_field>
+
+        <do>OBJECT(TEMP.my_parent_bucket).next_dimension = TEMP.new_bucket_object</do>
+
+        <do>OBJECT(TEMP.new_bucket_object).previous_dimension = TEMP.my_parent_bucket</do>
+
+
+        <do>OBJECT(TEMP.new_bucket_object).dimension_eval = (OBJECT(TEMP.new_bucket_object).dimension_eval eq ''?'"1" eq "1"':OBJECT(TEMP.new_bucket_object).dimension_eval)</do>
+
+        <if>
+          <condition>OBJECT(TEMP.new_bucket_object).autocombine_dimensions ne ''</condition>
+          <then>
+            <do>OBJECT(TEMP.new_bucket_object).dimension_eval = OBJECT(TEMP.new_bucket_object).dimension_eval~' '~OBJECT(TEMP.new_bucket_object).autocombine_dimension_prefix~' '~OBJECT(TEMP.new_bucket_object).autocombine_dimensions~' OBJECT(OBJECT.dimension_ref_'~OBJECT(TEMP.new_bucket_object).tier_dimension~').within_tier_boundary eq "1"'~OBJECT(TEMP.new_bucket_object).autocombine_dimension_suffix</do>
+          </then>
+        </if>
+
+        <if>
+          <condition>OBJECT(TEMP.new_bucket_object).dimension_combination_criteria ne ''</condition>
+          <then>
+            <do>OBJECT(TEMP.new_bucket_object).dimension_eval = OBJECT(TEMP.new_bucket_object).dimension_eval~' and '~OBJECT(TEMP.new_bucket_object).dimension_combination_criteria</do>
+          </then>
+        </if>
+
+
+        <if>
+          <condition>OBJECT(TEMP.new_bucket_object).account_qualification_group ne ''</condition>
+          <then>
+            <index_select>
+              <index>'ACC_QUAL_GROUPS'</index>
+              <field name="id_acc">OBJECT(TEMP.new_bucket_object).id_acc</field>
+              <field name="group">OBJECT(TEMP.new_bucket_object).account_qualification_group</field>
+              <cursor>TEMP.named_buckets</cursor>
+              <else>
+                <call_proc_for_current_object>
+                  <name>'generate_acc_qual_group_proc'</name>
+                  <param name='account_qualification_group'>OBJECT(TEMP.new_bucket_object).account_qualification_group</param>
+                </call_proc_for_current_object>
+
+                <call_dynamic_proc_for_current_object>
+                  <name>'generate_acc_qual_'~OBJECT(TEMP.new_bucket_object).account_qualification_group</name>
+                  <param name='id_acc'>OBJECT(TEMP.new_bucket_object).id_acc</param>
+                  <param name='curr_decision'>TEMP.new_bucket_object</param>
+                </call_dynamic_proc_for_current_object>
+              </else>
+            </index_select>
+          </then>
+        </if>
+
+        <index_insert>
+          <index>'REBUILT_DECISIONS_FOR_ACC'</index>
+          <field name="decision_object_id">TEMP.new_bucket_object</field>
+        </index_insert>
+
+        <if>
+          <condition>OBJECT(TEMP.new_bucket_object).tier_type Eq 'bulk_aggregate'</condition>
+          <then>
+            <call_proc_for_current_object>
+              <name>'split_sub_bulk_decision'</name>
+              <param name='bucket_object'>TEMP.new_bucket_object</param>
+            </call_proc_for_current_object>
+          </then>
+        </if>
+
+
+        <call_proc_for_current_object>
+          <name>'create_sub_decision_dimension'</name>
+          <param name='my_parent_bucket'>TEMP.new_bucket_object</param>
+        </call_proc_for_current_object>
+
+        <if>
+          <condition>OBJECT(TEMP.new_bucket_object).next_dimension ne ''</condition>
+          <then>
+            <do>OBJECT(TEMP.new_bucket_object).dimension_eval = ''</do>
+          </then>
+        </if>
+
+      </then>
+    </if>
+
+  </proc>
+
+</procs>

@@ -1,0 +1,778 @@
+﻿<procs>
+
+
+
+  <proc name="dummy_proc">
+
+  </proc>
+
+
+  <proc name="amp_test">
+
+    <!--<define_memory_index>
+      <index>'JUNK_STRUCT'</index>
+      <key_field>'a'</key_field>
+      <field>'b'</field>
+    </define_memory_index>
+
+    <index_insert>
+      <index>'JUNK_STRUCT'</index>
+      <field name='a'>4</field>
+      <field name='b'>4</field>
+    </index_insert>
+    <index_insert>
+      <index>'JUNK_STRUCT'</index>
+      <field name='a'>4</field>
+      <field name='b'>2</field>
+    </index_insert>
+    <index_insert>
+      <index>'JUNK_STRUCT'</index>
+      <field name='a'>4</field>
+      <field name='b'>3</field>
+    </index_insert>
+
+    <index_select>
+      <index>'JUNK_STRUCT'</index>
+      <field name='a'>4</field>
+      <order_by>OBJECT.b</order_by>
+      <cursor>TEMP.bg_locks</cursor>
+      <loop>
+        <print>'Attempting to relock bg ['~OBJECT(TEMP.bg_locks).b~']'</print>
+      </loop>
+    </index_select>
+    <return/>-->
+
+    <do>TEMP.boundary_group_id = 13</do>
+    <call_proc_for_current_object>
+      <name>'bg_add_aqg_to_boundary_group'</name>
+      <param name='id_acc'>'125'</param>
+      <param name='account_qualification_group'>'bogus'</param>
+      <param name='force_lock'>0</param>
+      <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+    </call_proc_for_current_object>
+
+    <!--<call_proc_for_current_object>
+      <name>'bg_add_acc_to_aqg'</name>
+      <param name='id_acc'>'125'</param>
+      <param name='account_qualification_group'>'bogus'</param>
+      <param name='child_id_acc'>'124'</param>
+      <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+    </call_proc_for_current_object>-->
+
+    <!--<call_proc_for_current_object>
+      <name>'bg_remove_acc_from_aqg'</name>
+      <param name='id_acc'>'125'</param>
+      <param name='account_qualification_group'>'bogus'</param>
+      <param name='child_id_acc'>'126'</param>
+      <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+    </call_proc_for_current_object>-->
+
+    <!--<call_proc_for_current_object>
+      <name>'bg_remove_aqg_from_boundary_group'</name>
+      <param name='id_acc'>'123'</param>
+      <param name='account_qualification_group'>'Descendents'</param>
+      <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+      <param name='force_remove'>0</param>
+    </call_proc_for_current_object>-->
+
+    
+    
+    <!--<call_proc_for_current_object>
+      <name>'get_sub_agg_decisions'</name>
+      --><!--<param name='id_acc'>'1234452'</param>--><!--
+      <param name='id_acc'>'123'</param>
+    </call_proc_for_current_object>-->
+
+    <return/>
+
+    <call_proc_for_current_object>
+      <name>'dump_account_info'</name>
+      <param name='group_identifier'>'JONAH'</param>
+      <param name='file'>'C:\\MetraTech\\RMP\\MvmLogs\\dump_account_info1.txt'</param>
+    </call_proc_for_current_object>
+
+    <print>'Starting dump account info!!!!'</print>
+    <stopwatch ms='TEMP.dummy_loop' total_ms='OBJECT(GLOBAL.counter_object).dump_account_info'>
+      <call_proc_for_current_object>
+        <name>'dump_account_info'</name>
+        <param name='group_identifier'>'JONAH'</param>
+        <param name='file'>'C:\\MetraTech\\RMP\\MvmLogs\\dump_account_info2.txt'</param>
+      </call_proc_for_current_object>
+    </stopwatch>
+
+    <print>'I dumped account info in ['~OBJECT(GLOBAL.counter_object).dump_account_info~']'</print>
+    
+    <return/>
+
+    
+      <!--<do>TEMP.loop_var = 2000000</do>
+      <do>TEMP.notloop_var =1234567890</do>
+    <do>TEMP.notloop_var2 = 12345</do>
+    <do>TEMP.dummy_val = 1234567890</do>
+    <do>TEMP.dummy_val2 = 12345</do>
+      <while>
+        <condition>TEMP.loop_var GT 1000000</condition>
+        <loop>
+          <stopwatch ms='TEMP.dummy_loop' total_ms='OBJECT(GLOBAL.counter_object).million_math'>
+            <do>TEMP.loop_var -= 1</do>
+          </stopwatch>
+          <stopwatch ms='TEMP.dummy_loop' total_ms='OBJECT(GLOBAL.counter_object).million_simple_math'>
+            <do>TEMP.dummy = '1' + '1'</do>
+          </stopwatch>
+          <stopwatch ms='TEMP.dummy_loop' total_ms='OBJECT(GLOBAL.counter_object).million_bigmath'>
+            <do>TEMP.notloop_var += TEMP.dummy_val + TEMP.dummy_val </do>
+          </stopwatch>
+          <stopwatch ms='TEMP.dummy_loop' total_ms='OBJECT(GLOBAL.counter_object).million_bigmath2'>
+            <do>TEMP.notloop_var2 += TEMP.dummy_val2 + TEMP.dummy_val2 + 1234567890</do>
+          </stopwatch>
+          <stopwatch ms='TEMP.dummy_loop' total_ms='OBJECT(GLOBAL.counter_object).million_concat'>
+            <do>TEMP.notloop_var = '1234567890'~TEMP.notloop_var</do>
+          </stopwatch>
+          <stopwatch ms='TEMP.dummy_loop' total_ms='OBJECT(GLOBAL.counter_object).million_set'>
+            <do>TEMP.notloop_var2 = '12345'</do>
+          </stopwatch>
+          <stopwatch ms='TEMP.dummy_loop' total_ms='OBJECT(GLOBAL.counter_object).million_set2'>
+            <do>TEMP.notloop_var = '1234567890'</do>
+            <do>TEMP.notloop_var2 = '12345'</do>
+          </stopwatch>
+          <stopwatch ms='TEMP.dummy_loop' total_ms='OBJECT(GLOBAL.counter_object).million_set10'>
+            <do>TEMP.notloop_var = '1234567890'</do>
+            <do>TEMP.notloop_var2 = '12345'</do>
+            <do>TEMP.notloop_var2 = '12345'</do>
+            <do>TEMP.notloop_var2 = '12345'</do>
+            <do>TEMP.notloop_var2 = '12345'</do>
+            <do>TEMP.notloop_var2 = '12345'</do>
+            <do>TEMP.notloop_var2 = '12345'</do>
+            <do>TEMP.notloop_var2 = '12345'</do>
+            <do>TEMP.notloop_var2 = '12345'</do>
+            <do>TEMP.notloop_var2 = '12345'</do>
+          </stopwatch>
+          <stopwatch ms='TEMP.dummy_loop' total_ms='OBJECT(GLOBAL.counter_object).million_nothing'>
+          </stopwatch>
+          <call_proc_for_current_object>
+            <name>'dummy_proc'</name>
+          </call_proc_for_current_object>
+        </loop>
+      </while>
+    <call_proc_for_current_object>
+      <name>'persist_counters'</name>
+      <param name='batch_id'>TEMP.my_batch_id</param>
+      <param name='node_id'>'0'</param>
+    </call_proc_for_current_object>
+    <return></return>-->
+
+
+
+    <!--<print>'Generating mapping chain procs!'</print>
+    <call_proc_for_current_object>
+      <name>'generate_mapping_chain_procs'</name>
+    </call_proc_for_current_object>
+
+    <print>'After Generating mapping chain procs!'</print>-->
+    <!--<return></return>-->
+
+    <!--<do>TEMP.id_usage_interval='949420062'</do>
+    <call_proc_for_current_object>
+      <name>'normalize_usage_audit_trail'</name>
+      <param name='id_interval'>TEMP.id_usage_interval</param>
+    </call_proc_for_current_object>
+    <return></return>-->
+
+    <!--<date_diff>
+      <first_date format='YYYYMMDDHH24MISS'>'20120401142536'</first_date>
+      <second_date>'2012-04-02 14:25:37'</second_date>
+      <output type="months">TEMP.seconds_diff</output>
+    </date_diff>
+    <print>'I got date diff of ['~TEMP.seconds_diff~']'</print>
+
+    <date_diff>
+      <first_date format='YYYY-MM-DD HH24:MI:SS'>'2012-04-01 14:25:36'</first_date>
+      <second_date format='YYYY-MM-DD HH24:MI:SS'>'2012-03-31 14:25:35'</second_date>
+      <output type="months">TEMP.seconds_diff</output>
+    </date_diff>
+    <print>'I got date diff of ['~TEMP.seconds_diff~']'</print>
+    <return></return>
+    
+    <date_convert>
+      <from format='YYYY-MM-DD HH24:MI:SS'>'2009-03-03 14:41:41'</from>
+      <to format='YYYYMMDDHH24MISS'>TEMP.junk_date</to>
+    </date_convert>
+    <print>'I got junk date ['~TEMP.junk_date~']'</print>
+    <return></return>-->
+
+
+    <!--<do>OBJECT(GLOBAL.target_login).database_type='sql'</do>
+    
+    <date_add>
+      --><!--<input>'20110101020000'</input>--><!--
+      <input>'2011-01-01 02:00:00'</input>
+      <unit>'DD'</unit>
+      <increment>3</increment>
+      <output>TEMP.output_date</output>
+    </date_add>
+    <print>'I have TEMP output date of ['~TEMP.output_date~']'</print>
+    <return></return>-->
+    
+    <!--<print>'GARBAGE COLLECTING!!!!!!'</print>
+    <call_proc_for_current_object>
+      <name>'dummy_proc'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'dummy_proc'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'dummy_proc'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'dummy_proc'</name>
+    </call_proc_for_current_object>
+    <call_proc_for_current_object>
+      <name>'dummy_proc'</name>
+    </call_proc_for_current_object>
+
+    <print>'DONE GARBAGE COLLECTING!!!!!!'</print>
+    <return/>-->
+    
+    
+    <print>'Starting dummy loop!'</print>
+    <stopwatch ms='TEMP.dummy_loop' total_ms='GLOBAL.dummy_loop'>
+      <do>TEMP.loop_var = 0</do>
+      <!--<do>TEMP.loop_var = 2000000</do>-->
+      <do>TEMP.loop_var2 = 0</do>
+      <do>TEMP.shared_names = '1'</do>
+      <do>TEMP.shared_values = '1'</do>
+      <do>TEMP.value = '12345678901234567890'</do>
+      <do>TEMP.value = '1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234'</do>
+      <do>TEMP.value = TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value</do>
+      <do>TEMP.value = TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value ~ TEMP.value</do>
+      <do>TEMP.value2 = '123456789012345678901'</do>
+      <while>
+        <condition>TEMP.loop_var GT 0</condition>
+        <loop>
+          <do>TEMP.loop_var -= 1</do>
+          <do>TEMP.loop_var2 += 1</do>
+          <spawn>
+            <object_type>'ACCOUNT'</object_type>
+            <object_id>TEMP.id_acc_object</object_id>
+          </spawn>
+          
+          <if>
+            <condition>TEMP.shared_names == '1'</condition>
+            <then>
+              <if>
+                <condition>TEMP.shared_values == '1'</condition>
+                <then>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname1 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname2 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname3 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname4 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname5 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname6 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname7 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname8 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname9 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname10 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname11 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname12 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname13 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname14 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname15 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname16 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname17 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname18 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname19 = TEMP.value2</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname20 = TEMP.value2</do>
+                </then>
+                <else>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname1 = TEMP.value~'1'</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname2 = TEMP.value~'1'</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname3 = TEMP.value~'1'</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname4 = TEMP.value~'1'</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname5 = TEMP.value~'1'</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname6 = TEMP.value~'1'</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname7 = TEMP.value~'1'</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname8 = TEMP.value~'1'</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname9 = TEMP.value~'1'</do>
+                  <do>OBJECT(TEMP.id_acc_object).myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname10 = TEMP.value~'1'</do>
+                </else>
+              </if>
+            </then>
+            <else>
+
+              <do>TEMP.base_field_name = 'myreallyreallyreallyreallyreallyreallyreallyreallyreallylongfieldname'</do>
+          <set_object_field>
+            <input>TEMP.value~'1'</input>
+            <object_id>TEMP.id_acc_object</object_id>
+            <field_name>TEMP.base_field_name~'1'</field_name>
+          </set_object_field>
+          <set_object_field>
+            <input>TEMP.value~'1'</input>
+            <object_id>TEMP.id_acc_object</object_id>
+            <field_name>TEMP.base_field_name~'2'</field_name>
+          </set_object_field>
+          <set_object_field>
+            <input>TEMP.value~'1'</input>
+            <object_id>TEMP.id_acc_object</object_id>
+            <field_name>TEMP.base_field_name~'3'</field_name>
+          </set_object_field>
+          <set_object_field>
+            <input>TEMP.value~'1'</input>
+            <object_id>TEMP.id_acc_object</object_id>
+            <field_name>TEMP.base_field_name~'4'</field_name>
+          </set_object_field>
+          <set_object_field>
+            <input>TEMP.value~'1'</input>
+            <object_id>TEMP.id_acc_object</object_id>
+            <field_name>TEMP.base_field_name~'5'</field_name>
+          </set_object_field>
+          <set_object_field>
+            <input>TEMP.value~'1'</input>
+            <object_id>TEMP.id_acc_object</object_id>
+            <field_name>TEMP.base_field_name~'6'</field_name>
+          </set_object_field>
+          <set_object_field>
+            <input>TEMP.value~'1'</input>
+            <object_id>TEMP.id_acc_object</object_id>
+            <field_name>TEMP.base_field_name~'7'</field_name>
+          </set_object_field>
+          <set_object_field>
+            <input>TEMP.value~'1'</input>
+            <object_id>TEMP.id_acc_object</object_id>
+            <field_name>TEMP.base_field_name~'8'</field_name>
+          </set_object_field>
+          <set_object_field>
+            <input>TEMP.value~'1'</input>
+            <object_id>TEMP.id_acc_object</object_id>
+            <field_name>TEMP.base_field_name~'9'</field_name>
+          </set_object_field>
+          <set_object_field>
+            <input>TEMP.value~'1'</input>
+            <object_id>TEMP.id_acc_object</object_id>
+            <field_name>TEMP.base_field_name~'10'</field_name>
+          </set_object_field>
+            </else>
+          </if>
+          <!--<call_proc_for_current_object>
+            <name>'reduce_object'</name>
+            <param name='object_id'>TEMP.id_acc_object</param>
+          </call_proc_for_current_object>-->
+          <if>
+            <condition>TEMP.loop_var2 == 1000</condition>
+            <then>
+              <print>'Doing ['~TEMP.loop_var~']'</print>
+              <do>TEMP.loop_var2 = 0</do>
+            </then>
+          </if>
+          
+        </loop>
+      </while>
+    </stopwatch>
+    <print>'Time for dummy loop is ['~GLOBAL.dummy_loop~']'</print>
+    <!--<return></return>-->
+
+    <do>TEMP.foo = 'notbogus'</do>
+    <do>TEMP.foo = bogus</do>
+    <print>'I HAVE FOO['~TEMP.foo~']'</print>
+    
+    <!--<print>'Executing execute_amp_for_open_intervals'</print>
+    <call_proc_for_current_object>
+      <name>'execute_amp_for_open_intervals'</name>
+    </call_proc_for_current_object>
+    <print>'DONE Executing execute_amp_for_open_intervals'</print>
+    <return></return>-->
+
+
+    <!--<do>GLOBAL.loop_max = 60000</do>
+    <call_proc_for_current_object>
+      <name>'perftest_do_nothing'</name>
+    </call_proc_for_current_object>
+
+    <call_proc_for_current_object>
+      <name>'perftest_do_nothing'</name>
+    </call_proc_for_current_object>
+    <return></return>-->
+
+    <!--<call_proc_for_current_object>
+      <name>'perftest_run_all'</name>
+      <param name="iterations">1000</param>
+    </call_proc_for_current_object>
+
+    <object_clear>GLOBAL.counter_object</object_clear>-->
+
+    <!--<call_proc_for_current_object>
+      <name>'perftest_run_all'</name>
+      <param name="iterations">100000</param>
+    </call_proc_for_current_object>
+    
+    <return></return>-->
+
+    <do>TEMP.id_usage_interval='992935964'</do>
+    <do>TEMP.id_usage_interval='997261345'</do>
+    <do>TEMP.id_usage_interval='995229726'</do>
+    
+    <!-- perf4_na interval                  -->
+    <do>TEMP.id_usage_interval='949420062'</do>
+
+    <!-- bills interval-->
+    <do>TEMP.id_usage_interval='1009254403'</do>
+    
+
+    <!-- PMNA_BI_B01 interval NetMeterSlice-->
+    <!--<do>TEMP.id_usage_interval='995557383'</do>-->
+
+    <!-- PMNA_BI_B01 interval NetMeter -->
+    <!--<do>TEMP.id_usage_interval='992935964'</do>-->
+
+    <!-- Andys interval for presales -->
+    <!--<do>TEMP.id_usage_interval='1007222816'</do>-->
+    
+    <!--<do>TEMP.id_usage_interval='1003225118'</do>-->
+    <!--<do>TEMP.id_usage_interval='1005256734'</do>-->
+    <!--<do>TEMP.id_usage_interval='997261342'</do>-->
+    <!--<do>TEMP.id_usage_interval='999227422'</do>-->
+    <call_proc_for_current_object>
+      <name>'execute_amp_for_interval'</name>
+      <param name='id_interval'>TEMP.id_usage_interval</param>
+    </call_proc_for_current_object>
+    <return></return>
+    
+    <!-- 
+  so run like:
+  C:\Users\rparks\Documents\_SOURCE\MVM\_TESTS\rapid_rate>..\..\bin\Debug\mvm.exe -file=*.xml -proc=jonah
+  or 
+  for IDE setup GLOBAL.test_name='rapid_rate' and GLOBAL.test_proc='jonah' in main.xml
+  -->
+
+    <!-- point to the entities dir you want and initialize -->
+    <do>GLOBAL.main_dir=GLOBAL.main_dir ne ''?GLOBAL.main_dir:'.'</do>
+    <do>GLOBAL.entities_dir=GLOBAL.main_dir~'/jonah_entities'</do>
+    <!--<call_proc>'synchronize_db_first'</call_proc>-->
+    <call_proc>'initialize'</call_proc>
+
+
+
+    <spawn>
+      <object_type>'LOGGER'</object_type>
+      <object_id>GLOBAL.logger</object_id>
+    </spawn>
+    <do>OBJECT(GLOBAL.logger).log_type='console'</do>
+
+    <!--<do>GLOBAL.log_entities=1</do>
+    <do>GLOBAL.log_metadata=1</do>-->
+    <do>OBJECT(GLOBAL.logger).log_level='info'</do>
+
+    <do>GLOBAL.total_proc_calls = 0</do>
+
+    <call_proc_for_current_object>
+      <name>'convert_to_enum'</name>
+      <param name='value'>OBJECT.dummy_enum</param>
+      <param name='namespace'>'intercall.com/confcommon/product'</param>
+      <param name='success'>TEMP.enum_success</param>
+    </call_proc_for_current_object>
+    
+    
+    <do>GLOBAL.sched_lookup_counter=0</do>
+    <print>'Starting ENUMS'</print>
+    <do>OBJECT.dummy_enum='d'</do>
+    <call_proc_for_current_object>
+      <name>'convert_to_enum'</name>
+      <param name='value'>OBJECT.dummy_enum</param>
+      <param name='namespace'>'intercall.com/confcommon/product'</param>
+      <param name='success'>TEMP.enum_success</param>
+    </call_proc_for_current_object>
+    <print>'Done with ENUMS'</print>
+
+    <!--<call_proc_for_current_object>
+      <name>'generate_charge_procs'</name>
+      <param name='productview_name'>'confconn'</param>
+    </call_proc_for_current_object>-->
+
+    <!--<call_proc_for_current_object>
+      <name>'test_aqg'</name>
+    </call_proc_for_current_object>
+    <return></return>-->
+
+
+
+
+
+
+
+
+    <!-- SQL Server interval -->
+    <do>TEMP.id_usage_interval='945684487'</do>
+    <!--<do>TEMP.id_usage_interval='943718407'</do>-->
+
+    <!-- Oracle interval -->
+    <do>TEMP.id_usage_interval='949420062'</do>
+    <!--<do>TEMP.id_usage_interval='985202718'</do>-->
+
+
+
+    <call_proc_for_current_object>
+      <name>'generate_work_for_interval'</name>
+      <param name='id_interval'>TEMP.id_usage_interval</param>
+    </call_proc_for_current_object>
+
+    <call_proc_for_current_object>
+      <name>'process_decision_work'</name>
+      <param name='id_interval'>TEMP.id_usage_interval</param>
+    </call_proc_for_current_object>
+    <return></return>
+    
+    <!--<call_proc_for_current_object>
+      <name>'get_agg_decisions'</name>
+      <param name='id_acc'>'125751'</param>
+      <param name='id_usage_interval'>TEMP.id_usage_interval</param>
+    </call_proc_for_current_object>-->
+
+
+
+    <call_proc_for_current_object>
+      <name>'get_global_next_highest_priority'</name>
+      <param name='priority'>'-999999999'</param>
+      <param name='next_priority'>TEMP.next_priority</param>
+    </call_proc_for_current_object>
+
+    <print>'Next priority is ['~TEMP.next_priority~'] with ['~GLOBAL.total_proc_calls~']'</print>
+
+    <do>GLOBAL.total_proc_calls = 0</do>
+    <index_select>
+      <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+      <field name='tier_priority'>TEMP.next_priority</field>
+      <cursor>TEMP.my_priority</cursor>
+      <then>
+        <print>'Processing bucket ['~OBJECT(TEMP.my_priority).bucket_object~']'</print>
+        <stopwatch ms='TEMP.my_decision' total_ms='GLOBAL.my_decision'>
+        <call_proc_for_current_object>
+          <name>'process_decision'</name>
+          <param name='bucket_object'>OBJECT(TEMP.my_priority).bucket_object</param>
+        </call_proc_for_current_object>
+        </stopwatch>
+        <print>'Time to process this decision is ['~TEMP.my_decision~']'</print>
+        <do>GLOBAL.skip_cache_usage = '1'</do>
+      </then>
+    </index_select>
+    <print>'Time to process all decisions is ['~GLOBAL.my_decision~'] with ['~GLOBAL.total_proc_calls~'] proc calls'</print>
+    <print>'Time to process buckets is ['~GLOBAL.my_process~']'</print>
+
+    <call_proc_for_current_object>
+      <name>'persist_gen_charge_audit_to_db'</name>
+    </call_proc_for_current_object>
+    
+    <call_proc_for_current_object>
+      <name>'persist_usage_to_db'</name>
+    </call_proc_for_current_object>
+
+    <call_proc_for_current_object>
+      <name>'persist_decisions_to_db'</name>
+    </call_proc_for_current_object>
+    
+    <call_proc_for_current_object>
+      <name>'persist_field_formats_to_db'</name>
+    </call_proc_for_current_object>
+    
+    <stopwatch ms='TEMP.dummy_loop' total_ms='GLOBAL.dummy_loop'>
+      <do>TEMP.loop_var = 22548</do>
+      <while>
+        <condition>TEMP.loop_var GT 0</condition>
+        <loop>
+          <do>TEMP.loop_var -= 1</do>
+          <call_proc_for_current_object>
+            <name>'dummy_proc'</name>
+          </call_proc_for_current_object>
+        </loop>
+      </while>
+    </stopwatch>
+    <print>'Time for dummy loop is ['~GLOBAL.dummy_loop~']'</print>
+
+    <match>
+      <input>'jabcde'</input>
+      <regex>'\|537'</regex>
+      <success>TEMP.success</success>
+    </match>
+    <print>'success is ['~TEMP.success~']'</print>
+
+    <date_diff>
+      <first_date>'20110101000000'</first_date>
+      <second_date>'20110101000030'</second_date>
+      <output>TEMP.seconds_diff</output>
+    </date_diff>
+    <print>'Seconds diff is ['~TEMP.seconds_diff~']'</print>
+    <!--<input format='YYYY-MM-DD HH24:MI:SS'>'2011-01-01 01:02:03'</input>-->
+    <!--<input format='YYYYMMDDHH24MISS'>'20110101000000'</input>-->
+    
+    <date_to_string>
+      <input>'2011-01-01 01:02:03'</input>
+      <output format='YYYYMMDDHH24MISS'>TEMP.output_date</output>
+    </date_to_string>
+    <do>GLOBAL.global_date_format = 'YYYYMMDDHH24MISS'</do>
+    <print>'output date is ['~TEMP.output_date~']'</print>
+    <print>'global format is ['~GLOBAL.global_date_format~']'</print>
+    <string_to_date>
+      <input format='YYYYMMDDHH24MISS'>TEMP.output_date</input>
+      <output>TEMP.output_date</output>
+    </string_to_date>
+    <print>'output date is ['~TEMP.output_date~']'</print>
+    <date_add>
+      <input>TEMP.output_date</input>
+      <unit>'DD'</unit>
+      <increment>3</increment>
+      <output>TEMP.output_date</output>
+    </date_add>
+    <print>'output date is ['~TEMP.output_date~']'</print>
+    <return></return>
+
+    <call_proc_for_current_object>
+      <name>'generate_usage_qual_group_proc'</name>
+      <param name='usage_qualification_group'>'self'</param>
+    </call_proc_for_current_object>
+
+    <stopwatch ms='TEMP.my_ms' total_ms='GLOBAL.my_ms'>
+      <!-- <param name='id_acc'>'125751'</param> -->
+      <call_proc_for_current_object>
+        <name>'determine_usg_qual_self'</name>
+      </call_proc_for_current_object>
+    </stopwatch>
+
+    <print>'I GOT member_of ['~OBJECT.usg_member_of_self~'] and ['~OBJECT.usg_member_of_self2~']'</print>
+    <return></return>
+
+    <call_proc_for_current_object>
+      <name>'generate_acc_qual_group_proc'</name>
+      <param name='account_qualification_group'>'child_owners'</param>
+    </call_proc_for_current_object>
+
+    <stopwatch ms='TEMP.my_ms' total_ms='GLOBAL.my_ms'>
+    <!-- <param name='id_acc'>'125751'</param> -->
+    <call_proc_for_current_object>
+      <name>'generate_acc_qual_child_owners'</name>
+      <param name='id_acc'>'157'</param>
+    </call_proc_for_current_object>
+    </stopwatch>
+    <print>'Time to generate list is ['~GLOBAL.my_ms~']'</print>
+
+    <do>TEMP.my_counter = 0</do>
+    <stopwatch ms='TEMP.my_ms2' total_ms='GLOBAL.my_ms2'>
+    <index_select>
+      <index>'ACC_QUAL_GROUPS'</index>
+      <field name='id_acc'>'157'</field>
+      <field name='group'>'child_owners'</field>
+      <cursor>TEMP.group_member_csr</cursor>
+      <loop>
+        <call_proc_for_current_object>
+          <name>'get_id_acc_object'</name>
+          <param name='id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</param>
+          <param name='id_acc_object'>TEMP.my_account</param>
+        </call_proc_for_current_object>
+        <!--<index_select>
+          <index>'ACCOUNT_CACHE'</index>
+          <field name='id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</field>
+          <cursor>TEMP.account_lookup</cursor>
+          <then>
+            <do>TEMP.id_acc_object = OBJECT(TEMP.account_lookup).account_object</do>
+          </then>
+          <else>
+            <spawn>
+              <object_type>'ACCOUNT'</object_type>
+              <object_id>TEMP.id_acc_object</object_id>
+            </spawn>
+            <do>OBJECT(TEMP.id_acc_object).id_acc = TEMP.id_acc</do>
+            <index_insert>
+              <index>'ACCOUNT_CACHE'</index>
+              <field name='id_acc'>OBJECT(TEMP.group_member_csr).child_id_acc</field>
+              <field name='account_object'>TEMP.id_acc_object</field>
+            </index_insert>
+          </else>
+        </index_select>-->
+        <if>
+          <condition>OBJECT(TEMP.my_account).id_acc ne '0'</condition>
+          <then>
+            <!--<print>'ID acc is ['~OBJECT(TEMP.group_member_csr).child_id_acc~']'</print>-->
+            <do>TEMP.my_counter += 1</do>
+          </then>
+          <else>
+            <print>'Not real!'</print>
+          </else>
+        </if>
+      </loop>
+    </index_select>
+    </stopwatch>
+    <print>'Time to iterate list of ['~TEMP.my_counter~'] is ['~GLOBAL.my_ms2~']'</print>
+    
+    <print>'Done generating acc_qual group for child_owners!'</print>
+    <return></return>
+    <db_select_dynamic>
+      <login_object>GLOBAL.target_login</login_object>
+      <query type="oracle">
+        "select * from account_qualification_groups a
+        inner join account_qualification_groups b on a.account_qualification_group = b.account_qualification_group
+        where a.account_qualification_group = 'child_owners2'"
+      </query>
+      <query type="sql">
+        "SELECT * FROM jonah1 a
+        INNER JOIN jonah2 b ON a.b = b.a"
+      </query>
+      <cursor>TEMP.acc_qual_rows</cursor>
+      <loop>
+        <call_proc_for_object>
+          <name>'print_object'</name>
+          <object_id>TEMP.acc_qual_rows</object_id>
+        </call_proc_for_object>
+      </loop>
+    </db_select_dynamic>
+
+    <do>TEMP.id_acc='125751'</do>
+    
+    <stopwatch ms='TEMP.my_ms' total_ms='GLOBAL.my_ms'>
+      <call_proc_for_current_object>
+        <name>'get_agg_decisions'</name>
+        <param name='id_acc'>TEMP.id_acc</param>
+        <param name='id_usage_interval'>TEMP.id_usage_interval</param>
+      </call_proc_for_current_object>
+    </stopwatch>
+
+    <index_select_keys>
+      <index>'AGG_BUCKETS'</index>
+      <cursor>TEMP.agg_keys</cursor>
+      <loop>
+        <print>'Here I have ['~OBJECT(TEMP.agg_keys).tier_priority~']['~OBJECT(TEMP.agg_keys).usage_qualification_group~']'</print>
+        <index_select>
+          <index>'AGG_BUCKETS'</index>
+          <field name="id_acc">TEMP.id_acc</field>
+          <field name="tier_priority">OBJECT(TEMP.agg_keys).tier_priority</field>
+          <field name="usage_qualification_group">OBJECT(TEMP.agg_keys).usage_qualification_group</field>
+          <field name="account_qualification_group">OBJECT(TEMP.agg_keys).account_qualification_group</field>
+          <field name="tier_domain">OBJECT(TEMP.agg_keys).tier_domain</field>
+          <cursor>TEMP.agg_bucket</cursor>
+          <loop>
+            <call_proc_for_object>
+              <name>'print_object'</name>
+              <object_id>OBJECT(TEMP.agg_bucket).bucket_object</object_id>
+            </call_proc_for_object>
+          </loop>
+        </index_select>
+      </loop>
+
+      </index_select_keys>
+    
+    <print>'Total time to gen procs: '~TEMP.my_ms~' ms'</print>
+    <!--<return></return>-->
+
+    <print>'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'</print>
+    <print>'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'</print>
+    <print>'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'</print>
+    <print>'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'</print>
+    <print>'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'</print>
+    <print>'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'</print>
+
+    <!--<call_proc_for_current_object>
+      <name>'loop_through_usage'</name>
+      <param name='id_acc'>2332323</param>
+    </call_proc_for_current_object>-->
+
+  </proc>
+
+</procs>
+
+

@@ -1,0 +1,29 @@
+<proc name="build_primary_servers_hash_array">
+
+  <index_select>
+    <index>'PRIMARY_PHYSICAL_NODES'</index>
+    <cursor>TEMP.csr</cursor>
+    <loop>
+      <index_insert_if_none>
+        <index>'PRIMARY_SERVERS_HASH'</index>
+        <field name="server">OBJECT(TEMP.csr).server</field>
+      </index_insert_if_none>
+    </loop>
+  </index_select>
+
+  <do>OBJECT.primary_servers_array_count=0</do>
+  <index_select_keys>
+    <index>'PRIMARY_SERVERS_HASH'</index>
+    <cursor>TEMP.csr</cursor>
+    <loop>
+      <index_insert>
+        <index>'PRIMARY_SERVERS_ARRAY'</index>
+        <field name="i">OBJECT.primary_servers_array_count</field>
+        <field name="server">OBJECT(TEMP.csr).server</field>
+      </index_insert>
+      <do>OBJECT.primary_servers_array_count+=1</do>
+    </loop>
+  </index_select_keys>
+  
+
+</proc>

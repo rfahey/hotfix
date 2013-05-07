@@ -1,0 +1,58 @@
+<proc name="build_cluster_node_args">
+  <param name="physical_cluster"/>
+  <param name="logical_cluster"/>
+  <param name="logical_node_id"/>
+  <param name="physical_node_id" mode="in out"/>
+  <param name="starting_proc" mode="out"/>
+  <param name="starting_args" mode="out"/>
+
+
+  <print>'INCOMING: '~TEMP.physical_node_id</print>
+  <do>TEMP.physical_node_id = TEMP.physical_node_id ne '' ? TEMP.physical_node_id : next_physical_node_id()</do>
+  <print>'OUTGOING: '~TEMP.physical_node_id</print>
+  
+  
+  <do>TEMP.starting_proc=''</do>
+  <if>
+    <condition>OBJECT(GLOBAL.args_object).cluster_proc ne ''</condition>
+    <then>
+      <do>TEMP.starting_proc=OBJECT(GLOBAL.args_object).cluster_proc</do>
+    </then>
+    <condition>TEMP.logical_node_id eq 1</condition>
+    <then>
+      <do>TEMP.starting_proc=OBJECT(GLOBAL.args_object).proc</do>
+    </then>
+  </if>
+
+  
+  
+
+  <spawn>
+    <object_type>'OVERRIDE_ARGS'</object_type>
+    <object_id>TEMP.override_args</object_id>
+  </spawn>
+  <do>OBJECT(TEMP.override_args).proc=TEMP.starting_proc</do>
+  <!-- perhaps this should be keyed off node type instead...-->
+  <do>OBJECT(TEMP.override_args).use_id_server=1</do>
+  <do>OBJECT(TEMP.override_args).is_cluster_node=1</do>
+  <do>OBJECT(TEMP.override_args).login_node_id=GLOBAL.node_id</do>
+  <do>OBJECT(TEMP.override_args).login_server=GLOBAL.my_server</do>
+  <do>OBJECT(TEMP.override_args).login_port=GLOBAL.my_port</do>
+  <do>OBJECT(TEMP.override_args).detach=''</do>
+  <do>OBJECT(TEMP.override_args).ide=''</do>
+  <do>OBJECT(TEMP.override_args).cluster_proc=''</do>
+  <do>OBJECT(TEMP.override_args).mvm_run_id=GLOBAL.mvm_run_id</do>
+  <do>OBJECT(TEMP.override_args).mvm_startup_date=GLOBAL.mvm_startup_date</do>
+  <do>OBJECT(TEMP.override_args).physical_node_id=TEMP.physical_node_id</do>
+  <do>OBJECT(TEMP.override_args).physical_cluster=TEMP.physical_cluster</do>
+  <do>OBJECT(TEMP.override_args).logical_cluster=TEMP.logical_cluster</do>
+
+  <call_proc_for_current_object>
+    <name>'build_starting_args'</name>
+    <param name="override_args">TEMP.override_args</param>
+    <param name="result">TEMP.starting_args</param>
+  </call_proc_for_current_object>
+
+  <print>'built starting_args=['~TEMP.starting_args~']'</print>
+  <print>'END OUTGOING: '~TEMP.physical_node_id</print>
+</proc>

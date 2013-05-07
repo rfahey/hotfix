@@ -1,0 +1,20 @@
+<proc name="persist_mvm_logical_cluster_nodes">
+  <index_select_keys>
+    <index>'MVM_LOGICAL_CLUSTER_NODES'</index>
+    <cursor>TEMP.keys</cursor>
+    <loop>
+      <index_select>
+        <index>'MVM_LOGICAL_CLUSTER_NODES'</index>
+        <field name="logical_node_id">OBJECT(TEMP.keys).logical_node_id</field>
+        <cursor>TEMP.csr</cursor>
+        <loop>
+          <db_insert>
+            <name>'MVM_LOGICAL_CLUSTER_NODES'</name>
+            <object_id>TEMP.csr</object_id>
+          </db_insert>
+        </loop>
+      </index_select>
+    </loop>
+  </index_select_keys>
+</proc>
+

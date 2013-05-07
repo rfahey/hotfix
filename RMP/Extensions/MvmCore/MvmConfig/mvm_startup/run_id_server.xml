@@ -1,0 +1,7 @@
+<proc name='run_id_server'>
+	<print>'I am acting as an id_server'</print>
+	<set_server_mode_on/>
+
+	<call_proc>'update_mvm_physical_cluster_nodes'</call_proc>
+  <print>'I am here to server...'</print>	
+</proc>

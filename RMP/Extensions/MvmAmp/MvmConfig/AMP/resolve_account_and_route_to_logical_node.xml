@@ -1,0 +1,20 @@
+<procs>
+  <proc name="resolve_account_and_route_to_logical_node">
+
+    <call_proc_for_current_object>
+      <name>'determine_logical_node'</name>
+      <param name='id_acc'>OBJECT.id_acc</param>
+      <param name='logical_instance_id'>TEMP.logical_instance_id</param>
+    </call_proc_for_current_object>
+
+    <!--<print>'calling process_usage_event from node ['~GLOBAL.node_id~'] to node ['~TEMP.logical_instance_id~'] with object['~dump_object(OBJECT.object_id)~']'</print>-->
+
+    <send_proc_call>
+      <name>'process_usage_event'</name>
+      <object_id>OBJECT.object_id</object_id>
+      <logical_node_id>TEMP.logical_instance_id</logical_node_id>
+      <priority>60</priority>
+    </send_proc_call>
+  </proc>
+
+</procs>

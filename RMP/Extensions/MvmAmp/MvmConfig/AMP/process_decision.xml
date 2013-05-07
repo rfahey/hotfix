@@ -1,0 +1,611 @@
+<procs>
+  <proc name='usage_hook_before_hook'/>
+  <proc name='usage_hook_after_hook'/>
+
+  <!-- ==================================================================== -->
+  <!-- This is the slave process that is asked to run usage through the     -->
+  <!-- given decision.  The slave is going to handle either other decisions -->
+  <!-- that use the already locked accounts.  The slave confers with        -->
+  <!-- master before taken on any of these other decisions.  The slave      -->
+  <!-- returns when done handling the decisions.                            -->
+  <!--                                                                      -->
+  <!-- Input:                                                               -->
+  <!--   bucket_object  - an instantiated decision.                         -->
+  <!--                                                                      -->
+  <!-- Results:                                                             -->
+  <!--   CURRENT_COMPLETED_WORK  - all the decisions that were handled      -->
+  <!--   CURRENT_ACCOUNTS        - all the accounts that we have a lock     -->
+  <!--                             on. Basically the accounts we worked on. -->
+  <!-- ==================================================================== -->
+
+  <proc name='process_decision'>
+    <param name='bucket_object'/>
+
+    <initialize>
+      <define_memory_index>
+        <index>'CURRENT_WORK_BY_ACC'</index>
+        <key_field>'id_acc'</key_field>
+        <field>'bucket_object'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'PUSHED_PARENTS'</index>
+        <key_field>'bucket_object'</key_field>
+      </define_memory_index>
+      
+    </initialize>
+
+    <!--<stopwatch ms='TEMP.junk7' total_ms='OBJECT(GLOBAL.counter_object).outer_first_process_decision_timer'>-->
+
+    <!--<index_select>
+      <index>'AGG_BUCKET_MAP'</index>
+      <field name="bucket_object">TEMP.bucket_object</field>
+      <cursor>TEMP.agg_bucket</cursor>
+      <then>
+        <do>TEMP.bucket_object = OBJECT(TEMP.agg_bucket).bucket_object</do>
+      </then>
+    </index_select>-->
+
+    <!--<if>
+      <condition>OBJECT(TEMP.bucket_object).tier_priority eq '18000'</condition>
+      <then>
+        <db_execute>
+          <login_object>GLOBAL.target_login</login_object>
+          <statement>
+            "
+            delete "~GLOBAL.amp_local_usage_table~" where node_id = 1
+            "
+          </statement>
+          <num_rows>TEMP.num_rows</num_rows>
+        </db_execute>
+      </then>
+    </if>-->
+
+
+    <do>GLOBAL.usage_hook_id = ''</do>
+    <do>TEMP.got_usage_hook = '0'</do>
+
+    <do>GLOBAL.hard_stop_priority = '99999999999999999'</do>
+
+    <index_clear>
+      <index>'CURRENT_COMPLETED_WORK'</index>
+    </index_clear>
+
+    <index_clear>
+      <index>'CURRENT_WORK_REMAINING'</index>
+    </index_clear>
+
+    <index_clear>
+      <index>'ALL_PRECOMPLETED_WORK'</index>
+    </index_clear>
+
+
+    <call_proc_for_current_object>
+      <name>'get_greedy_work'</name>
+      <param name='bucket_object'>TEMP.bucket_object</param>
+      <param name='attempt_lock'>'1'</param>
+      <param name='original_priority'>OBJECT(TEMP.bucket_object).tier_priority</param>
+      <param name='initial_call'>'1'</param>
+    </call_proc_for_current_object>
+
+    <do>TEMP.have_cached_usage = '0'</do>
+    <do>TEMP.still_have_work = '1'</do>
+    <!--<debug>'Starting Loop'</debug>-->
+
+    <!-- while there is still work to do -->
+    <while>
+      <condition>TEMP.still_have_work eq '1'</condition>
+      <loop>
+
+        <do>TEMP.still_have_work = '0'</do>
+
+        <!-- loop through current work and determine what work we actually want to do -->
+        <!-- load this work into CURRENT_WORK_REMAINING -->
+        <index_select_keys>
+          <index>'CURRENT_WORK'</index>
+          <cursor>TEMP.work_csr</cursor>
+          <loop>
+            <do>OBJECT(OBJECT(TEMP.work_csr).bucket_object).processing_started = '1'</do>
+          </loop>
+        </index_select_keys>
+          
+        <index_select_keys>
+          <index>'CURRENT_WORK'</index>
+          <cursor>TEMP.work_csr</cursor>
+          <loop>
+            <debug  switch='log_decisions'>'Looping through work ['~OBJECT(OBJECT(TEMP.work_csr).bucket_object).decision_unique_id~']['~OBJECT(OBJECT(TEMP.work_csr).bucket_object).tier_type~']'</debug>
+            <c>Check to see if this decision is not the first dimension of a decision</c>
+            <if>
+              <condition>OBJECT(OBJECT(TEMP.work_csr).bucket_object).previous_dimension ne ''</condition>
+              <then>
+                <call_proc_for_current_object>
+                  <name>'localize_dimension_refs'</name>
+                  <param name='root_bucket_object'>OBJECT(TEMP.work_csr).bucket_object</param>
+                  <param name='bucket_object'>OBJECT(TEMP.work_csr).bucket_object</param>
+                </call_proc_for_current_object>
+              </then>
+            </if>
+              <debug switch='log_decisions'>'Done looping through work!'</debug>
+
+            <if>
+              <condition>OBJECT(OBJECT(TEMP.work_csr).bucket_object).tier_type Eq 'bulk_aggregate'</condition>
+              <then>
+                <debug switch='log_decisions'>'The tier_type is bulk aggregate.'</debug>
+                <do>OBJECT(OBJECT(TEMP.work_csr).bucket_object).skip_work = 1</do>
+                <call_proc_for_current_object>
+                  <name>'aggregate_bulk_children'</name>
+                  <param name='bucket_object'>OBJECT(TEMP.work_csr).bucket_object</param>
+                </call_proc_for_current_object>
+              </then>
+            </if>
+
+            <if>
+              <condition>OBJECT(OBJECT(TEMP.work_csr).bucket_object).tier_type Eq 'bulk_target'</condition>
+              <then>
+                <debug switch='log_decisions'>'The tier_type is bulk target.'</debug>
+                <call_proc_for_current_object>
+                  <name>'qualify_bulk_children'</name>
+                  <param name='bucket_object'>OBJECT(TEMP.work_csr).bucket_object</param>
+                </call_proc_for_current_object>
+              </then>
+            </if>
+              
+            <if>
+              <condition>OBJECT(TEMP.work_csr).aggregate_to_parent eq '1'</condition>
+              <then>
+                <!--<object_delta_track_originals_set>
+                  <object_id>TEMP.work_csr</object_id>
+                  <value>1</value>
+                </object_delta_track_originals_set>-->
+                <do>OBJECT(TEMP.work_csr).processing_snapshot=get_snapshot()</do>
+              </then>
+            </if>
+              
+              <!-- Always insert into CURRENT_WORK_REMAINING until we fix the chance that the skipped work is the last piece of work on an account, meaning nothing will get persisted -->
+            <if>
+                <condition>OBJECT(OBJECT(TEMP.work_csr).bucket_object).skip_work ne '1' or '1' eq '1'</condition>
+              <then>
+                <!--<debug>'I still have work: ['~OBJECT(OBJECT(TEMP.work_csr).bucket_object).tier_type~']'</debug>-->
+                <do>TEMP.still_have_work = '1'</do>
+                <index_insert>
+                  <index>'CURRENT_WORK_REMAINING'</index>
+                  <!--<field name="bucket_object">OBJECT(TEMP.work_csr).bucket_guid</field>-->
+                  <field name="bucket_object">OBJECT(TEMP.work_csr).bucket_object</field>
+                </index_insert>
+              </then>
+            </if>
+          </loop>
+        </index_select_keys>
+        <!-- end of loop through CURRENT_WORK -->
+
+
+
+        <!--<debug>'Do I still have work ['~TEMP.still_have_work~'] and skip ['~TEMP.have_cached_usage~']'</debug>-->
+        <!-- set TEMP.id_usage_interval  equal to the interval we are working on? -->
+        <!-- get of getting the usage hook -->
+
+        <!-- end of if there is work -->
+        <if>
+          <condition>TEMP.still_have_work eq '1'</condition>
+          <then>
+
+            <stopwatch ms='TEMP.junk1' total_ms='OBJECT(GLOBAL.counter_object).outer_usage_hook_select_timer'>
+
+              <!--<debug>'Trying to populate CURRENT_WORK_BY_ACC'</debug>-->
+
+                <!--<index_select>
+                <index>'CURRENT_WORK_REMAINING'</index>
+                <cursor>TEMP.build_work_csr</cursor>
+                  <order_by direction='asc' type='numeric'>OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).tier_priority</order_by>
+                  <order_by direction='asc' type='numeric'>OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).id_acc</order_by>
+                  <order_by direction='asc' type='numeric'>OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).id_sub</order_by>
+                  <order_by direction='asc' type='string'>OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).start_date</order_by>
+                  <order_by direction='asc' type='numeric'>OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).id_po</order_by>
+                  <order_by direction='asc' type='numeric'>OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).id_sched</order_by>
+                  <order_by direction='asc' type='numeric'>OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).n_order</order_by>
+                  <order_by direction='asc' type='string'>OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).tier_column_group</order_by>
+                <loop>
+                  <print>'Attribute of work_remaining tier_priority ['~OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).tier_priority~']'</print>
+                    <print>'Attribute of work_remaining id_acc ['~OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).id_acc~']'</print>
+                    <print>'Attribute of work_remaining id_sub ['~OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).id_sub~']'</print>
+                    <print>'Attribute of work_remaining start_date ['~OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).start_date~']'</print>
+                    <print>'Attribute of work_remaining id_po ['~OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).id_po~']'</print>
+                    <print>'Attribute of work_remaining id_sched ['~OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).id_sched~']'</print>
+                    <print>'Attribute of work_remaining n_order ['~OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).n_order~']'</print>
+                    <print>'Attribute of work_remaining tier_column_group ['~OBJECT(OBJECT(TEMP.build_work_csr).bucket_object).tier_column_group~']'</print>
+                </loop>
+                </index_select>-->
+                
+                
+              <index_clear>
+                <index>'CURRENT_WORK_BY_ACC'</index>
+              </index_clear>
+
+              <debug switch='log_decisions'>'Creating a list of accounts and decisions that must be processed by this slave.'</debug>
+              <index_select>
+                <index>'CURRENT_WORK_REMAINING'</index>
+                <order_by direction='asc' type='numeric'>OBJECT(OBJECT.bucket_object).tier_priority</order_by>
+                <order_by direction='asc' type='numeric'>OBJECT(OBJECT.bucket_object).id_acc</order_by>
+                <order_by direction='asc' type='numeric'>OBJECT(OBJECT.bucket_object).id_sub</order_by>
+                <order_by direction='asc' type='string'>OBJECT(OBJECT.bucket_object).start_date</order_by>
+                <order_by direction='asc' type='numeric'>OBJECT(OBJECT.bucket_object).id_po</order_by>
+                <order_by direction='asc' type='numeric'>OBJECT(OBJECT.bucket_object).id_sched</order_by>
+                <order_by direction='asc' type='numeric'>OBJECT(OBJECT.bucket_object).n_order</order_by>
+                <order_by direction='asc' type='string'>OBJECT(OBJECT.bucket_object).tier_column_group</order_by>
+                <cursor>TEMP.build_work_csr</cursor>
+              
+                <loop>
+                  <do>TEMP.my_build_bucket = OBJECT(TEMP.build_work_csr).bucket_object</do>
+                  <do>TEMP.my_temp_build_bucket = OBJECT(TEMP.build_work_csr).bucket_object</do>
+                  <if>
+                    <condition>OBJECT(TEMP.my_build_bucket).skip_work eq '1'</condition>
+                    <then>
+                      <do>TEMP.my_temp_build_bucket = '1'</do>
+                    </then>
+                  </if>
+                  <index_select>
+                    <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+                    <field name="bucket_object">TEMP.my_build_bucket</field>
+                    <cursor>TEMP.agg_bucket_accs</cursor>
+                    <loop>
+                      <do>TEMP.my_build_acc = OBJECT(TEMP.agg_bucket_accs).id_acc</do>
+                      <debug switch='log_decisions'>'Inserting to the list of work account '~TEMP.my_build_acc~', decision '~TEMP.my_build_bucket~', and n_order '~OBJECT(TEMP.my_build_bucket).n_order~'.'</debug>
+                      <do>TEMP.exists_already = '0'</do>
+                      <index_select>
+                        <index>'CURRENT_WORK_BY_ACC'</index>
+                        <field name="id_acc">TEMP.my_build_acc</field>
+                        <cursor>TEMP.acc_buckets</cursor>
+                        <loop>
+                          <if>
+                            <condition>OBJECT(TEMP.acc_buckets).bucket_object eq TEMP.my_temp_build_bucket</condition>
+                            <then>
+                              <do>TEMP.exists_already = '1'</do>
+                            </then>
+                          </if>
+                        </loop>
+                      </index_select>
+
+                      <if>
+                        <condition>TEMP.exists_already eq '0'</condition>
+                        <then>
+                          <index_insert>
+                            <index>'CURRENT_WORK_BY_ACC'</index>
+                            <field name="id_acc">TEMP.my_build_acc</field>
+                            <field name="bucket_object">TEMP.my_temp_build_bucket</field>
+                          </index_insert>
+                        </then>
+                      </if>
+                    </loop>
+                  </index_select>
+                  <index_select>
+                    <index>'CURRENT_WORK_BY_ACC'</index>
+                    <field name="id_acc">OBJECT(TEMP.my_build_bucket).id_acc</field>
+                    <cursor>TEMP.decision_acc</cursor>
+                    <else>
+                      <index_insert>
+                        <index>'CURRENT_WORK_BY_ACC'</index>
+                        <field name="id_acc">OBJECT(TEMP.my_build_bucket).id_acc</field>
+                        <field name="bucket_object">'1'</field>
+                      </index_insert>
+                    </else>
+                  </index_select>
+                </loop>
+              </index_select>
+              <!-- done creating  CURRENT_WORK_BY_ACC -->
+              <debug switch='log_decisions'>'DONE Trying to populate CURRENT_WORK_BY_ACC'</debug>
+
+              <do>TEMP.id_usage_interval = ''</do>
+
+              <!--<print>'Do I still have work ['~TEMP.still_have_work~'] and skip ['~TEMP.have_cached_usage~']'</print>-->
+              <if>
+                <condition>TEMP.still_have_work eq '1' and TEMP.have_cached_usage eq '0'</condition>
+                <then>
+
+                  <do>TEMP.have_cached_usage = '1'</do>
+                  <stopwatch ms='TEMP.junk8' total_ms='OBJECT(GLOBAL.counter_object).outer_get_usage_hook_timer'>
+                    <if>
+                      <condition>GLOBAL.skip_cache_usage ne '1'</condition>
+                      <then>
+                        <index_select_keys>
+                          <index>'INTERVAL_ID'</index>
+                          <cursor>TEMP.int_csr</cursor>
+                          <then>
+                            <do>TEMP.id_usage_interval = OBJECT(TEMP.int_csr).interval_id</do>
+                          </then>
+                        </index_select_keys>
+                        <c>Get the usage hook</c>
+                          <!--<index_select_keys>
+                          <index>'CURRENT_WORK_BY_ACC'</index>
+                          <cursor>TEMP.id_acc_csr</cursor>
+                          <loop>
+                            <print>'I have id_acc of ['~OBJECT(TEMP.id_acc_csr).id_acc~']'</print>
+                          </loop>
+                          </index_select_keys>-->
+                        <index_select_keys>
+                          <index>'CURRENT_WORK_BY_ACC'</index>
+                          <cursor>TEMP.id_acc_csr</cursor>
+                          <then>
+                            <info switch='log_decisions'>'Calling get_usage_hook'</info>
+                            <do>TEMP.got_usage_hook = '1'</do>
+                            <call_proc_for_current_object>
+                              <name>'get_usage_hook'</name>
+                              <param name="hook_id">GLOBAL.usage_hook_id</param>
+                              <param name="id_acc_csr">TEMP.id_acc_csr</param>
+                              <param name="id_usage_interval">TEMP.id_usage_interval</param>
+                            </call_proc_for_current_object>
+                          </then>
+                          <else>
+                            <debug switch='log_decisions'>'NO CURRENT_ACCOUNTS, so return'</debug>
+                            <return/>
+                          </else>
+                        </index_select_keys>
+                      </then>
+                      <else>
+                        <!--<print>'Skipping usage cache for testing!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+                      </else>
+                    </if>
+                  </stopwatch>
+                </then>
+              </if>
+
+              <info switch='log_decisions'>'Starting usage hook select!'</info>
+
+                <!--<dump_memory/>-->
+
+              <!--<debug>'Doing a pass!'</debug>-->
+              <do>TEMP.counter = 0</do>
+                <do>TEMP.temp_counter = 0</do>
+                <!--<dump_memory/>-->
+                        <garbage_collect>
+                          <frequency>1</frequency>
+                        </garbage_collect>
+                        <!--<dump_memory/>-->
+
+                <call_proc_for_current_object>
+                  <name>'usage_hook_before_hook'</name>
+                </call_proc_for_current_object>
+              <!--<stopwatch ms='TEMP.my_process' total_ms='GLOBAL.my_process'>-->
+              <debug switch='log_decisions'>'Beginning to iterate through usage.'</debug>
+              <usage_hook_select>
+                <hook_id>GLOBAL.usage_hook_id</hook_id>
+                <cursor>TEMP.usg_csr</cursor>
+                <loop>
+                     <do>TEMP.temp_counter += 1</do>
+                    <if>
+                      <condition>TEMP.temp_counter eq '10000'</condition>
+                      <then>
+                        <!-- <dump_memory/> -->
+                        <!--<garbage_collect>
+                          <frequency>1</frequency>
+                        </garbage_collect>-->
+                         <!-- <dump_memory/> -->
+                        <print>'Processed '~TEMP.temp_counter~' records!'</print>
+
+                        <do>TEMP.temp_counter = 0</do>
+                      </then>
+                    </if>
+                  <!--<stopwatch ms='TEMP.junk2' total_ms='OBJECT(GLOBAL.counter_object).usage_hook_select_inside_timer'>-->
+                  <stopwatch ms='TEMP.junk3' total_ms='OBJECT(GLOBAL.counter_object).usage_hook_select1_inside_timer'>
+
+                  <info switch="log_erd">'USAGE RECORD: counter='~TEMP.counter~',oid='~TEMP.usg_csr~',id_sess='~OBJECT(TEMP.usg_csr).id_sess~',sort_field='~OBJECT(TEMP.usg_csr).sort_field~',amount='~OBJECT(TEMP.usg_csr).amount~',parent_oid='~OBJECT(TEMP.usg_csr).parent_oid~',is_live_parent='~OBJECT(TEMP.usg_csr).is_live_parent</info>
+                  <debug switch='log_decisions'>'Processing usage record id_sess '~OBJECT(TEMP.usg_csr).id_sess~'.'</debug>
+                  <!-- go through all the decision by account -->
+                  <!-- if the current piece of usage falls in the decision, then call process_usage_through_bucket -->
+                  <index_select>
+                    <index>'CURRENT_WORK_BY_ACC'</index>
+                    <field name="id_acc">OBJECT(TEMP.usg_csr).id_payee</field>
+                    <cursor>TEMP.work_csr</cursor>
+                    <loop>
+                      <do>TEMP.work_bucket = OBJECT(TEMP.work_csr).bucket_object</do>
+                      <if>
+                              <!-- Added condition to exclude pushed usage unless pushed usage is explicitly included -->
+                              <!-- Added condition to exclude dummy work for decision owners so generated charges always belong to the usage hook -->
+                              <!-- Added condition to exclude work that can be skipped -->
+                              <condition>(TEMP.work_bucket ne '1') and (OBJECT(TEMP.work_bucket).skip_work ne '1') and (OBJECT(TEMP.usg_csr).dt_session gte OBJECT(TEMP.work_bucket).start_date and OBJECT(TEMP.usg_csr).dt_session lt OBJECT(TEMP.work_bucket).end_date and (OBJECT(TEMP.usg_csr).orig_usage_interval eq '' or OBJECT(TEMP.usg_csr).orig_usage_interval eq OBJECT(TEMP.usg_csr).id_usage_interval or OBJECT(TEMP.work_bucket).include_pushed_usage eq '1'))</condition>
+                        <then>
+                          <if>
+                            <condition>OBJECT(TEMP.usg_csr)._generated_priority eq '' or OBJECT(TEMP.usg_csr)._generated_priority LT OBJECT(TEMP.work_bucket).tier_priority or (OBJECT(TEMP.work_bucket).include_generated_charges eq '1' and OBJECT(TEMP.usg_csr)._generated_bucket eq TEMP.work_bucket)</condition>
+                            <then>
+                              <do>TEMP.counter += 1</do>
+                              <debug switch='log_decisions'>'Pushing usage record id_sess '~OBJECT(TEMP.usg_csr).id_sess~' through decision ['~OBJECT(TEMP.work_bucket).decision_unique_id~']. Priority: '~OBJECT(TEMP.work_bucket).tier_priority~', start date: '~OBJECT(TEMP.work_bucket).start_date~', end date: '~OBJECT(TEMP.work_bucket).end_date~'.'</debug>
+                              <do>OBJECT(TEMP.usg_csr).is_realtime = 0</do>
+                              <call_proc_for_current_object>
+                                <name>'process_usage_through_bucket'</name>
+                                <param name='bucket_object'>OBJECT(TEMP.work_csr).bucket_object</param>
+                                <param name='usage_object'>TEMP.usg_csr</param>
+                                <param name='lowest_included_priority'>OBJECT(TEMP.bucket_object).tier_priority</param>
+                              </call_proc_for_current_object>
+                            </then>
+                          </if>
+                        </then>
+                      </if>
+                    </loop>
+                  </index_select>
+                  <!-- end of loop through CURRENT_WORK _BY_ACC -->
+
+                  </stopwatch>
+
+                  <stopwatch ms='TEMP.junk4' total_ms='OBJECT(GLOBAL.counter_object).usage_hook_select2_inside_timer'>
+
+                  <c>Adding denormalize here so we push the changes before releasing the hook</c>
+                  <if>
+                    <condition>OBJECT(TEMP.usg_csr).current_denorm ne ''</condition>
+                    <then>
+                      <debug switch='log_decisions'>'Calling denorm for object id ['~TEMP.usg_csr~']'</debug>
+                      <call_dynamic_proc_for_object>
+                        <name>'denormalize_charge_qual_'~OBJECT(TEMP.usg_csr).current_denorm</name>
+                        <object_id>TEMP.usg_csr</object_id>
+                      </call_dynamic_proc_for_object>
+                    </then>
+                  </if>
+                  </stopwatch>
+
+                  <!--</stopwatch>-->
+
+                </loop>
+                <!--</index_select>-->
+              </usage_hook_select>
+              <debug switch='log_decisions'>'Done iterating through usage.'</debug>
+
+                <call_proc_for_current_object>
+                  <name>'usage_hook_after_hook'</name>
+                </call_proc_for_current_object>
+
+            </stopwatch>
+
+            <debug switch='log_decisions'>'About to finalize decisions!'</debug>
+
+            <stopwatch ms='TEMP.junk5' total_ms='OBJECT(GLOBAL.counter_object).outer_usage_finalize_process_decisions_timer'>
+
+              <!--<debug>'Checking final bucket triggers'</debug>-->
+              <index_select>
+                <index>'CURRENT_WORK_REMAINING'</index>
+                <cursor>TEMP.work_csr</cursor>
+                <loop>
+                  <call_proc_for_current_object>
+                    <name>'check_for_final_bucket_triggers'</name>
+                    <param name='bucket_object'>OBJECT(TEMP.work_csr).bucket_object</param>
+                  </call_proc_for_current_object>
+                  <if>
+                    <condition>OBJECT(TEMP.work_csr).aggregate_to_parent eq '1'</condition>
+                    <then>
+                      <print>'TBD: ERROR!!!! I should be merging this object into its next dimension!!!!!!!!!!!!!!!!'</print>
+                    </then>
+                  </if>
+                </loop>
+              </index_select>
+
+              <!-- write decisions to the database -->
+              <call_proc_for_current_object>
+                <name>'persist_decisions_to_db'</name>
+              </call_proc_for_current_object>
+
+            </stopwatch>
+
+          </then>
+        </if>
+        <!-- end of if there is work -->
+
+
+
+
+
+        <do>TEMP.still_have_work = '0'</do>
+          
+
+
+        <index_select_keys>
+          <index>'CURRENT_WORK'</index>
+          <cursor>TEMP.work_csr</cursor>
+          <loop>
+            <debug switch='log_decisions'>'Completing work ['~OBJECT(OBJECT(TEMP.work_csr).bucket_object).decision_unique_id~']'</debug>
+            <index_insert>
+              <index>'CURRENT_COMPLETED_WORK'</index>
+              <field name="bucket_object">OBJECT(TEMP.work_csr).bucket_object</field>
+            </index_insert>
+              
+            <if>
+              <condition>OBJECT(TEMP.work_csr).aggregate_to_parent eq '1'</condition>
+              <then>
+                <print>'TBD: ERROR!!!! I should be merging this object into its remote parent!!!!!!!!!!!!!!!!'</print>
+              </then>
+            </if>
+              
+          </loop>
+        </index_select_keys>
+
+        <!--<debug>'Calling get_greedy_work~'</debug>-->
+        <call_proc_for_current_object>
+          <name>'get_greedy_work'</name>
+          <param name='bucket_object'>TEMP.bucket_object</param>
+          <param name='attempt_lock'>'1'</param>
+          <param name='original_priority'>OBJECT(TEMP.bucket_object).tier_priority</param>
+          <param name='initial_call'>'0'</param>
+        </call_proc_for_current_object>
+
+        <do>TEMP.have_cached_usage = '0'</do>
+        <index_select_keys>
+          <index>'CURRENT_WORK'</index>
+          <cursor>TEMP.work_csr</cursor>
+          <then>
+            <debug switch='log_decisions'>'There are still decisions outstanding for this slave to process.'</debug>
+            <do>TEMP.still_have_work = '1'</do>
+          </then>
+          <else>
+            <debug switch='log_decisions'>'The slave has finished processing the decision it was asked to handled (plus an additional decision it requested).'</debug>
+            <debug switch='log_decisions'>'The slave will release the usage and wait for the master to give it another decision.'</debug>
+          </else>
+        </index_select_keys>
+
+        <stopwatch ms='TEMP.junk6' total_ms='OBJECT(GLOBAL.counter_object).release_usage_hook_timer'>
+
+          <if>
+            <condition>TEMP.got_usage_hook eq '1'</condition>
+            <then>
+              <call_proc_for_current_object>
+                <name>'release_usage_hook'</name>
+                <param name="hook_id">GLOBAL.usage_hook_id</param>
+              </call_proc_for_current_object>
+            </then>
+          </if>
+
+          <do>TEMP.got_usage_hook = '0'</do>
+
+        </stopwatch>
+
+        <debug switch='log_decisions'>'Usage hook is released'</debug>
+
+      </loop>
+    </while>
+
+    <!--<print>'About to release usage hook'</print>-->
+
+
+
+
+    <!--<debug>'Persisting counters for testing only!'</debug>
+    <call_proc_for_current_object>
+      <name>'persist_counters'</name>
+      <param name='batch_id'>OBJECT(TEMP.bucket_object).id_acc</param>
+      <param name='node_id'>'1234'</param>
+    </call_proc_for_current_object>
+
+    <debug>'DONE Persisting counters for testing only!'</debug>-->
+
+    <index_clear>
+      <index>'PUSHED_PARENTS'</index>
+    </index_clear>
+
+    <c>Pushing up dimensional decisions that are not completed</c>
+    <index_select_keys>
+      <index>'CURRENT_COMPLETED_WORK'</index>
+      <cursor>TEMP.work_csr</cursor>
+      <loop>
+        <call_proc_for_current_object>
+          <name>'dimensional_push'</name>
+          <param name='bucket_object'>OBJECT(TEMP.work_csr).bucket_object</param>
+        </call_proc_for_current_object>
+
+        <if>
+          <condition>OBJECT(TEMP.work_csr).aggregate_to_parent eq '1' and OBJECT(OBJECT(TEMP.work_csr).next_dimension).processing_started ne '1'</condition>
+          <then>
+            <index_select>
+              <index>'PUSHED_PARENTS'</index>
+              <field name="bucket_object">OBJECT(TEMP.work_csr).next_dimension</field>
+              <cursor>TEMP.work_csr</cursor>
+              <else>
+                <index_insert>
+                  <index>'PUSHED_PARENTS'</index>
+                  <field name="bucket_object">OBJECT(TEMP.work_csr).next_dimension</field>
+                </index_insert>
+                <print>'TBD: ERROR!!!! I should be merging this object ['~OBJECT(TEMP.work_csr).next_dimension~'] into its parent on the master node!!!!!!!!!!!!!!!!'</print>
+              </else>
+            </index_select>
+          </then>
+        </if>
+      </loop>
+    </index_select_keys>
+    
+  </proc>
+
+</procs>

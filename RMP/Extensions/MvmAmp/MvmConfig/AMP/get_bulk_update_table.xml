@@ -1,0 +1,35 @@
+<proc name="get_bulk_update_table" namespace='notamp'>
+    <param name="table"/>
+    <param name="update_table" mode="out"/>
+    <run_once>
+      <define_memory_index>
+        <index>'BULK_UPDATE_TABLES'</index>
+        <key_field>"table"</key_field>
+        <field>"update_table"</field>
+      </define_memory_index>
+    </run_once>
+    <index_select>
+      <index>'BULK_UPDATE_TABLES'</index>
+      <field name="table">TEMP.table</field>
+      <cursor>TEMP.csr</cursor>
+      <then>
+        <do>TEMP.update_table=OBJECT(TEMP.csr).update_table</do>
+      </then>
+      <else>
+        <db_call_proc>
+          <login_object>GLOBAL.target_login</login_object>
+          <name>'mvm_create_blk_upd_table'</name>
+          <param name="p_table">TEMP.table</param>
+          <param name="p_prefix">'ampbu_'</param>
+          <param name="p_blk_upd_table">TEMP.update_table</param>
+        </db_call_proc>
+        <info>'created table '~TEMP.update_table</info>
+        <index_insert>
+          <index>'BULK_UPDATE_TABLES'</index>
+          <field name="table">TEMP.table</field>
+          <field name="update_table">TEMP.update_table</field>
+        </index_insert>
+      </else>
+    </index_select>
+  </proc>
+

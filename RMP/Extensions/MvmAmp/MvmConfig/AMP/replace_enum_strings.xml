@@ -1,0 +1,65 @@
+<procs>
+  <proc name="replace_enum_strings">
+    <param name='source_string'/>
+    <param name='target_string' mode='out'/>
+
+    <do>TEMP.target_string = TEMP.source_string</do>
+    <do>TEMP.success = '1'</do>
+    <while>
+      <condition>TEMP.success eq '1'</condition>
+      <loop>
+        <match>
+          <input>TEMP.target_string</input>
+          <regex>"#([^#]+)#"</regex>
+          <success>TEMP.success</success>
+          <capture>TEMP.my_full_enum</capture>
+        </match>
+        <if>
+          <condition>TEMP.success eq '1'</condition>
+          <then>
+            <!--<debug>'Found an enum of ['~TEMP.my_full_enum~'] success ['~TEMP.success~']'</debug>-->
+            <match>
+              <input>TEMP.my_full_enum</input>
+              <regex>"(.+)\/([^\/]+)"</regex>
+              <success>TEMP.success</success>
+              <capture>TEMP.my_enum_path</capture>
+              <capture>TEMP.my_enum</capture>
+            </match>
+            <if>
+              <condition>TEMP.success eq '1'</condition>
+              <then>
+                <call_proc_for_current_object>
+                  <name>'convert_to_enum'</name>
+                  <param name='value'>TEMP.my_enum</param>
+                  <param name='namespace'>TEMP.my_enum_path</param>
+                  <param name='success'>TEMP.enum_success</param>
+                </call_proc_for_current_object>
+                <if>
+                  <condition>TEMP.enum_success eq '1'</condition>
+                  <then>
+                    <replace>
+                      <input>TEMP.target_string</input>
+                      <old_value>'#'~TEMP.my_full_enum~'#'</old_value>
+                      <new_value>TEMP.my_enum</new_value>
+                      <output>TEMP.target_string</output>
+                    </replace>
+                  </then>
+                  <else>
+                    <replace>
+                      <input>TEMP.target_string</input>
+                      <old_value>'#'~TEMP.my_full_enum~'#'</old_value>
+                      <new_value>'@'~TEMP.my_full_enum~'@'</new_value>
+                      <output>TEMP.target_string</output>
+                    </replace>
+                    <print>'Failed Enum Replaced to get ['~TEMP.target_string~']'</print>
+                  </else>
+                </if>
+              </then>
+            </if>
+          </then>
+        </if>
+      </loop>
+    </while>
+
+  </proc>
+</procs>

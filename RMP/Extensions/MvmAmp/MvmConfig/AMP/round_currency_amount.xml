@@ -1,0 +1,120 @@
+<procs>
+  <proc name="round_currency_amount">
+    <param name='source_field'/>
+    <param name='target_currency'/>
+    <param name='target_field' mode='out'/>
+    <initialize>
+      <!--<stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).round_currency_amount_startup_timer'>-->
+      <define_memory_index>
+        <index>'ALL_CURRENCIES'</index>
+        <key_field>'currency'</key_field>
+        <field>'significant_digits'</field>
+        <field>'name'</field>
+        <field>'currency_id'</field>
+        <field>'currency_code'</field>
+      </define_memory_index>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <!-- query type="oracle">
+          "select code currency_code, num currency_id, decimals significant_digits, name from t_ic_currency "
+        </query -->
+        <!--<query type="sql">
+          "SELECT currency currency_code, rounding significant_digits, NULL currency_id, NULL name FROM t_prem_currencyconversion
+            UNION SELECT top 1 'JPY' currency_code, 0 significant_digits, NULL currency_id, NULL name FROM t_prem_currencyconversion where not exists (select 1 from t_prem_currencyconversion where currency = 'JPY')"
+        </query>-->
+        <!--<query type="sql">
+          "SELECT SUBSTRING(ed.nm_enum_data,42,3) as currency_code, pcc.c_Precision as significant_digits, IsNull(dsc.tx_desc,ed.nm_enum_data) as name
+                                   FROM t_pt_currencyconfiguration pcc
+                                   INNER JOIN t_rsched rsc on pcc.id_sched = rsc.id_sched
+                                   INNER JOIN t_effectivedate eff on eff.id_eff_date = rsc.id_eff_date
+                                   INNER JOIN t_enum_data ed ON ed.id_enum_data = pcc.c_Currency
+                                   LEFT OUTER JOIN t_description dsc ON dsc.id_desc = ed.id_enum_data and dsc.id_lang_code = 840
+                                   WHERE 1=1 AND pcc.tt_end = dbo.mtmaxdate ()
+                                   ORDER BY IsNull(eff.dt_start, dbo.mtmaxdate()), pcc.n_order"
+        </query>-->
+        <query type="oracle">
+          "SELECT SUBSTR(ed.nm_enum_data,42,3) as currency_code, CASE WHEN SUBSTR(ed.nm_enum_data,42,3) = 'JPY' THEN 0 ELSE 2 END as significant_digits, nvl(dsc.tx_desc,ed.nm_enum_data) as name
+          FROM t_enum_data ed
+          LEFT OUTER JOIN t_description dsc ON dsc.id_desc = ed.id_enum_data and dsc.id_lang_code = 840
+          WHERE 1=1 AND ed.nm_enum_data like 'Global/SystemCurrencies/SystemCurrencies/%'"
+        </query>
+        <query type="sql">
+          "SELECT SUBSTRING(ed.nm_enum_data,42,3) as currency_code, CASE WHEN SUBSTRING(ed.nm_enum_data,42,3) = 'JPY' THEN 0 ELSE 2 END as significant_digits, IsNull(dsc.tx_desc,ed.nm_enum_data) as name
+          FROM t_enum_data ed
+          LEFT OUTER JOIN t_description dsc ON dsc.id_desc = ed.id_enum_data and dsc.id_lang_code = 840
+          WHERE 1=1 AND ed.nm_enum_data like 'Global/SystemCurrencies/SystemCurrencies/%'"
+        </query>
+        <cursor>TEMP.currency_cur</cursor>
+        <loop>
+          <if>
+            <condition>OBJECT(TEMP.currency_cur).currency_code ne ''</condition>
+            <then>
+              <index_insert>
+                <index>'ALL_CURRENCIES'</index>
+                <field name='currency'>OBJECT(TEMP.currency_cur).currency_code</field>
+                <field name='significant_digits'>OBJECT(TEMP.currency_cur).significant_digits</field>
+                <field name='name'>OBJECT(TEMP.currency_cur).name</field>
+                <field name='currency_id'>OBJECT(TEMP.currency_cur).currency_id</field>
+                <field name='currency_code'>OBJECT(TEMP.currency_cur).currency_code</field>
+              </index_insert>
+            </then>
+          </if>
+          <if>
+            <condition>OBJECT(TEMP.currency_cur).currency_id ne ''</condition>
+            <then>
+              <index_insert>
+                <index>'ALL_CURRENCIES'</index>
+                <field name='currency'>OBJECT(TEMP.currency_cur).currency_id</field>
+                <field name='significant_digits'>OBJECT(TEMP.currency_cur).significant_digits</field>
+                <field name='name'>OBJECT(TEMP.currency_cur).name</field>
+                <field name='currency_id'>OBJECT(TEMP.currency_cur).currency_id</field>
+                <field name='currency_code'>OBJECT(TEMP.currency_cur).currency_code</field>
+              </index_insert>
+            </then>
+          </if>
+        </loop>
+      </db_select>
+      <print>'Done with round_currency amount init'</print>
+      <!--</stopwatch>-->
+    </initialize>
+
+    <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).round_currency_amount_timer'>
+    <if>
+      <condition>TEMP.target_currency Eq GLOBAL.last_currency</condition>
+      <then>
+        <round>
+          <input>TEMP.source_field</input>
+          <precision>GLOBAL.last_currency_precision</precision>
+          <output>TEMP.target_field</output>
+        </round>
+      </then>
+      <else>
+      <index_select>
+        <index>'ALL_CURRENCIES'</index>
+        <field name="currency">TEMP.target_currency</field>
+        <cursor>TEMP.currency_cur</cursor>
+        <then>
+          <round>
+            <input>TEMP.source_field</input>
+            <precision>OBJECT(TEMP.currency_cur).significant_digits</precision>
+            <output>TEMP.target_field</output>
+          </round>
+            <do>GLOBAL.last_currency = TEMP.target_currency</do>
+            <do>GLOBAL.last_currency_precision = OBJECT(TEMP.currency_cur).significant_digits</do>
+          <!--<print>'Rounding ['~TEMP.source_field~'] to ['~TEMP.target_field~']'</print>-->
+        </then>
+      </index_select>
+      </else>
+    </if>
+      <if>
+        <condition>TEMP.target_field eq ''</condition>
+        <then>
+          <print>'Rounding ['~TEMP.source_field~'] to ['~TEMP.target_field~'] in currency ['~GLOBAL.last_currency_precision~']'</print>
+        </then>
+      </if>
+    
+    </stopwatch>
+    
+  </proc>
+
+</procs>

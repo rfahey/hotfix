@@ -1,0 +1,55 @@
+<procs>
+  <proc name="get_interval_dates">
+    <param name='interval_id'/>
+    <param name='start_date' mode='out'/>
+    <param name='end_date' mode='out'/>
+
+    <run_once>
+      <define_memory_index>
+        <index>'INTERVAL_DATES'</index>
+        <key_field>'interval_id'</key_field>
+        <field>'start_date'</field>
+        <field>'end_date'</field>
+      </define_memory_index>
+    </run_once>
+
+    <print>'TESTING!1!!!!!!!!!!!!!!!!'</print>
+    <index_select>
+      <index>'INTERVAL_DATES'</index>
+      <field name="interval_id">TEMP.interval_id</field>
+      <cursor>TEMP.cached_interval_dates</cursor>
+      <then>
+        <do>TEMP.start_date = OBJECT(TEMP.cached_interval_dates).start_date</do>
+        <do>TEMP.end_date = OBJECT(TEMP.cached_interval_dates).end_date</do>
+      </then>
+      <else>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select dt_start start_date, dt_end end_date from t_usage_interval where id_interval = $${TEMP.interval_id}"
+          </query>
+          <cursor>TEMP.interval_dates</cursor>
+          <loop>
+            <do>TEMP.start_date = OBJECT(TEMP.interval_dates).start_date</do>
+            <do>TEMP.end_date = OBJECT(TEMP.interval_dates).end_date</do>
+            <print>'TESTING!2!!!!!!!!!!!!!!!!['~TEMP.end_date~']'</print>
+            <date_add>
+              <input>TEMP.end_date</input>
+              <unit>'SS'</unit>
+              <increment>'1'</increment>
+              <output>TEMP.end_date</output>
+            </date_add>
+            <print>'TESTING!3!!!!!!!!!!!!!!!!'</print>
+            <index_insert>
+              <index>'INTERVAL_DATES'</index>
+              <field name='interval_id'>TEMP.interval_id</field>
+              <field name='start_date'>TEMP.start_date</field>
+              <field name='end_date'>TEMP.end_date </field>
+            </index_insert>
+          </loop>
+        </db_select>
+      </else>
+    </index_select>
+    <print>'TESTING DONE'</print>
+  </proc>
+</procs>

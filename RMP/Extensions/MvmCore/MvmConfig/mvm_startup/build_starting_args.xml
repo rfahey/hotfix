@@ -1,0 +1,35 @@
+<proc name="build_starting_args">
+  <param name="override_args"/>
+  <param name="result" mode="out"/>
+
+  <print>'GLOBAL.args_object='~GLOBAL.args_object</print>
+  <print>'TEMP.override_args='~TEMP.override_args</print>
+
+  <object_field_value_select>
+    <object_id>TEMP.override_args</object_id>
+    <cursor>TEMP.csr</cursor>
+    <loop>
+      <if>
+        <condition>OBJECT(TEMP.csr).field ne '' and OBJECT(TEMP.csr).value ne ''</condition>
+        <then>
+          <do>TEMP.result~=' "-'~OBJECT(TEMP.csr).field~'='~OBJECT(TEMP.csr).value~'"'</do>
+        </then>
+      </if>
+    </loop>
+  </object_field_value_select>
+
+  <object_field_value_select>
+    <object_id>GLOBAL.args_object</object_id>
+    <cursor>TEMP.csr</cursor>
+    <loop>
+      <if>
+        <condition>contains_field(TEMP.override_args,OBJECT(TEMP.csr).field) ne 1 and OBJECT(TEMP.csr).field ne '' and OBJECT(TEMP.csr).value ne ''</condition>
+        <then>
+          <do>TEMP.result~=' "-'~OBJECT(TEMP.csr).field~'='~OBJECT(TEMP.csr).value~'"'</do>
+        </then>
+      </if>
+    </loop>
+  </object_field_value_select>
+
+
+</proc>

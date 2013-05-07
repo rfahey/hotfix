@@ -1,0 +1,460 @@
+<procs>
+  <proc name='cache_aggregate_pts'>
+    <!-- generate functions to create dynamic tier objects from all aggregate PTs -->
+    <initialize priority="1000000">
+      <print>'init cache_aggregate_pts'</print>
+
+      <call_proc_for_current_object>
+        <name>'synchronize_db_first'</name>
+      </call_proc_for_current_object>
+
+      <define_memory_index>
+        <index>'AGG_PTS'</index>
+        <key_field>'paramtable_name'</key_field>
+        <field>'column_group'</field>
+        <field>'column_name'</field>
+        <field>'pt_column_name'</field>
+        <field>'default_value'</field>
+        <field>'push_to_usage'</field>
+      </define_memory_index>
+
+      
+      <define_memory_index>
+        <index>'AGG_PT_MAPS'</index>
+        <key_field>'map'</key_field>
+        <key_field>'order'</key_field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'AGG_PT_MAPS2'</index>
+        <field>'map'</field>
+        <field>'order'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'AGG_PT_COLS_TO_USAGE'</index>
+        <key_field>'field_name'</key_field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'AGG_PT_GROUPS'</index>
+        <key_field>'paramtable_name'</key_field>
+        <key_field>'column_group'</key_field>
+        <field>'column_name'</field>
+        <field>'pt_column_name'</field>
+        <field>'default_value'</field>
+        <field>'push_to_usage'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'AGG_PT_GROUP_COLS'</index>
+        <key_field>'paramtable_name'</key_field>
+        <key_field>'column_group'</key_field>
+        <key_field>'column_name'</key_field>
+        <field>'pt_column_name'</field>
+        <field>'default_value'</field>
+        <field>'push_to_usage'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'TEMP_AGG_BUCKETS'</index>
+        <key_field>'id_acc'</key_field>
+        <field type="object_id">'bucket_object'</field>
+      </define_memory_index>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select lower(paramtable_name) paramtable_name, lower(column_group) column_group, lower(column_name) column_name, lower(pt_column_name) pt_column_name, lower(default_value) default_value, push_to_usage from agg_param_table_col_map"
+        </query>
+        <query type="sql">
+          "select lower(paramtable_name) paramtable_name, lower(column_group) column_group, lower(column_name) column_name, lower(pt_column_name) pt_column_name, lower(default_value) default_value, push_to_usage from agg_param_table_col_map"
+        </query>
+        <cursor>TEMP.pt_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'AGG_PTS'</index>
+            <field name="paramtable_name">OBJECT(TEMP.pt_csr).paramtable_name</field>
+            <field name="column_group">OBJECT(TEMP.pt_csr).column_group</field>
+            <field name="column_name">OBJECT(TEMP.pt_csr).column_name</field>
+            <field name="pt_column_name">OBJECT(TEMP.pt_csr).pt_column_name</field>
+            <field name="default_value">OBJECT(TEMP.pt_csr).default_value</field>
+            <field name="push_to_usage">OBJECT(TEMP.pt_csr).push_to_usage</field>
+          </index_insert>
+          <index_insert>
+            <index>'AGG_PT_GROUPS'</index>
+            <field name="paramtable_name">OBJECT(TEMP.pt_csr).paramtable_name</field>
+            <field name="column_group">OBJECT(TEMP.pt_csr).column_group</field>
+            <field name="column_name">OBJECT(TEMP.pt_csr).column_name</field>
+            <field name="pt_column_name">OBJECT(TEMP.pt_csr).pt_column_name</field>
+            <field name="default_value">OBJECT(TEMP.pt_csr).default_value</field>
+            <field name="push_to_usage">OBJECT(TEMP.pt_csr).push_to_usage</field>
+          </index_insert>
+          <index_insert>
+            <index>'AGG_PT_GROUP_COLS'</index>
+            <field name="paramtable_name">OBJECT(TEMP.pt_csr).paramtable_name</field>
+            <field name="column_group">OBJECT(TEMP.pt_csr).column_group</field>
+            <field name="column_name">OBJECT(TEMP.pt_csr).column_name</field>
+            <field name="pt_column_name">OBJECT(TEMP.pt_csr).pt_column_name</field>
+            <field name="default_value">OBJECT(TEMP.pt_csr).default_value</field>
+            <field name="push_to_usage">OBJECT(TEMP.pt_csr).push_to_usage</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select lower(column_name) column_name, lower(global_default_value) global_default_value from agg_param_table_master"
+        </query>
+        <query type="sql">
+          "select lower(column_name) column_name, lower(global_default_value) global_default_value  from agg_param_table_master"
+        </query>
+        <cursor>TEMP.master_csr</cursor>
+        <run>
+          <create_memory_index_from_cursor>
+            <index>'AGG_PT_COL_MASTER'</index>
+            <cursor>TEMP.master_csr</cursor>
+            <key_field>'column_name'</key_field>
+            <key_field>'global_default_value'</key_field>
+          </create_memory_index_from_cursor>
+        </run>
+      </db_select>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select lower(column_name) column_name, global_default_value global_default_value from agg_param_table_master"
+        </query>
+        <query type="sql">
+          "select lower(column_name) column_name, global_default_value global_default_value  from agg_param_table_master"
+        </query>
+        <cursor>TEMP.master_csr</cursor>
+        <run>
+          <create_memory_index_from_cursor>
+            <index>'AGG_PT_COL_MASTER2'</index>
+            <cursor>TEMP.master_csr</cursor>
+            <key_field>'column_name'</key_field>
+          </create_memory_index_from_cursor>
+        </run>
+      </db_select>
+
+      <index_select_keys>
+        <index>'AGG_PTS'</index>
+        <cursor>TEMP.pt_name</cursor>
+        <loop>
+          <index_clear>
+            <index>'AGG_PT_MAPS'</index>
+          </index_clear>
+          <index_clear>
+            <index>'AGG_PT_COLS_TO_USAGE'</index>
+          </index_clear>
+          <do>
+            TEMP.my_pt_proc='<![CDATA[
+<proc name="generate_tiers_'~OBJECT(TEMP.pt_name).paramtable_name~'">
+            ]]>'
+          </do>
+          <index_select_keys>
+            <index>'AGG_PT_GROUPS'</index>
+            <cursor>TEMP.pt_group</cursor>
+            <loop>
+              <if>
+                <condition>OBJECT(TEMP.pt_name).paramtable_name eq OBJECT(TEMP.pt_group).paramtable_name</condition>
+                <then>
+                  <do>
+                    TEMP.my_pt_proc~="<![CDATA[
+  <spawn>
+    <internal_type>'format_array_delta'</internal_type>
+    <feedback_name>'DECISION'</feedback_name>
+    <object_type>'TIER_ROW'</object_type>
+    <object_id>TEMP.tier_row_oid</object_id>
+  </spawn>
+   <do>object_delta_set_state(TEMP.tier_row_oid,'SettingNew')</do>
+  <inherit_object>
+    <source>OBJECT.object_id</source>
+    <target>TEMP.tier_row_oid</target>
+  </inherit_object>
+  <do>OBJECT(TEMP.tier_row_oid).tier_column_group = '"~OBJECT(TEMP.pt_group).column_group~"'</do>
+                    ]]>"
+                  </do>
+                  <do>TEMP.regex='map\((\w+),\s*(\d+)\)'</do>
+                  <index_select_keys>
+                    <index>'AGG_PT_COL_MASTER'</index>
+                    <cursor>TEMP.pt_master</cursor>
+                    <loop>
+                      <do>TEMP.global_map = ''</do>
+                      <do>TEMP.global_map_order = ''</do>
+                      <match>
+                        <input>OBJECT(TEMP.pt_master).global_default_value</input>
+                        <regex>TEMP.regex</regex>
+                        <success>TEMP.success</success>
+                        <capture>TEMP.global_map</capture>
+                        <capture>TEMP.global_map_order</capture>
+                      </match>
+                      <if>
+                        <condition>TEMP.success eq '1'</condition>
+                        <then>
+                          <do>TEMP.global_map = OBJECT(TEMP.pt_master).global_default_value</do>
+                          <do>OBJECT(TEMP.pt_master).global_default_value = ''</do>
+                        </then>
+                      </if>
+                      <index_select>
+                        <index>'AGG_PT_GROUP_COLS'</index>
+                        <field name="paramtable_name">OBJECT(TEMP.pt_group).paramtable_name</field>
+                        <field name="column_group">OBJECT(TEMP.pt_group).column_group</field>
+                        <field name="column_name">OBJECT(TEMP.pt_master).column_name</field>
+                        <cursor>TEMP.col_csr</cursor>
+                        <then>
+                          <do>TEMP.local_map = ''</do>
+                          <do>TEMP.local_map_order = ''</do>
+                          <match>
+                            <input>OBJECT(TEMP.col_csr).default_value</input>
+                            <regex>TEMP.regex</regex>
+                            <success>TEMP.success</success>
+                            <capture>TEMP.local_map</capture>
+                            <capture>TEMP.local_map_order</capture>
+                          </match>
+                          <if>
+                            <condition>TEMP.success eq '1'</condition>
+                            <then>
+                              <index_insert_if_none>
+                                <index>'AGG_PT_MAPS'</index>
+                                <field name='map'>TEMP.local_map</field>
+                                <field name='order'>TEMP.local_map_order</field>
+                              </index_insert_if_none>
+                              <do>OBJECT(TEMP.col_csr).default_value = ''</do>
+                            </then>
+                          </if>
+                          <if>
+                            <condition>OBJECT(TEMP.col_csr).pt_column_name ne ''</condition>
+                            <then>
+                              <do>
+                                TEMP.my_pt_proc~="<![CDATA[
+  <do>OBJECT(TEMP.tier_row_oid)."~OBJECT(TEMP.pt_master).column_name~" = OBJECT."~OBJECT(TEMP.col_csr).pt_column_name~"</do>]]>"
+                              </do>
+                              <if>
+                                <condition>OBJECT(TEMP.col_csr).default_value ne ''</condition>
+                                <then>
+                                  <do>
+                                    TEMP.my_pt_proc~="<![CDATA[
+  <if>
+    <condition>OBJECT(TEMP.tier_row_oid)."~OBJECT(TEMP.pt_master).column_name~" eq ''</condition>
+    <then>
+      <do>OBJECT(TEMP.tier_row_oid)."~OBJECT(TEMP.pt_master).column_name~" = '"~OBJECT(TEMP.col_csr).default_value~"'</do>
+    </then>
+  </if>]]>"
+                                  </do>
+                                </then>
+                              </if>
+                            </then>
+                            <else>
+                              <do>
+                                TEMP.my_pt_proc~="<![CDATA[
+  <do>OBJECT(TEMP.tier_row_oid)."~OBJECT(TEMP.pt_master).column_name~" = '"~OBJECT(TEMP.col_csr).default_value~"'</do>]]>"
+                              </do>
+                            </else>
+                          </if>
+                        </then>
+                        <else>
+                          <if>
+                            <condition>TEMP.global_map ne ''</condition>
+                            <then>
+                              <index_insert_if_none>
+                                <index>'AGG_PT_MAPS'</index>
+                                <field name='map'>TEMP.global_map</field>
+                                <field name='order'>TEMP.global_map_order</field>
+                              </index_insert_if_none>
+                            </then>
+                          </if>
+                          <do>
+                            TEMP.my_pt_proc~="<![CDATA[
+  <do>OBJECT(TEMP.tier_row_oid)."~OBJECT(TEMP.pt_master).column_name~" = '"~OBJECT(TEMP.pt_master).global_default_value~"'</do>]]>"
+                          </do>
+                        </else>
+                      </index_select>
+                    </loop>
+                  </index_select_keys>
+                  <index_select>
+                    <index>'AGG_PT_GROUPS'</index>
+                    <field name="paramtable_name">OBJECT(TEMP.pt_group).paramtable_name</field>
+                    <field name="column_group">OBJECT(TEMP.pt_group).column_group</field>
+                    <cursor>TEMP.pt_nomaster</cursor>
+                    <loop>
+                      <if>
+                        <condition>OBJECT(TEMP.pt_nomaster).push_to_usage eq '1'</condition>
+                        <then>
+                          <index_insert_if_none>
+                            <index>'AGG_PT_COLS_TO_USAGE'</index>
+                            <field name='field_name'>OBJECT(TEMP.pt_nomaster).column_name</field>
+                          </index_insert_if_none>
+                        </then>
+                      </if>
+                      <index_select>
+                        <index>'AGG_PT_COL_MASTER2'</index>
+                        <field name="column_name">OBJECT(TEMP.pt_nomaster).column_name</field>
+                        <cursor>TEMP.col_master2</cursor>
+                        <else>
+                          <do>TEMP.local_map = ''</do>
+                          <do>TEMP.local_map_order = ''</do>
+                          <match>
+                            <input>OBJECT(TEMP.pt_nomaster).default_value</input>
+                            <regex>TEMP.regex</regex>
+                            <success>TEMP.success</success>
+                            <capture>TEMP.local_map</capture>
+                            <capture>TEMP.local_map_order</capture>
+                          </match>
+                          <if>
+                            <condition>TEMP.success eq '1'</condition>
+                            <then>
+                              <index_insert_if_none>
+                                <index>'AGG_PT_MAPS'</index>
+                                <field name='map'>TEMP.local_map</field>
+                                <field name='order'>TEMP.local_map_order</field>
+                              </index_insert_if_none>
+                              <do>OBJECT(TEMP.pt_nomaster).default_value = ''</do>
+                            </then>
+                          </if>
+                          <if>
+                            <condition>OBJECT(TEMP.pt_nomaster).pt_column_name ne ''</condition>
+                            <then>
+                              <do>
+                                TEMP.my_pt_proc~="<![CDATA[
+  <do>OBJECT(TEMP.tier_row_oid)."~OBJECT(TEMP.pt_nomaster).column_name~" = OBJECT."~OBJECT(TEMP.pt_nomaster).pt_column_name~"</do>]]>"
+                              </do>
+                              <if>
+                                <condition>OBJECT(TEMP.pt_nomaster).default_value ne ''</condition>
+                                <then>
+                                  <do>
+                                    TEMP.my_pt_proc~="<![CDATA[
+  <if>
+    <condition>OBJECT(TEMP.tier_row_oid)."~OBJECT(TEMP.pt_nomaster).column_name~" eq ''</condition>
+    <then>
+      <do>OBJECT(TEMP.tier_row_oid)."~OBJECT(TEMP.pt_nomaster).column_name~" = '"~OBJECT(TEMP.pt_nomaster).default_value~"'</do>
+    </then>
+  </if>]]>"
+                                  </do>
+                                </then>
+                              </if>
+                            </then>
+                            <else>
+                              <do>
+                                TEMP.my_pt_proc~="<![CDATA[
+  <do>OBJECT(TEMP.tier_row_oid)."~OBJECT(TEMP.pt_nomaster).column_name~" = '"~OBJECT(TEMP.pt_nomaster).default_value~"'</do>]]>"
+                              </do>
+                            </else>
+                          </if>
+                        </else>
+                      </index_select>
+                    </loop>
+                  </index_select>
+                  <index_clear>
+                    <index>'AGG_PT_MAPS2'</index>
+                  </index_clear>
+                  <index_select_keys>
+                    <index>'AGG_PT_MAPS'</index>
+                    <cursor>TEMP.pt_maps</cursor>
+                    <loop>
+                      <index_insert>
+                        <index>'AGG_PT_MAPS2'</index>
+                        <field name='map'>OBJECT(TEMP.pt_maps).map</field>
+                        <field name='order'>OBJECT(TEMP.pt_maps).order</field>
+                      </index_insert>
+                    </loop>
+                  </index_select_keys>
+                  <do>
+                    TEMP.my_pt_proc~="<![CDATA[
+  <call_proc_for_object>
+    <name>'perform_map_gsub_filter'</name>
+    <object_id>TEMP.tier_row_oid</object_id>
+  </call_proc_for_object>]]>"
+                  </do>
+                  <do>
+                    TEMP.my_pt_proc~="<![CDATA[
+  <call_proc_for_object>
+    <name>'perform_map_currency_filter'</name>
+    <object_id>TEMP.tier_row_oid</object_id>
+  </call_proc_for_object>]]>"
+                  </do>
+                  <index_select>
+                    <index>'AGG_PT_MAPS2'</index>
+                    <order_by type="numeric">OBJECT.order</order_by>
+                    <cursor>TEMP.pt_maps</cursor>
+                   
+                    <loop>
+                      <do>
+                        TEMP.my_pt_proc~="<![CDATA[
+  <call_proc_for_object>
+    <name>'perform_map_"~OBJECT(TEMP.pt_maps).map~"'</name>
+    <object_id>TEMP.tier_row_oid</object_id>
+  </call_proc_for_object>]]>"
+                      </do>
+                    </loop>
+                  </index_select>
+                  <do>TEMP.has_cols = ''</do>
+                  <index_select_keys>
+                    <index>'AGG_PT_COLS_TO_USAGE'</index>
+                    <cursor>TEMP.pt_cols</cursor>
+                    <loop>
+                      <do>TEMP.has_cols = '1'</do>
+                    </loop>
+                  </index_select_keys>
+                  <if>
+                    <condition>TEMP.has_cols eq '1'</condition>
+                    <then>
+                      <do>TEMP.my_push_name ='push_to_usage_'~OBJECT(TEMP.pt_name).paramtable_name~'_grp_'~OBJECT(TEMP.pt_group).column_group</do>
+                      <do>
+                        TEMP.my_pt_proc~="<![CDATA[
+  <do>OBJECT(TEMP.tier_row_oid).push_usage_proc = '"~TEMP.my_push_name~"'</do>]]>"
+                      </do>
+                      <do>
+                        TEMP.my_push_proc="<![CDATA[
+<proc name='"~TEMP.my_push_name~"'>
+  <param name='bucket_object'/>
+  <param name='usage_object'/>]]>"
+                      </do>
+                      <index_select_keys>
+                        <index>'AGG_PT_COLS_TO_USAGE'</index>
+                        <cursor>TEMP.pt_cols</cursor>
+                        <loop>
+                          <do>
+                            TEMP.my_push_proc~="<![CDATA[
+  <do>OBJECT(TEMP.usage_object)."~OBJECT(TEMP.pt_cols).field_name~" = OBJECT(TEMP.bucket_object)."~OBJECT(TEMP.pt_cols).field_name~"</do>]]>"
+                          </do>
+                        </loop>
+                      </index_select_keys>
+                      <do>
+                        TEMP.my_push_proc~='<![CDATA[
+</proc>]]>'
+                      </do>
+                      <!--<print>'About to exec push proc!'</print>-->
+                      <execute_immediate>TEMP.my_push_proc</execute_immediate>
+                      <!--<print>TEMP.my_push_proc</print>-->
+                    </then>
+                  </if>
+                  <do>
+                    TEMP.my_pt_proc~="<![CDATA[
+  <index_insert>
+    <index>'TEMP_AGG_BUCKETS'</index>
+    <field name='id_acc'>OBJECT.id_acc</field>
+    <field name='bucket_object'>TEMP.tier_row_oid</field>
+  </index_insert>]]>"
+                  </do>
+                </then>
+              </if>
+            </loop>
+          </index_select_keys>
+          <do>
+            TEMP.my_pt_proc~='<![CDATA[
+            
+</proc>
+            ]]>'
+          </do>
+          <execute_immediate>TEMP.my_pt_proc</execute_immediate>
+          <!--<print>TEMP.my_pt_proc</print>-->
+        </loop>
+      </index_select_keys>
+    </initialize>
+
+  </proc>
+
+</procs>

@@ -1,0 +1,438 @@
+<procs>
+  <proc name="dump_account_info">
+    <param name='group_identifier'/>
+    <param name='file'/>
+    <run_once>
+
+      <define_memory_index>
+        <index>'COMPRESSED_FIELDS'</index>
+        <key_field>'table_name'</key_field>
+        <key_field>'is_master'</key_field>
+        <field>'field_name'</field>
+        <field>'compression_key'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'COMPRESSED_FIELDS2'</index>
+        <key_field>'table_name'</key_field>
+        <key_field>'field_name'</key_field>
+        <field>'compression_key'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'IGNORED_FIELDS'</index>
+        <key_field>'table_name'</key_field>
+        <key_field>'field_name'</key_field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'FIELD_REMAPPING'</index>
+        <key_field>'compression_key'</key_field>
+        <key_field>'source_value'</key_field>
+        <field>'target_value'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'FIELDS_TO_DUMP'</index>
+        <key_field>'table_name'</key_field>
+        <field>'field_name'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'RECON_ENUM_FIELDS'</index>
+        <key_field>'table_name'</key_field>
+        <field>'field_name'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'RECON_DATE_FIELDS'</index>
+        <key_field>'table_name'</key_field>
+        <field>'field_name'</field>
+      </define_memory_index>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type='oracle'>
+          "select lower(b.table_name) table_name, lower(b.column_name) field_name from recon_tables a inner join user_tab_columns b on upper(a.table_name) = b.table_name and b.data_type = 'DATE'"
+        </query>
+        <query type='sql'>
+          "select 1 from t_prod_view where 1=2"
+        </query>
+        <cursor>TEMP.date_csr</cursor>
+        <loop>
+          <print>'Inserting for table ['~OBJECT(TEMP.date_csr).table_name~'] and field ['~OBJECT(TEMP.date_csr).field_name~']'</print>
+          <index_insert>
+            <index>'RECON_DATE_FIELDS'</index>
+            <field name="table_name">OBJECT(TEMP.enum_csr).table_name</field>
+            <field name="field_name">OBJECT(TEMP.enum_csr).field_name</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select lower(b.nm_table_name) table_name, LOWER(c.nm_column_name) field_name from t_prod_view b
+inner join t_prod_view_prop c on b.id_prod_view = c.id_prod_view and c.nm_enum IS NOT NULL and c.nm_enum != ''
+union
+select lower(b.nm_table_name) table_name, LOWER(c.nm_column_name) field_name from t_account_view_log b
+inner join t_account_view_prop c on b.id_account_view = c.id_account_view and c.nm_enum IS NOT NULL and c.nm_enum != ''
+union
+select 't_acc_usage', 'id_svc'
+union
+select 't_acc_usage', 'id_view' 
+"
+        </query>
+        <cursor>TEMP.enum_csr</cursor>
+        <loop>
+          <print>'Inserting for table ['~OBJECT(TEMP.enum_csr).table_name~'] and field ['~OBJECT(TEMP.enum_csr).field_name~']'</print>
+          <index_insert>
+            <index>'RECON_ENUM_FIELDS'</index>
+            <field name="table_name">OBJECT(TEMP.enum_csr).table_name</field>
+            <field name="field_name">OBJECT(TEMP.enum_csr).field_name</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select table_name, field_name, compression_key, is_master from recon_compressed_fields"
+        </query>
+        <cursor>TEMP.tables_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'COMPRESSED_FIELDS'</index>
+            <field name="table_name">OBJECT(TEMP.tables_csr).table_name</field>
+            <field name="field_name">OBJECT(TEMP.tables_csr).field_name</field>
+            <field name="compression_key">OBJECT(TEMP.tables_csr).compression_key</field>
+            <field name="is_master">OBJECT(TEMP.tables_csr).is_master</field>
+          </index_insert>
+          <index_insert>
+            <index>'COMPRESSED_FIELDS2'</index>
+            <field name="table_name">OBJECT(TEMP.tables_csr).table_name</field>
+            <field name="field_name">OBJECT(TEMP.tables_csr).field_name</field>
+            <field name="compression_key">OBJECT(TEMP.tables_csr).compression_key</field>
+          </index_insert>
+        </loop>
+      </db_select>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select table_name, field_name from recon_ignored_fields"
+        </query>
+        <cursor>TEMP.tables_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'IGNORED_FIELDS'</index>
+            <field name="table_name">OBJECT(TEMP.tables_csr).table_name</field>
+            <field name="field_name">OBJECT(TEMP.tables_csr).field_name</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <do>
+        TEMP.my_dump_acc_proc="<![CDATA[
+<proc name='dump_account_info_dynamic'>
+  <param name='group_identifier'/>
+  <param name='file'/>
+	                  ]]>"
+      </do>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select a.table_name, a.join_rule, b.expression from recon_tables a left outer join recon_join_rules b on a.join_rule = b.join_rule order by a.table_order, table_name"
+        </query>
+        <cursor>TEMP.tables_csr</cursor>
+        <loop>
+          <call_proc_for_current_object>
+            <name>'get_pv_id'</name>
+            <param name='id_view'>TEMP.id_view</param>
+            <param name='table_name'>OBJECT(TEMP.tables_csr).table_name</param>
+          </call_proc_for_current_object>
+          
+          <do>TEMP.compression_field = ''</do>
+          <index_select>
+            <index>'COMPRESSED_FIELDS'</index>
+            <field name="table_name">OBJECT(TEMP.tables_csr).table_name</field>
+            <field name="is_master">'1'</field>
+            <cursor>TEMP.master_csr</cursor>
+            <then>
+              <do>TEMP.compression_field = ' order by '~OBJECT(TEMP.master_csr).field_name</do>
+            </then>
+          </index_select>
+          <do>
+            TEMP.my_dump_acc_proc~="<![CDATA[
+  <do>TEMP.id_view = '"~TEMP.id_view~"'</do>          
+  <do>TEMP.record_count = 0</do>          
+  <db_select>
+    <login_object>GLOBAL.target_login</login_object>
+    <query>
+      'select tracked_id_acc, a.* from "~OBJECT(TEMP.tables_csr).table_name~" a "~OBJECT(TEMP.tables_csr).expression~" and group_identifier = $${TEMP.group_identifier} "~TEMP.compression_field~"'
+    </query>
+    <cursor>TEMP.table_row_csr</cursor>
+    <loop>
+      <do>TEMP.record_count += 1</do>
+	      
+	                  ]]>"
+          </do>
+          <print>'Checking enums for table ['~OBJECT(TEMP.tables_csr).table_name~']'</print>
+          <index_select>
+            <index>'RECON_ENUM_FIELDS'</index>
+            <field name="table_name">OBJECT(TEMP.tables_csr).table_name</field>
+            <cursor>TEMP.enum_csr</cursor>
+            <loop>
+              <do>
+                TEMP.my_dump_acc_proc~="<![CDATA[
+      <if>
+        <condition>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.enum_csr).field_name~" GT 0</condition>
+        <then>
+          <index_select>
+            <index>'ENUMS_BY_ID'</index>
+            <field name='id_enum_data'>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.enum_csr).field_name~"</field>
+            <cursor>TEMP.id_enum_csr</cursor>
+            <then>
+              <!-- <print>'I did find an enum for ["~OBJECT(TEMP.enum_csr).field_name~"] with value ['~OBJECT(TEMP.id_enum_csr)."~OBJECT(TEMP.enum_csr).field_name~"~'] of ['~OBJECT(TEMP.id_enum_csr).enum_value~']'</print> -->
+              <do>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.enum_csr).field_name~"=OBJECT(TEMP.id_enum_csr).enum_value</do>
+            </then>
+            <else>
+              <print>'I could not find an enum for ["~OBJECT(TEMP.enum_csr).field_name~"] with value ['~OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.enum_csr).field_name~"~']'</print>
+            </else>
+          </index_select>
+        </then>
+      </if>
+	                  ]]>"
+              </do>
+            </loop>
+          </index_select>
+          <print>'Checking dates for table ['~OBJECT(TEMP.tables_csr).table_name~']'</print>
+          <index_select>
+            <index>'RECON_DATE_FIELDS'</index>
+            <field name="table_name">OBJECT(TEMP.tables_csr).table_name</field>
+            <cursor>TEMP.date_csr</cursor>
+            <loop>
+              <do>
+                TEMP.my_dump_acc_proc~="<![CDATA[
+      <if>
+        <condition>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.date_csr).field_name~" ne ''</condition>
+        <then>
+          <date_convert>
+            <from format='YYYYMMDDHH24MISS'>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.date_csr).field_name~"</from>
+            <to format='YYYY-MM-DD HH24:MI:SS.mmmm'>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.date_csr).field_name~"</to>
+          </date_convert>
+        </then>
+      </if>
+	                  ]]>"
+              </do>
+            </loop>
+          </index_select>
+          <index_select>
+            <index>'COMPRESSED_FIELDS'</index>
+            <field name="table_name">OBJECT(TEMP.tables_csr).table_name</field>
+            <field name="is_master">'1'</field>
+            <cursor>TEMP.master_csr</cursor>
+            <loop>
+              <do>
+                TEMP.my_dump_acc_proc~="<![CDATA[
+      <index_select>
+        <index>'FIELD_REMAPPING'</index>
+        <field name='compression_key'>'"~OBJECT(TEMP.master_csr).compression_key~"'</field>
+        <field name='source_value'>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~"</field>
+        <cursor>TEMP.remap_csr</cursor>
+        <then>
+          <do>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~" = OBJECT(TEMP.remap_csr).target_value</do>
+        </then>
+        <else>
+          <do>GLOBAL.max_compressed_"~OBJECT(TEMP.master_csr).compression_key~" = (GLOBAL.max_compressed_"~OBJECT(TEMP.master_csr).compression_key~" eq '' ? 0 : GLOBAL.max_compressed_"~OBJECT(TEMP.master_csr).compression_key~") + 1</do>
+          <index_insert>
+            <index>'FIELD_REMAPPING'</index>
+            <field name='compression_key'>'"~OBJECT(TEMP.master_csr).compression_key~"'</field>
+            <field name='source_value'>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~"</field>
+            <field name='target_value'>GLOBAL.max_compressed_"~OBJECT(TEMP.master_csr).compression_key~"</field> 
+          </index_insert>
+          <do>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~" = GLOBAL.max_compressed_"~OBJECT(TEMP.master_csr).compression_key~"</do>
+        </else>
+      </index_select>
+	                  ]]>"
+              </do>
+            </loop>
+          </index_select>
+          <index_select>
+            <index>'COMPRESSED_FIELDS'</index>
+            <field name="table_name">OBJECT(TEMP.tables_csr).table_name</field>
+            <field name="is_master">'0'</field>
+            <cursor>TEMP.master_csr</cursor>
+            <loop>
+              <do>
+                TEMP.my_dump_acc_proc~="<![CDATA[
+      <if>
+        <condition>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~" ne ''</condition>
+        <then>            
+          <index_select>
+            <index>'FIELD_REMAPPING'</index>
+            <field name='compression_key'>'"~OBJECT(TEMP.master_csr).compression_key~"'</field>
+            <field name='source_value'>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~"</field>
+            <cursor>TEMP.remap_csr</cursor>
+            <then>
+              <do>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~" = OBJECT(TEMP.remap_csr).target_value</do>
+            </then>
+            <else>
+              <print>'Attempting to compress a non-master field without a pre-existing master mapping ['~OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~"~'] for key ["~OBJECT(TEMP.master_csr).compression_key~"]'</print>
+            </else>
+          </index_select>
+        </then>
+      </if>
+	                  ]]>"
+              </do>
+            </loop>
+          </index_select>
+          <index_select>
+            <index>'COMPRESSED_FIELDS'</index>
+            <field name="table_name">''</field>
+            <field name="is_master">'0'</field>
+            <cursor>TEMP.master_csr</cursor>
+            <loop>
+              <index_select>
+                <index>'COMPRESSED_FIELDS2'</index>
+                <field name="table_name">OBJECT(TEMP.tables_csr).table_name</field>
+                <field name="field_name">OBJECT(TEMP.master_csr).field_name</field>
+                <cursor>TEMP.master_csr2</cursor>
+                <else>
+                  <do>
+                    TEMP.my_dump_acc_proc~="<![CDATA[
+      <if>
+        <condition>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~" ne ''</condition>
+        <then>              
+          <index_select>
+            <index>'FIELD_REMAPPING'</index>
+            <field name='compression_key'>'"~OBJECT(TEMP.master_csr).compression_key~"'</field>
+            <field name='source_value'>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~"</field>
+            <cursor>TEMP.remap_csr</cursor>
+            <then>
+              <do>OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~" = OBJECT(TEMP.remap_csr).target_value</do>
+            </then>
+            <else>
+              <print>'Attempting2 to compress a non-master field without a pre-existing master mapping ['~OBJECT(TEMP.table_row_csr)."~OBJECT(TEMP.master_csr).field_name~"~'] for key ["~OBJECT(TEMP.master_csr).compression_key~"]'</print>
+            </else>
+          </index_select>
+        </then>
+      </if>
+	                  ]]>"
+                  </do>
+                </else>
+              </index_select>
+            </loop>
+          </index_select>
+          <do>
+            TEMP.my_dump_acc_proc~="<![CDATA[
+      <index_select>
+        <index>'FIELD_REMAPPING'</index>
+        <field name='compression_key'>'id_acc'</field>
+        <field name='source_value'>OBJECT(TEMP.table_row_csr).tracked_id_acc</field>
+        <cursor>TEMP.remap_csr</cursor>
+        <then>
+          <do>OBJECT(TEMP.table_row_csr).tracked_id_acc = OBJECT(TEMP.remap_csr).target_value</do>
+        </then>
+        <else>
+          <print>'Attempting to compress tracked_id_acc without a pre-existing master mapping'</print>
+        </else>
+      </index_select>
+      <do>TEMP.my_record_header = 'tracked_id_acc|table_name'</do>
+      <do>TEMP.my_record = OBJECT(TEMP.table_row_csr).tracked_id_acc~'|"~OBJECT(TEMP.tables_csr).table_name~"'</do>
+      <index_select>
+        <index>'FIELDS_TO_DUMP'</index>
+        <field name='table_name'>'"~OBJECT(TEMP.tables_csr).table_name~"'</field>
+        <order_by>OBJECT.field_name</order_by>
+        <cursor>TEMP.fields_csr</cursor>
+        <loop>
+        <!-- <print>'JONAH has field name ['~OBJECT(TEMP.fields_csr).field_name~']'</print> -->
+          <get_object_field>
+            <object_id>TEMP.table_row_csr</object_id>
+            <field_name>OBJECT(TEMP.fields_csr).field_name</field_name>
+            <output>TEMP.my_val</output>
+          </get_object_field>
+          <do>TEMP.my_record ~= '|'~TEMP.my_val</do>
+          <do>TEMP.my_record_header ~= '|'~OBJECT(TEMP.fields_csr).field_name</do>
+        </loop>
+        <else>
+          <object_field_value_select>
+            <object_id>TEMP.table_row_csr</object_id>
+            <cursor_field>'field'</cursor_field>
+            <cursor_value>'value'</cursor_value>
+            <cursor>TEMP.field_cursor</cursor>
+            <loop>
+              <index_select>
+                <index>'IGNORED_FIELDS'</index>
+                <field name='table_name'>'"~OBJECT(TEMP.tables_csr).table_name~"'</field>
+                <field name='field_name'>OBJECT(TEMP.field_cursor).field</field>
+                <cursor>TEMP.ignored_csr</cursor>
+                <else>
+                  <index_insert>
+                    <index>'FIELDS_TO_DUMP'</index>
+                    <field name='table_name'>'"~OBJECT(TEMP.tables_csr).table_name~"'</field>
+                    <field name='field_name'>OBJECT(TEMP.field_cursor).field</field>
+                  </index_insert>                    
+                </else>
+              </index_select>
+            </loop>
+          </object_field_value_select>
+          <index_select>
+            <index>'FIELDS_TO_DUMP'</index>
+            <field name='table_name'>'"~OBJECT(TEMP.tables_csr).table_name~"'</field>
+            <order_by>OBJECT.field_name</order_by>
+            <cursor>TEMP.fields_csr2</cursor>
+            <loop>
+            <!-- <print>'JONAH2 has field name ['~OBJECT(TEMP.fields_csr2).field_name~']'</print> -->
+              <get_object_field>
+                <object_id>TEMP.table_row_csr</object_id>
+                <field_name>OBJECT(TEMP.fields_csr2).field_name</field_name>
+                <output>TEMP.my_val</output>
+              </get_object_field>
+              <do>TEMP.my_record ~= '|'~TEMP.my_val</do>
+              <do>TEMP.my_record_header ~= '|'~OBJECT(TEMP.fields_csr2).field_name</do>
+            </loop>
+          </index_select>
+        </else>
+      </index_select>
+      <if>
+        <condition>TEMP.record_count eq '1'</condition>
+        <then>
+          <print_record>
+            <file>TEMP.file</file>
+            <field_delim>'|'</field_delim>
+            <record_delim>'\r\n'</record_delim>
+            <data>
+              <field>TEMP.my_record_header</field>
+            </data>
+          </print_record>
+        </then>
+      </if>
+      <print_record>
+        <file>TEMP.file</file>
+        <field_delim>'|'</field_delim>
+        <record_delim>'\r\n'</record_delim>
+        <data>
+          <field>TEMP.my_record</field>
+        </data>
+      </print_record>
+    </loop>
+  </db_select>
+                	  ]]>"
+          </do>
+        </loop>
+      </db_select>
+
+      <do>
+        TEMP.my_dump_acc_proc~="<![CDATA[
+</proc>
+	                  ]]>"
+      </do>
+      <print>TEMP.my_dump_acc_proc</print>
+
+      <execute_immediate>TEMP.my_dump_acc_proc</execute_immediate>
+    </run_once>
+
+
+    <call_proc_for_current_object>
+      <name>'dump_account_info_dynamic'</name>
+      <param name='group_identifier'>TEMP.group_identifier</param>
+      <param name='file'>TEMP.file</param>
+    </call_proc_for_current_object>
+
+  </proc>
+</procs>

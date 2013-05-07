@@ -1,0 +1,19 @@
+<proc name="dump_primary_servers_array">
+  <info switch="log_startup">'PRIMARY_SERVERS_ARRAY:'</info>
+  <index_select_keys>
+    <index>'PRIMARY_SERVERS_ARRAY'</index>
+    <order_by type="numeric">OBJECT.i</order_by>
+    <cursor>TEMP.keys</cursor>
+    <loop>
+      <index_select>
+        <index>'PRIMARY_SERVERS_ARRAY'</index>
+        <field name="i">OBJECT(TEMP.keys).i</field>
+        <cursor>TEMP.csr</cursor>
+        <loop>
+          <info switch="log_startup">dump_object(TEMP.csr)</info>
+        </loop>
+      </index_select>
+    </loop>
+  </index_select_keys>
+  <info switch="log_startup">'primary_servers_array_count='~OBJECT.primary_servers_array_count</info>
+</proc>

@@ -1,0 +1,64 @@
+<procs>
+  <proc name='cache_usage_for_decisions'>
+    <initialize>
+      <define_memory_index>
+        <index>'USAGE_CACHE'</index>
+        <key_field>'master_key'</key_field>
+        <field>'dt_session'</field>
+        <field>'usg_object_id'</field>
+      </define_memory_index>
+    </initialize>
+
+    <index_clear>
+      <index>'USAGE_CACHE'</index>
+    </index_clear>
+
+    <!--<stopwatch name='cache_pt' ms='TEMP.loop_time' total_ms='GLOBAL.loop_time'>-->
+    <index_select_keys>
+      <index>'CURRENT_ACCOUNTS'</index>
+      <cursor>TEMP.account_csr</cursor>
+      <loop>
+        <do>TEMP.id_acc = OBJECT(TEMP.account_csr).id_acc</do>
+        <debug>"Attempting to cache usage for account ["~TEMP.id_acc~"]"</debug>
+        <do>TEMP.loop_counter = 0</do>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query type="oracle">
+            "select * from t_acc_usage a
+            inner join t_pv_confconn b on a.id_sess = b.id_sess and a.id_usage_interval = b.id_usage_interval
+            and a.id_payee = $${TEMP.id_acc}"
+          </query>
+          <query type="sql">
+            "select top 40000 * from t_acc_usage a
+            inner join t_pv_confconn b on a.id_sess = b.id_sess and a.id_usage_interval = b.id_usage_interval
+            and a.id_payee = $${TEMP.id_acc}"
+          </query>
+          <cursor>TEMP.usage_csr</cursor>
+          <loop>
+            <!--<stopwatch name='row_pt' ms='TEMP.row_time' total_ms='GLOBAL.row_time'>-->
+            <spawn>
+              <object_type>'USAGE_ROW'</object_type>
+              <object_id>TEMP.usage_row_oid</object_id>
+            </spawn>
+            <inherit_object>
+              <source>TEMP.usage_csr</source>
+              <target>TEMP.usage_row_oid</target>
+            </inherit_object>
+            <do>OBJECT(TEMP.usage_row_oid).productview_name = 'confconn'</do>
+            <index_insert>
+              <index>'USAGE_CACHE'</index>
+              <field name="master_key">'1'</field>
+              <field name="dt_session">OBJECT(TEMP.usage_row_oid).c_connecttime</field>
+              <field name="usg_object_id">TEMP.usage_row_oid</field>
+            </index_insert>
+            <!--</stopwatch>-->
+            <do>TEMP.loop_counter = TEMP.loop_counter + 1</do>
+          </loop>
+        </db_select>
+      </loop>
+    </index_select_keys>
+    <!--</stopwatch>
+    <info>'Outer pt cache time for ['~TEMP.loop_counter~'] is ['~TEMP.loop_time~'] and row ['~GLOBAL.row_time~']'</info>-->
+  </proc>
+
+</procs>

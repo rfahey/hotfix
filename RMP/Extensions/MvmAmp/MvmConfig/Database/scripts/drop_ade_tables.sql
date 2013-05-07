@@ -1,0 +1,25 @@
+drop table account_qualification_groups;
+drop table ade_local_usage;
+drop table agg_bundle_pos;
+drop table agg_charge_audit_trail;
+drop table agg_charge_definition;
+drop table agg_decision_audit_trail;
+drop table agg_field_formats;
+drop table agg_mapping_chains;
+drop table agg_mapping_chain_members;
+drop table agg_mapping_tables;
+drop table agg_mapping_table_rules;
+drop table agg_orig_field_map;
+drop table agg_param_table_col_map;
+drop table agg_param_table_master;
+drop table agg_pv_sortkeys;
+drop table agg_usage_audit_trail;
+drop table agg_usage_decision_detail;
+drop table charge_qualification_groups;
+drop table mvm_clusters;
+drop table mvm_counters;
+drop table mvm_server_credentials;
+drop table tier_domain_mapping;
+drop table usage_charge_fields;
+drop table usage_qualification_groups;
+

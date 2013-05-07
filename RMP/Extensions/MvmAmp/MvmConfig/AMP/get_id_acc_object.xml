@@ -1,0 +1,28 @@
+<procs>
+  <proc name="get_id_acc_object">
+    <param name='id_acc'/>
+    <param name='id_acc_object' mode='out'/>
+    <do>TEMP.id_acc_object = ''</do>
+    <index_select>
+      <index>'ACCOUNT_CACHE'</index>
+      <field name='id_acc'>TEMP.id_acc</field>
+      <cursor>TEMP.account_lookup</cursor>
+      <then>
+        <do>TEMP.id_acc_object = OBJECT(TEMP.account_lookup).account_object</do>
+      </then>
+      <else>
+        <spawn>
+          <object_type>'ACCOUNT'</object_type>
+          <object_id>TEMP.id_acc_object</object_id>
+        </spawn>
+        <do>OBJECT(TEMP.id_acc_object).id_acc = TEMP.id_acc</do>
+        <index_insert>
+          <index>'ACCOUNT_CACHE'</index>
+          <field name='id_acc'>TEMP.id_acc</field>
+          <field name='account_object'>TEMP.id_acc_object</field>
+        </index_insert>
+      </else>
+    </index_select>
+  </proc>
+
+</procs>

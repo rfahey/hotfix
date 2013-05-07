@@ -1,0 +1,20 @@
+<proc name="startup_standalone_node">
+  <print>'running in simple single process mode'</print>
+  <do>GLOBAL.starting_proc=nvl(OBJECT(GLOBAL.args_object).proc,OBJECT(GLOBAL.args_object).cluster_proc)</do>
+  <if>
+    <condition>GLOBAL.starting_proc ne ''</condition>
+    <then>
+      <print>'calling starting proc'</print>
+      <call_proc>GLOBAL.starting_proc</call_proc>
+      <print>'done calling starting proc'</print>
+    </then>
+    <condition>GLOBAL.server_mode eq '1'</condition>
+    <then>
+      <print>'server mode on, no starting proc'</print>
+      <set_server_mode_on/>
+    </then>
+    <else>
+      <warning>'Looks like you kicked off mvm without passing a proc to run and without passing server mode so this is not going to do anything'</warning>
+    </else>
+  </if>
+</proc>

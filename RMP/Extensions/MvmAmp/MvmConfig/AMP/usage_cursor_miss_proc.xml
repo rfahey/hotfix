@@ -1,0 +1,1312 @@
+<procs>
+
+  <proc name="usage_cursor_miss_proc">
+    <param name="hook_id"/>
+    <param name="id_acc_csr"/>
+    <param name="id_usage_interval"/>
+
+    <info switch='log_erd'>'usage_cursor_miss_proc hook_id='~TEMP.hook_id~',id_usage_interval='~TEMP.id_usage_interval</info>
+
+    <initialize>
+
+      <if>
+        <condition>GLOBAL.amp_local_usage_table eq ''</condition>
+        <then>
+          <db_call_proc>
+            <login_object>GLOBAL.target_login</login_object>
+            <name>'mvm_generate_table_name'</name>
+            <param name="p_prefix">'amplu_'</param>
+            <param name="p_table_name">GLOBAL.amp_local_usage_table</param>
+          </db_call_proc>
+          <db_execute>
+            <login_object>GLOBAL.target_login</login_object>
+            <statement type="sql">
+              "begin
+              CREATE table "~GLOBAL.amp_local_usage_table~"(
+              id_acc int PRIMARY KEY,
+              node_id int
+              )
+              end"
+            </statement>
+            <statement type="oracle">
+              "begin
+              execute immediate(
+              'create table "~GLOBAL.amp_local_usage_table~"(
+              id_acc NUMBER,
+              node_id NUMBER,
+              CONSTRAINT "~GLOBAL.amp_local_usage_table~" PRIMARY KEY (id_acc)
+              )'
+              );
+              end;"
+            </statement>
+            <num_rows>TEMP.num_rows</num_rows>
+          </db_execute>
+            <debug>'Created Local Usage table '~GLOBAL.amp_local_usage_table</debug>
+        </then>
+        <else>
+            <debug>'Using passed local usage table:'~GLOBAL.amp_local_usage_table</debug>
+        </else>
+      </if>
+    </initialize>
+    
+    
+    <run_once>
+
+
+      <db_select_dynamic>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type='oracle'>
+          "select count(*) has_tax_table from user_tables where table_name ='T_IC_TAX_REFEED_TRANS'"
+        </query>
+        <query type='sql'>
+          "select 0 has_tax_table where 1=2"
+        </query>
+        <cursor>TEMP.cc</cursor>
+        <loop>
+          <do>GLOBAL.has_tax_table=OBJECT(TEMP.cc).has_tax_table</do>
+        </loop>
+      </db_select_dynamic>
+      
+      <do>GLOBAL.has_tax_table=0</do>
+      
+      <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).usage_cursor_miss_proc_run_once_timer'>
+
+        
+
+        <db_call_proc>
+          <login_object>GLOBAL.target_login</login_object>
+          <name>'mvm_generate_table_name'</name>
+          <param name="p_prefix">'ampuh_'</param>
+          <param name="p_table_name">GLOBAL.usage_hook_table</param>
+        </db_call_proc>
+
+        <db_execute>
+          <login_object>GLOBAL.target_login</login_object>
+          <statement type="sql">
+            "begin
+            CREATE table "~GLOBAL.usage_hook_table~"(
+            id_acc int PRIMARY KEY,
+            node_id int
+            )
+            end"
+          </statement>
+          <statement type="oracle">
+            "begin
+            execute immediate(
+            'create table "~GLOBAL.usage_hook_table~"(
+            id_acc NUMBER,
+            node_id NUMBER,
+            CONSTRAINT "~GLOBAL.usage_hook_table~" PRIMARY KEY (id_acc)
+            )'
+            );
+            end;"
+          </statement>
+          <num_rows>TEMP.num_rows</num_rows>
+        </db_execute>
+        <debug>'Created Usage Hook table '~GLOBAL.usage_hook_table~', number of rows ='~TEMP.num_rows</debug>
+
+
+        <db_call_proc>
+          <login_object>GLOBAL.target_login</login_object>
+          <name>'mvm_generate_table_name'</name>
+          <param name="p_prefix">'ampdu_'</param>
+          <param name="p_table_name">GLOBAL.deleted_usage_table</param>
+        </db_call_proc>
+        <db_execute>
+          <login_object>GLOBAL.target_login</login_object>
+          <statement type="sql">
+            "begin
+            CREATE table "~GLOBAL.deleted_usage_table~"(
+            id_usage_interval int,
+            id_sess bigint
+            )
+            end"
+          </statement>
+          <statement type="oracle">
+            "begin
+            execute immediate(
+            'create table "~GLOBAL.deleted_usage_table~"(
+            id_usage_interval NUMBER,
+            id_sess NUMBER)'
+            );
+            end;"
+          </statement>
+          <num_rows>TEMP.num_rows</num_rows>
+        </db_execute>
+        <debug>'Created Deleted Usage table '~GLOBAL.deleted_usage_table</debug>
+
+        
+        <define_memory_index>
+          <index>'USAGE_HOOK_ID_VIEWS'</index>
+          <key_field>'id_view'</key_field>
+        </define_memory_index>
+
+        <define_memory_index>
+          <index>'PV_FILES'</index>
+          <field>'id_view'</field>
+          <field>'pv_table'</field>
+          <field>'pv_file'</field>
+        </define_memory_index>
+
+        <define_memory_index>
+          <index>'PARENT_USAGE_OBJECTS'</index>
+          <key_field>'id_sess'</key_field>
+          <field type="object_id">'object_id'</field>
+        </define_memory_index>
+
+        <define_memory_index>
+          <index>'PARENT_ID_VIEWS'</index>
+          <key_field>'id_view'</key_field>
+        </define_memory_index>
+
+        <define_memory_index>
+          <index>'PV_CURSORS'</index>
+          <key_field>'id_view'</key_field>
+          <field>'pv_table'</field>
+          <field>'pv_csr'</field>
+        </define_memory_index>
+
+        <define_memory_index>
+          <index>'USAGE_TO_DELETE'</index>
+          <key_field>'id_view'</key_field>
+          <field type="object_id">'del_oid'</field>
+        </define_memory_index>
+
+        <debug>'Getting list of product views needed to for usage records.'</debug>
+        <do>GLOBAL.id_view_list = '0'</do>
+        <do>TEMP.loop_counter = '0'</do>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query type="sql">
+            "SELECT DISTINCT lower(a.productview_name) productview_name, b.id_view FROM usage_charge_fields a
+            INNER JOIN t_prod_view b ON LOWER(a.productview_name) = SUBSTRING(LOWER(b.nm_table_name),6,99)"
+          </query>
+          <query type="oracle">
+            "SELECT DISTINCT lower(a.productview_name) productview_name, b.id_view FROM usage_charge_fields a
+            INNER JOIN t_prod_view b ON LOWER(a.productview_name) = SUBSTR(LOWER(b.nm_table_name),6,99)"
+          </query>
+          <cursor>TEMP.pv_csr</cursor>
+          <loop>
+            <do>TEMP.loop_counter += 1</do>
+            <if>
+              <condition>TEMP.loop_counter eq '1'</condition>
+              <then>
+                <do>GLOBAL.id_view_list = OBJECT(TEMP.pv_csr).id_view</do>
+              </then>
+              <else>
+                <do>GLOBAL.id_view_list ~= ", "~OBJECT(TEMP.pv_csr).id_view</do>
+              </else>
+            </if>
+          </loop>
+        </db_select>
+        <info switch="log_erd">'GLOBAL.id_view_list='~GLOBAL.id_view_list</info>
+
+
+        <debug>'Getting list of parent product views needed to for usage records.'</debug>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query type="sql">
+            "select distinct id_view_parent from t_view_hierarchy where id_view_parent != id_view"
+          </query>
+          <query type="oracle">
+            "select distinct id_view_parent from t_view_hierarchy where id_view_parent != id_view"
+          </query>
+          <cursor>TEMP.parent_pv_csr</cursor>
+          <loop>
+            <index_insert>
+              <index>'PARENT_ID_VIEWS'</index>
+              <field name="id_view">OBJECT(TEMP.parent_pv_csr).id_view_parent</field>
+            </index_insert>
+          </loop>
+        </db_select>
+      </stopwatch>
+
+
+    
+        <info>'since we potentially assign id_sess and id_parent_sess for generated charges, make sure they go in parent_usage_object_fields'</info>
+        <index_select_keys>
+          <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+          <cursor>TEMP.csrxx</cursor>
+          <loop>
+            <do>TEMP.id_view=OBJECT(TEMP.csrxx).id_view</do>
+            <info switch='log_erd'>'parent id_view:'~TEMP.id_view</info>
+            <index_insert>
+              <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+              <field name="id_view">TEMP.id_view</field>
+              <field name="field_name">'id_sess'</field>
+            </index_insert>
+            <index_insert>
+              <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+              <field name="id_view">TEMP.id_view</field>
+              <field name="field_name">'id_parent_sess'</field>
+            </index_insert>
+          </loop>
+        </index_select_keys>
+        <info switch='log_erd'>'DUMPING CONTENTS OF PARENT_USAGE_OBJECT_FIELDS'</info>
+        <index_select_keys>
+          <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+          <cursor>TEMP.csrxx</cursor>
+          <loop>
+            <do>TEMP.id_view=OBJECT(TEMP.csrxx).id_view</do>
+            <index_select>
+              <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+              <cursor>TEMP.csrxy</cursor>
+              <loop>
+                <do>TEMP.field_name=OBJECT(TEMP.csrxy).field_name</do>
+                <info switch='log_erd'>' id_view='~TEMP.id_view~', field_name=['~TEMP.field_name~']'</info>
+              </loop>
+            </index_select>
+          </loop>
+        </index_select_keys>
+
+    </run_once>
+
+    <do>OBJECT(GLOBAL.target_login).database_log_level='info'</do>
+
+    <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).usage_cursor_miss_timer'>
+
+      <c>Setup file names</c>
+      <do>TEMP.t_acc_usage_file=GLOBAL.usage_tables_dir~'\t_acc_usage.txt'</do>
+      <do>TEMP.t_adjustment_transaction_file=GLOBAL.usage_tables_dir~'\t_adjustment_transaction.txt'</do>
+      <do>TEMP.t_ic_tax_refeed_trans_file=GLOBAL.usage_tables_dir~'\t_ic_tax_refeed_trans_file.txt'</do>
+      <do>TEMP.agg_usage_audit_trail_file=GLOBAL.usage_tables_dir~'\agg_usage_audit_trail.txt'</do>
+      <do>TEMP.agg_charge_audit_trail_file=GLOBAL.usage_tables_dir~'\agg_charge_audit_trail.txt'</do>
+      <do>TEMP.unsorted_usage_file=GLOBAL.usage_cursor_1_dir~'\joined_tables.txt'</do>
+
+      <c>Clear structures</c>
+      <index_clear>
+        <index>'PARENT_USAGE_OBJECTS'</index>
+      </index_clear>
+      <index_clear>
+        <index>'PV_FILES'</index>
+      </index_clear>
+      <index_clear>
+        <index>'USAGE_HOOK_ID_VIEWS'</index>
+      </index_clear>
+      <index_clear>
+        <index>'USAGE_TO_DELETE'</index>
+      </index_clear>
+      <do>GLOBAL.parent_usage_objects_count=0</do>
+
+      <debug switch='log_erd'>'Getting rid of data in Usage Hook and Deleted Usage tables: '~GLOBAL.usage_hook_table~','~GLOBAL.deleted_usage_table</debug>
+
+      <db_execute>
+        <login_object>GLOBAL.target_login</login_object>
+        <statement type="sql">
+          "begin
+          truncate table "~GLOBAL.usage_hook_table~"
+          truncate table "~GLOBAL.deleted_usage_table~"
+          end"
+        </statement>
+        <!--<statement type="oracle">
+          "begin
+          execute immediate('truncate table "~GLOBAL.usage_hook_table~"');
+          execute immediate('truncate table "~GLOBAL.deleted_usage_table~"');
+          end;"
+        </statement>-->
+        <statement type="oracle">
+          "begin
+          delete "~GLOBAL.usage_hook_table~";
+          delete "~GLOBAL.deleted_usage_table~";
+          end;"
+        </statement>
+        <num_rows>TEMP.num_rows</num_rows>
+      </db_execute>
+
+      <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).load_hook_accs_timer'>
+        <info switch='log_erd'>'Bulk loading id_accs for hook_id='~TEMP.hook_id</info>
+        <while>
+          <condition>TEMP.id_acc_csr ne ''</condition>
+          <loop>
+            <info switch='log_erd'>'queue insert:'~TEMP.hook_id~','~OBJECT(TEMP.id_acc_csr).id_acc</info>
+            <db_bulk_insert>
+              <login_object>GLOBAL.target_login</login_object>
+              <name>GLOBAL.usage_hook_table</name>
+              <commit_size>1000</commit_size>
+              <field name="id_acc">OBJECT(TEMP.id_acc_csr).id_acc</field>
+              <field name="node_id">'-1'</field>
+            </db_bulk_insert>
+            <cursor_next>TEMP.id_acc_csr</cursor_next>
+          </loop>
+        </while>
+
+        <info switch='log_erd'>'Flush the loader'</info>
+        <db_bulk_insert_flush_all/>
+      </stopwatch>
+
+      <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).update_ampuh_timer'>
+
+        <info switch='log_erd'>'Update the AMPHU_ with the local node id for any id_accs in '~GLOBAL.amp_local_usage_table</info>
+        <db_execute>
+          <login_object>GLOBAL.target_login</login_object>
+          <statement type='oracle'>
+            "update (select old.node_id old_node_id, new.node_id new_node_id from "~GLOBAL.usage_hook_table~" old,"~GLOBAL.amp_local_usage_table~" new where old.id_acc=new.id_acc) set old_node_id=new_node_id"
+            <!--"update "~GLOBAL.usage_hook_table~" a set node_id=(select max(node_id) from "~GLOBAL.amp_local_usage_table~" b where a.id_acc=b.id_acc)"-->
+          </statement>
+          <statement type='sql'>
+            "WITH CTE AS (select old.node_id old_node_id, new.node_id new_node_id from "~GLOBAL.usage_hook_table~" old,"~GLOBAL.amp_local_usage_table~" new where old.id_acc=new.id_acc) UPDATE CTE set old_node_id=new_node_id"
+            <!--"update "~GLOBAL.usage_hook_table~" a set node_id=(select max(node_id) from "~GLOBAL.amp_local_usage_table~" b where a.id_acc=b.id_acc)"-->
+          </statement>
+          <num_rows>TEMP.num_rows</num_rows>
+        </db_execute>
+      </stopwatch>
+
+      <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).select_local_usage_nodes_timer'>
+        <debug switch='log_erd'>'Determining if the usage data is already held by another node.'</debug>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select id_acc,node_id from "~GLOBAL.usage_hook_table~" where node_id > -1"
+          </query>
+          <cursor>TEMP.csr</cursor>
+          <loop>
+            <do>TEMP.id_acc=OBJECT(TEMP.csr).id_acc</do>
+            <do>TEMP.node_id=OBJECT(TEMP.csr).node_id</do>
+            <debug switch='log_erd'>'Queue request remote usage from node_id='~TEMP.node_id~' for id_acc='~TEMP.id_acc</debug >
+            <usage_hook_fetch_local>
+              <hook_id>TEMP.hook_id</hook_id>
+              <id_acc>TEMP.id_acc</id_acc>
+              <node_id>TEMP.node_id</node_id>
+            </usage_hook_fetch_local>
+          </loop>
+          <else>
+            <debug>'Usage data is not held by another node.'</debug>
+          </else>
+        </db_select>
+        <info switch='log_erd'>'usage_hook_fetch_flush'</info>
+        <usage_hook_fetch_flush>
+          <hook_id>TEMP.hook_id</hook_id>
+        </usage_hook_fetch_flush>
+      </stopwatch>
+
+      <call_proc_for_current_object>
+        <name>'usage_cursor_miss_pushed'</name>
+        <param name='id_usage_interval'>TEMP.id_usage_interval</param>
+        <param name='have_pushed'>TEMP.have_pushed</param>
+        <param name='hook_id'>TEMP.hook_id</param>
+      </call_proc_for_current_object>
+
+
+
+      <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).select_tau_timer'>
+
+        <info switch='log_erd'>'select all of t_acc_usage for hook id_accs'</info>
+        <do>TEMP.rownum=0</do>
+        <select>
+          <db_select>
+            <login_object>GLOBAL.target_login</login_object>
+          <query type='oracle'>
+              "select /*+ ORDERED USE_NL(b) */
+              b.*
+              from "~GLOBAL.usage_hook_table~" a, T_ACC_USAGE  b
+              where a.id_acc=b.id_payee
+              and b.id_usage_interval=$${TEMP.id_usage_interval}
+              and b.id_view in("~GLOBAL.id_view_list~")
+            and a.node_id = -1
+            order by id_sess"
+          </query>
+          <query type='sql'>
+            "select b.*
+            from "~GLOBAL.usage_hook_table~" a
+            inner loop join T_ACC_USAGE  b on a.id_acc=b.id_payee and b.id_usage_interval= $${TEMP.id_usage_interval} and b.id_view in("~GLOBAL.id_view_list~")
+            where a.node_id = -1
+              order by id_sess"
+            </query>
+          </db_select>
+          <pipeline>
+            <execute pipe_row='false'>
+              <c>Need to spawn a delta object... tbd: allow this as an input to the cursor</c>
+              <!--<spawn>
+                <object_type>'TAU_USAGE'</object_type>
+                <object_id>TEMP.erd_oid</object_id>
+                <delta_tracking_support>1</delta_tracking_support>
+                <delta_tracking_on>0</delta_tracking_on>
+              </spawn>-->
+              <spawn>
+                <internal_type>'format_array_delta'</internal_type>
+                <feedback_name>'IDVIEW_'~OBJECT.id_view</feedback_name>
+                <object_type>'TAU_USAGE'</object_type>
+                <object_id>TEMP.erd_oid</object_id>
+              </spawn>
+              <do>object_delta_set_state(TEMP.erd_oid,'SettingPersisted')</do>
+              <object_ref_count_get>
+                <object_id>TEMP.erd_oid</object_id>
+                <ref_count>TEMP.ref_cnt</ref_count>
+              </object_ref_count_get>
+              <!--<print>'INHERIT '~OBJECT.object_id~'/'~OBJECT.object_type~' on to '~TEMP.erd_oid~' refcnt='~TEMP.ref_cnt</print>-->
+              <inherit_object>
+                <source>OBJECT.object_id</source>
+                <target>TEMP.erd_oid</target>
+              </inherit_object>
+              <pipe_row>TEMP.erd_oid</pipe_row>
+
+              <object_ref_count_get>
+                <object_id>TEMP.erd_oid</object_id>
+                <ref_count>TEMP.ref_cnt</ref_count>
+              </object_ref_count_get>
+              <!--<print>'AFTER1 '~OBJECT.object_id~'/'~OBJECT.object_type~' on to '~TEMP.erd_oid~' refcnt='~TEMP.ref_cnt</print>-->
+
+              <remove_spawned_object_from_proc>TEMP.erd_oid</remove_spawned_object_from_proc>
+              <object_ref_count_get>
+                <object_id>TEMP.erd_oid</object_id>
+                <ref_count>TEMP.ref_cnt</ref_count>
+              </object_ref_count_get>
+              <!--<print>'AFTER2 '~OBJECT.object_id~'/'~OBJECT.object_type~' on to '~TEMP.erd_oid~' refcnt='~TEMP.ref_cnt</print>-->
+
+            </execute>
+          </pipeline>
+          <cursor>TEMP.csr</cursor>
+          <loop>
+            <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).select_tau_inner_timer'>
+              <index_insert_if_none>
+                <index>'USAGE_HOOK_ID_VIEWS'</index>
+                <field name="id_view">OBJECT(TEMP.csr).id_view</field>
+              </index_insert_if_none>
+
+              <object_ref_count_get>
+                <object_id>TEMP.csr</object_id>
+                <ref_count>TEMP.ref_cnt</ref_count>
+              </object_ref_count_get>
+              <info switch='log_erd'>'TAU with oid='~OBJECT(TEMP.csr).object_id~', refcnt='~TEMP.ref_cnt~', id_sess='~OBJECT(TEMP.csr).id_sess~', id_view='~OBJECT(TEMP.csr).id_view~', rownum='~(TEMP.rownum+=1)</info>
+
+              <write_object_to_file>
+                <object_id>TEMP.csr</object_id>
+                <file>TEMP.t_acc_usage_file</file>
+                <is_temporary>1</is_temporary>
+              </write_object_to_file>
+            </stopwatch>
+          </loop>
+
+        </select>
+      </stopwatch>
+
+
+      <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).select_tat_timer'>
+
+        <info switch='log_erd'>'select all of t_adjustment_transaction for hook id_accs'</info>
+        <do>TEMP.rownum=0</do>
+        <db_select>
+		<login_object>GLOBAL.target_login</login_object>
+		<!--
+          <query type='oracle'>
+            "select /*+ ORDERED USE_NL(b) USE_NL(c) */
+            c.*
+            from "~GLOBAL.usage_hook_table~" a, T_ACC_USAGE  b, MVM_ADJUSTMENT_TRANSACTION c
+            where a.id_acc=b.id_payee
+            and b.id_usage_interval=$${TEMP.id_usage_interval}
+            and b.id_view in("~GLOBAL.id_view_list~")
+            and a.node_id = -1
+            and b.id_sess=c.adj_id_sess
+            order by c.adj_id_sess"
+	  </query>
+	  -->
+          <query>
+            "select 0 from t_account where 1=2"
+          </query>
+          <cursor>TEMP.csr</cursor>
+          <loop>
+            <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).select_tau_inner_timer'>
+              <info switch='log_erd'>'TAT with id_sess='~OBJECT(TEMP.csr).id_sess</info>
+              <do>OBJECT(TEMP.csr).id_sess=OBJECT(TEMP.csr).adj_id_sess</do>
+              <write_object_to_file>
+                <object_id>TEMP.csr</object_id>
+                <file>TEMP.t_adjustment_transaction_file</file>
+                <is_temporary>1</is_temporary>
+              </write_object_to_file>
+            </stopwatch>
+          </loop>
+        </db_select>
+      </stopwatch>
+
+
+      <if>
+        <condition>GLOBAL.has_tax_table</condition>
+        <then>
+          <debug switch='log_erd'>'Loading tax table data for hook.'</debug>
+          <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).select_tax_timer'>
+
+            <do>TEMP.rownum=0</do>
+            <db_select>
+              <login_object>GLOBAL.target_login</login_object>
+              <query>
+                "select /*+ ORDERED USE_NL(b) USE_NL(c) */
+                c.*
+                from "~GLOBAL.usage_hook_table~" a, T_ACC_USAGE  b, T_IC_TAX_REFEED_TRANS c
+                where a.id_acc=b.id_payee
+                and b.id_usage_interval=$${TEMP.id_usage_interval}
+                and b.id_view in("~GLOBAL.id_view_list~")
+                and a.node_id = -1
+                and b.id_sess=c.ic_id_value and c.ic_id_type='ID_SESS' and c.id_usage_interval=$${TEMP.id_usage_interval}
+                order by c.ic_id_value"
+              </query>
+              <cursor>TEMP.csr</cursor>
+              <loop>
+                <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).select_tax_inner_timer'>
+                  <do>OBJECT(TEMP.csr).id_sess=OBJECT(TEMP.csr).ic_id_value</do>
+                  <write_object_to_file>
+                    <object_id>TEMP.csr</object_id>
+                    <file>TEMP.t_ic_tax_refeed_trans_file</file>
+                    <is_temporary>1</is_temporary>
+                  </write_object_to_file>
+                </stopwatch>
+              </loop>
+            </db_select>
+          </stopwatch>
+        </then>
+      </if>
+      
+      <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).select_auat_timer'>
+        <info switch='log_erd'>'select all of agg_usage_audit_trail for hook id_accs'</info>
+        <debug>'Retrieving usage audit trail and writing to file.'</debug>
+        <do>TEMP.rownum=0</do>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query type='oracle'>
+            "select /*+ ORDERED USE_NL(b) */
+            b.*
+            from "~GLOBAL.usage_hook_table~" a
+            inner join AGG_USAGE_AUDIT_TRAIL  b on a.id_acc=b.id_payee and b.id_usage_interval=$${TEMP.id_usage_interval} and b.is_realtime = 0 and a.node_id = -1
+            order by id_sess"
+          </query>
+          <query type='sql'>
+            "select b.*
+            from "~GLOBAL.usage_hook_table~" a
+            inner loop join AGG_USAGE_AUDIT_TRAIL  b on a.id_acc=b.id_payee and b.id_usage_interval=$${TEMP.id_usage_interval} and b.is_realtime = 0 and a.node_id = -1
+            order by id_sess"
+          </query>
+          <cursor>TEMP.csr</cursor>
+          <loop>
+            <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).select_auat_inner_timer'>
+              <info switch='log_erd'>'AUAT with id_sess='~OBJECT(TEMP.csr).id_sess~', id_payee='~OBJECT(TEMP.csr).id_payee~', rownum='~(TEMP.rownum+=1)</info>
+              <write_object_to_file>
+                <object_id>TEMP.csr</object_id>
+                <file>TEMP.agg_usage_audit_trail_file</file>
+                <is_temporary>1</is_temporary>
+              </write_object_to_file>
+            </stopwatch>
+          </loop>
+        </db_select>
+      </stopwatch>
+
+      <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).select_acat_timer'>
+        <info switch='log_erd'>'select all of agg_charge_audit_trail for hook id_accs'</info>
+        <do>TEMP.rownum=0</do>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query type='oracle'>
+            "select /*+ ORDERED USE_NL(b) */
+            b.*
+            from "~GLOBAL.usage_hook_table~" a,
+            AGG_CHARGE_AUDIT_TRAIL  b
+            where a.id_acc=b.id_payee
+            and b.id_usage_interval=$${TEMP.id_usage_interval}
+            and a.node_id = -1
+            order by id_sess"
+          </query>
+          <query type='sql'>
+            "select b.*
+            from "~GLOBAL.usage_hook_table~" a
+            inner loop join AGG_CHARGE_AUDIT_TRAIL  b on a.id_acc=b.id_payee and b.id_usage_interval=$${TEMP.id_usage_interval}
+            where a.node_id = -1
+            order by id_sess"
+          </query>
+          <cursor>TEMP.csr</cursor>
+          <loop>
+            <info switch='log_erd'>'ACAT with id_sess='~OBJECT(TEMP.csr).id_sess~', id_payee='~OBJECT(TEMP.csr).id_payee~', rownum='~(TEMP.rownum+=1)</info>
+            <write_object_to_file>
+              <object_id>TEMP.csr</object_id>
+              <file>TEMP.agg_charge_audit_trail_file</file>
+              <is_temporary>1</is_temporary>
+            </write_object_to_file>
+
+          </loop>
+        </db_select>
+      </stopwatch>
+
+      <info switch='log_erd'>'Loop thru USAGE_HOOK_ID_VIEWS'</info>
+      <index_select_keys>
+        <index>'USAGE_HOOK_ID_VIEWS'</index>
+        <cursor>TEMP.csr</cursor>
+        <loop>
+          <do>TEMP.id_view=OBJECT(TEMP.csr).id_view</do>
+          <call_proc_for_current_object>
+            <name>'get_pv_table_name'</name>
+            <param name="id_view">TEMP.id_view</param>
+            <param name="table_name">TEMP.pv_table</param>
+          </call_proc_for_current_object>
+          <do>TEMP.pv_file=GLOBAL.usage_tables_dir~'\'~TEMP.pv_table~'.txt'</do>
+          <info switch='log_erd'>'Got id_view/table/file = '~TEMP.id_view~'/'~TEMP.pv_table~'/'~TEMP.pv_file</info>
+          <index_insert>
+            <index>'PV_FILES'</index>
+            <field name="id_view">TEMP.id_view</field>
+            <field name="pv_table">TEMP.pv_table</field>
+            <field name="pv_file">TEMP.pv_file</field>
+          </index_insert>
+        </loop>
+      </index_select_keys>
+
+
+      <info switch='log_erd'>'Run one query per pv to get the pv table files'</info>
+      <index_select>
+        <index>'PV_FILES'</index>
+        <cursor>TEMP.csr1</cursor>
+        <loop>
+          <do>TEMP.pv_table=OBJECT(TEMP.csr1).pv_table</do>
+          <do>TEMP.pv_file=OBJECT(TEMP.csr1).pv_file</do>
+          <do>TEMP.pv_id_view=OBJECT(TEMP.csr1).id_view</do>
+          <info switch='log_erd'>'Query pv_table:'~TEMP.pv_table</info>
+          <stopwatch ms='TEMP.ms' total_ms='OBJECT(GLOBAL.counter_object).select_all_pv_timer'>
+            <db_select_dynamic>
+              <login_object>GLOBAL.target_login</login_object>
+              <query type='oracle'>
+                'select /*+ ORDERED USE_NL(b c) */
+                c.*
+                from '~GLOBAL.usage_hook_table~' a,
+                T_ACC_USAGE  b,
+                '~TEMP.pv_table~' c
+                where
+                b.id_usage_interval= $${TEMP.id_usage_interval}
+                and a.id_acc=b.id_payee
+                and b.id_view = '~TEMP.pv_id_view~'
+                and b.id_sess=c.id_sess
+                and b.id_usage_interval = c.id_usage_interval
+                and a.node_id = -1
+                order by b.id_sess'
+              </query>
+              <query type='sql'>
+                'select c.*
+                from '~GLOBAL.usage_hook_table~' a
+                inner loop join T_ACC_USAGE  b on a.id_acc=b.id_payee and b.id_view = '~TEMP.pv_id_view~' and b.id_usage_interval=$${TEMP.id_usage_interval}
+                inner loop join '~TEMP.pv_table~' c on b.id_sess=c.id_sess and b.id_usage_interval = c.id_usage_interval
+                where a.node_id = -1
+                order by c.id_sess'
+              </query>
+              <cursor>TEMP.csr2</cursor>
+              <loop>
+                <do>OBJECT(GLOBAL.counter_object).select_all_pv_inner_timer_ctr = (OBJECT(GLOBAL.counter_object).select_all_pv_inner_timer_ctr==''?'0':OBJECT(GLOBAL.counter_object).select_all_pv_inner_timer_ctr) + 1</do>
+                <stopwatch name='tie_together' ms='TEMP.msx' total_ms='OBJECT(GLOBAL.counter_object).select_all_pv_inner_timer'>
+
+                  <info switch='log_erd'>'writing to pv_file='~TEMP.pv_file</info>
+                  <write_object_to_file>
+                    <object_id>TEMP.csr2</object_id>
+                    <file>TEMP.pv_file</file>
+                    <is_temporary>1</is_temporary>
+                  </write_object_to_file>
+                </stopwatch>
+              </loop>
+            </db_select_dynamic>
+          </stopwatch>
+
+          <get_object_field>
+            <object_id>GLOBAL.counter_object</object_id>
+            <field_name>'select_'~TEMP.pv_table~'_timer'</field_name>
+            <output>TEMP.previous_value</output>
+          </get_object_field>
+          <set_object_field>
+            <input>(TEMP.previous_value ne TEMP.previous_value?0:0)+TEMP.ms</input>
+            <object_id>GLOBAL.counter_object</object_id>
+            <field_name>'select_'~TEMP.pv_table~'_timer'</field_name>
+          </set_object_field>
+        </loop>
+      </index_select>
+
+
+
+      <info switch='log_erd'>'Open a cursor into each of the pv files'</info>
+      <index_clear>
+        <index>'PV_CURSORS'</index>
+      </index_clear>
+      <index_select>
+        <index>'PV_FILES'</index>
+        <cursor>TEMP.csr1</cursor>
+        <loop>
+          <do>TEMP.pv_file=OBJECT(TEMP.csr1).pv_file</do>
+          <do>TEMP.pv_table=OBJECT(TEMP.csr1).pv_table</do>
+          <do>TEMP.id_view=OBJECT(TEMP.csr1).id_view</do>
+          <file_select>
+            <input_file>TEMP.pv_file</input_file>
+            <format type="packed" blocking="false" rewind="true"/>
+            <cursor>TEMP.pv_csr</cursor>
+          </file_select>
+          <info switch='log_erd'>'file_select '~TEMP.pv_file~',TEMP.pv_csr='~TEMP.pv_csr </info>
+
+          <cursor_next>TEMP.pv_csr</cursor_next>
+          <info switch='log_erd'>'AFTER NEXT:file_select '~TEMP.pv_file~',TEMP.pv_csr='~TEMP.pv_csr </info>
+
+          <index_insert>
+            <index>'PV_CURSORS'</index>
+            <field name="id_view">TEMP.id_view</field>
+            <field name="pv_table">TEMP.pv_table</field>
+            <field name="pv_csr">TEMP.pv_csr</field>
+          </index_insert>
+          <info switch='log_erd'>'opened '~TEMP.pv_file~',pv_table='~TEMP.pv_table~',id_view='~TEMP.id_view~',eof='~(TEMP.pv_csr eq '')</info>
+        </loop>
+      </index_select>
+
+      <if>
+        <condition>GLOBAL.has_tax_table</condition>
+        <then>
+          <debug switch='log_erd'>'Opened cursor into t_ic_tax_refeed_trans_file.'</debug>
+          <file_select>
+            <input_file>TEMP.t_ic_tax_refeed_trans_file</input_file>
+            <format type="packed" blocking="false" rewind="true"/>
+            <cursor>TEMP.tax_csr</cursor>
+          </file_select>
+          <cursor_next>TEMP.tax_csr</cursor_next>
+        </then>
+      </if>
+      
+      <debug switch='log_erd'>'Opened cursor into t_adjustment_transaction.'</debug>
+      <file_select>
+        <input_file>TEMP.t_adjustment_transaction_file</input_file>
+        <format type="packed" blocking="false" rewind="true"/>
+        <cursor>TEMP.tat_csr</cursor>
+      </file_select>
+      <cursor_next>TEMP.tat_csr</cursor_next>
+      
+      <debug switch='log_erd'>'Opened cursor into agg_charge_audit_trail.'</debug>
+      <file_select>
+        <input_file>TEMP.agg_charge_audit_trail_file</input_file>
+        <format type="packed" blocking="false" rewind="true"/>
+        <cursor>TEMP.acat_csr</cursor>
+      </file_select>
+      <cursor_next>TEMP.acat_csr</cursor_next>
+
+      <debug switch='log_erd'>'Opened cursor into agg_usage_audit_trail.'</debug>
+      <file_select>
+        <input_file>TEMP.agg_usage_audit_trail_file</input_file>
+        <format type="packed" blocking="false" rewind="true"/>
+        <cursor>TEMP.auat_csr</cursor>
+      </file_select>
+      <cursor_next>TEMP.auat_csr</cursor_next>
+      <do>TEMP.auat_delete_ctr=0</do>
+
+      <stopwatch ms='TEMP.ms' total_ms='OBJECT(GLOBAL.counter_object).join_usage_files'>
+
+        <debug switch='log_erd'>'Merging t_acc_usage, product views, and agg_usage_audit_trail.'</debug>
+        <do>TEMP.rownum=0</do>
+        <file_select>
+          <input_file>TEMP.t_acc_usage_file</input_file>
+          <format type="packed" blocking="false"/>
+          <cursor>TEMP.tau_csr</cursor>
+          <loop>
+            <object_delta_from_table>
+              <object_id>TEMP.tau_csr</object_id>
+              <table_name>'T_ACC_USAGE'</table_name>
+            </object_delta_from_table>
+
+            <c> Merge with the appropriate product view </c>
+            <do>TEMP.id_view=OBJECT(TEMP.tau_csr).id_view</do>
+            <do>TEMP.id_sess=OBJECT(TEMP.tau_csr).id_sess</do>
+            <do>TEMP.id_parent_sess=OBJECT(TEMP.tau_csr).id_parent_sess</do>
+            <do>TEMP.rownum+=1</do>
+            <info switch='log_erd'>'TAU with id_sess='~TEMP.id_sess~', id_view='~TEMP.id_view~', rownum='~TEMP.rownum</info>
+            <index_select>
+              <index>'PV_CURSORS'</index>
+              <field name="id_view">TEMP.id_view</field>
+              <cursor>TEMP.csr</cursor>
+              <then>
+                <do>TEMP.pv_csr=OBJECT(TEMP.csr).pv_csr</do>
+                <do>TEMP.pv_table=OBJECT(TEMP.csr).pv_table</do>
+                <do>TEMP.pv_eof=TEMP.pv_csr eq ''</do>
+                <do>TEMP.pv_id_sess=TEMP.pv_eof ? '' : OBJECT(TEMP.pv_csr).id_sess</do>
+                <info switch='log_erd'>'PV with pv_id_sess='~TEMP.pv_id_sess~', pv_table='~TEMP.pv_table~', pv_csr='~TEMP.pv_csr</info>
+                <if>
+                  <condition>TEMP.pv_eof</condition>
+                  <then>
+                    <call_proc_for_current_object>
+                      <name>'get_pv_table_name'</name>
+                      <param name="id_view">TEMP.id_view</param>
+                      <param name="table_name">TEMP.pv_table</param>
+                    </call_proc_for_current_object>
+                    <fatal>'Not expecting pv cursor to be at eof, TAU.id_sess='~TEMP.id_sess~', TAU.id_view='~TEMP.id_view~', pv_table='~TEMP.pv_table~', pv_eof='~TEMP.pv_eof</fatal>
+                  </then>
+                </if>
+                <if>
+                  <condition>TEMP.pv_id_sess eq TEMP.id_sess</condition>
+                  <then>
+                    <c> merge the PV onto TAU</c>
+                    <inherit_object>
+                      <source>TEMP.pv_csr</source>
+                      <target>TEMP.tau_csr</target>
+                    </inherit_object>
+                    <object_delta_from_table>
+                      <object_id>TEMP.tau_csr</object_id>
+                      <table_name>TEMP.pv_table</table_name>
+                    </object_delta_from_table>
+
+
+                    <c>Merge TAT onto TAU if it exists</c>
+                    <do>TEMP.try_again=1</do>
+                    <while>
+                      <condition>TEMP.try_again eq 1</condition>
+                      <loop>
+                        <do>TEMP.tat_eof=TEMP.tat_csr eq ''</do>
+                        <do>TEMP.tat_id_sess=TEMP.tat_eof ? '' : OBJECT(TEMP.tat_csr).id_sess</do>
+                        <debug switch='log_erd'>'Merging details: TAT.eof='~TEMP.tat_eof~', TAT.id_sess='~TEMP.tat_id_sess~', TAU.id_sess='~TEMP.id_sess</debug>
+                        <c>4 cases: eof,match,extra tat,no tat</c>
+                        <if>
+                          <condition>TEMP.tat_eof</condition>
+                          <then>
+                            <debug switch='log_erd'>'Merging details: TAT at eof'</debug>
+                            <do>TEMP.try_again=0</do>
+                          </then>
+                          <condition>TEMP.id_sess eq TEMP.tat_id_sess</condition>
+                          <then>
+                            <debug switch='log_erd'>'Merging details: TAT found id_sess='~OBJECT(TEMP.tau_csr).id_sess</debug>
+                            <c> merge the TAT onto TAU</c>
+                            <inherit_object>
+                              <source>TEMP.tat_csr</source>
+                              <target>TEMP.tau_csr</target>
+                            </inherit_object>
+                            <object_delta_from_table>
+                              <object_id>TEMP.tau_csr</object_id>
+                              <table_name>'MVM_ADJUSTMENT_TRANSACTION'</table_name>
+                            </object_delta_from_table>
+                            <cursor_next>TEMP.tat_csr</cursor_next>
+                            <do>TEMP.try_again=0</do>
+                          </then>
+                          <condition>TEMP.id_sess GT TEMP.tat_id_sess</condition>
+                          <then>
+                            <debug switch='log_erd'>'Merging details: IGNORING ORPHAN TAT ROW (NO TAU) WITH ID_SESS=['~TEMP.tat_id_sess~']'</debug>
+                            <cursor_next>TEMP.tat_csr</cursor_next>
+                          </then>
+                          <else>
+                            <c>do nothing</c>
+                            <debug switch='log_erd'>'Merging details: TAX no data'</debug>
+                            <do>TEMP.try_again=0</do>
+                          </else>
+                        </if>
+                      </loop>
+                    </while>
+
+
+                    <c>Merge TAX onto TAU if it exists</c>
+                    <if>
+                      <condition>GLOBAL.has_tax_table</condition>
+                      <then>
+                        <do>TEMP.try_again=1</do>
+                        <while>
+                          <condition>TEMP.try_again eq 1</condition>
+                          <loop>
+                            <do>TEMP.tax_eof=TEMP.tax_csr eq ''</do>
+                            <do>TEMP.tax_id_sess=OBJECT(TEMP.tax_csr).id_sess</do>
+                            <debug switch='log_erd'>'Merging details: TAX.eof='~TEMP.tax_eof~', TAX.id_sess='~TEMP.tax_id_sess~', TAU.id_sess='~TEMP.id_sess</debug>
+                            <c>4 cases: eof,match,extra tat,no tax</c>
+                            <if>
+                              <condition>TEMP.tax_eof</condition>
+                              <then>
+                                <debug switch='log_erd'>'Merging details: TAX at eof'</debug>
+                                <do>TEMP.try_again=0</do>
+                              </then>
+                              <condition>TEMP.id_sess eq TEMP.tax_id_sess</condition>
+                              <then>
+                                <debug switch='log_erd'>'Merging details: TAX found id_sess='~OBJECT(TEMP.tau_csr).id_sess</debug>
+                                <c> merge the TAX onto TAU</c>
+                                <inherit_object>
+                                  <source>TEMP.tax_csr</source>
+                                  <target>TEMP.tau_csr</target>
+                                </inherit_object>
+                                <object_delta_from_table>
+                                  <object_id>TEMP.tau_csr</object_id>
+                                  <table_name>'T_IC_TAX_REFEED_TRANS'</table_name>
+                                </object_delta_from_table>
+                                <cursor_next>TEMP.tax_csr</cursor_next>
+                                <do>TEMP.try_again=0</do>
+                              </then>
+                              <condition>TEMP.id_sess GT TEMP.tax_id_sess</condition>
+                              <then>
+                                <debug switch='log_erd'>'Merging details: IGNORING ORPHAN TAT ROW (NO TAU) WITH ID_SESS=['~TEMP.tax_id_sess~']'</debug>
+                                <cursor_next>TEMP.tax_csr</cursor_next>
+                              </then>
+                              <else>
+                                <c>do nothing</c>
+                                <debug switch='log_erd'>'Merging details: TAX no data'</debug>
+                                <do>TEMP.try_again=0</do>
+                              </else>
+                            </if>
+                          </loop>
+                        </while>
+                      </then>
+                    </if>
+
+                    <c>Merge ACAT onto TAU if it exists</c>
+                    <do>TEMP.try_again=1</do>
+                    <while>
+                      <condition>TEMP.try_again eq 1</condition>
+                      <loop>
+                        <do>TEMP.acat_eof=TEMP.acat_csr eq ''</do>
+                        <do>TEMP.acat_id_sess=TEMP.acat_eof ? '' : OBJECT(TEMP.acat_csr).id_sess</do>
+                        <info switch='log_erd'>'ACAT.eof='~TEMP.acat_eof~', ACAT.id_sess='~TEMP.acat_id_sess~', TAU.id_sess='~TEMP.id_sess</info>
+                        <c>4 cases: eof,match,extra acat,no acat</c>
+                        <if>
+                          <condition>TEMP.acat_eof</condition>
+                          <then>
+                            <info switch='log_erd'>'ACAT at eof'</info>
+                            <do>TEMP.try_again=0</do>
+                          </then>
+                          <condition>TEMP.id_sess eq TEMP.acat_id_sess</condition>
+                          <then>
+                            <!-- if we have a row, we want to flag tau as deleted. -->
+                            <info switch='log_erd'>'ACAT merged and mark as deleted for id_sess='~OBJECT(TEMP.tau_csr).id_sess</info>
+                            <c> merge the AUAT onto TAU</c>
+                            <inherit_object>
+                              <source>TEMP.acat_csr</source>
+                              <target>TEMP.tau_csr</target>
+                            </inherit_object>
+                            <info switch='log_erd'>'after inherit:ACAT merged and mark as deleted for id_sess='~OBJECT(TEMP.tau_csr).id_sess</info>
+                            <object_delta_from_table>
+                              <object_id>TEMP.tau_csr</object_id>
+                              <table_name>'AGG_CHARGE_AUDIT_TRAIL'</table_name>
+                            </object_delta_from_table>
+                            <do>OBJECT(TEMP.tau_csr).deleted=1</do>
+                            <cursor_next>TEMP.acat_csr</cursor_next>
+                            <do>TEMP.try_again=0</do>
+                          </then>
+                          <condition>TEMP.id_sess GT TEMP.acat_id_sess</condition>
+                          <then>
+                            <info switch='log_erd'>'IGNORING EXTRA ACAT ROW (NO TAU) WITH ID_SESS=['~TEMP.acat_id_sess~']'</info>
+                            <cursor_next>TEMP.acat_csr</cursor_next>
+                          </then>
+                          <else>
+                            <c>do nothing</c>
+                            <info switch='log_erd'>'ACAT no data'</info>
+                            <do>TEMP.try_again=0</do>
+                          </else>
+                        </if>
+                      </loop>
+                    </while>
+
+                    <c>merge AUAT onto TAU if we have a row</c>
+                    <do>TEMP.try_again=1</do>
+                    <while>
+                      <condition>TEMP.try_again eq 1</condition>
+                      <loop>
+                        <do>TEMP.auat_eof=TEMP.auat_csr eq ''</do>
+                        <do>TEMP.auat_id_sess=TEMP.auat_eof ? '' : OBJECT(TEMP.auat_csr).id_sess</do>
+                        <c>4 cases: eof,match,extra auat,no auat</c>
+                        <if>
+                          <condition>TEMP.auat_eof</condition>
+                          <then>
+                            <info switch='log_erd'>'AUAT at eof'</info>
+                            <do>TEMP.try_again=0</do>
+                          </then>
+                          <condition>TEMP.id_sess eq TEMP.auat_id_sess</condition>
+                          <then>
+                            <info switch='log_erd'>'AUAT merged'</info>
+                            <c> merge the AUAT onto TAU</c>
+                            <inherit_object>
+                              <source>TEMP.auat_csr</source>
+                              <target>TEMP.tau_csr</target>
+                            </inherit_object>
+                            <object_delta_from_table>
+                              <object_id>TEMP.tau_csr</object_id>
+                              <table_name>'AGG_USAGE_AUDIT_TRAIL'</table_name>
+                            </object_delta_from_table>
+                            <cursor_next>TEMP.auat_csr</cursor_next>
+                            <do>TEMP.try_again=0</do>
+                          </then>
+
+                          <condition>TEMP.id_sess GT TEMP.auat_id_sess</condition>
+                          <then>
+                            <debug switch='log_erd'>'Merging details: LOOKS LIKE SOMEONE DELETED USAGE WITH ID_SESS=['~TEMP.auat_id_sess~']'</debug>
+                            <do>TEMP.auat_delete_ctr+=1</do>
+                            <db_bulk_insert>
+                              <login_object>GLOBAL.target_login</login_object>
+                              <name>GLOBAL.deleted_usage_table</name>
+                              <commit_size>1000</commit_size>
+                              <field name="hook_id">TEMP.hook_id</field>
+                              <field name="id_usage_interval">TEMP.id_usage_interval</field>
+                              <field name="id_sess">TEMP.auat_id_sess</field>
+                            </db_bulk_insert>
+                            <cursor_next>TEMP.auat_csr</cursor_next>
+                          </then>
+                          <else>
+                            <c>do nothing</c>
+                            <info switch='log_erd'>'AUAT no data'</info>
+                            <do>TEMP.try_again=0</do>
+                          </else>
+                        </if>
+                      </loop>
+                    </while>
+
+                   
+                    <do>object_delta_set_state(TEMP.tau_csr,'SettingOriginals')</do>
+                    <if>
+                      <condition>OBJECT(TEMP.tau_csr).orig_values_packed ne ''</condition>
+                      <then>
+                        <info switch='log_erd'>'unpacking '~OBJECT(TEMP.tau_csr).orig_values_packed</info>
+                        <object_delta_unpack_originals>
+                          <object_id>TEMP.tau_csr</object_id>
+                          <field>'orig_values_packed'</field>
+                        </object_delta_unpack_originals>
+                      </then>
+                    </if>
+                    <do>object_delta_set_state(TEMP.tau_csr,'SettingNew')</do>
+                   
+
+                    <c> set the sort field based on id_view </c>
+                    <call_dynamic_proc_for_object>
+                      <name>'generate_sortkey_'~OBJECT(TEMP.tau_csr).id_view</name>
+                      <object_id>TEMP.tau_csr</object_id>
+                    </call_dynamic_proc_for_object>
+
+                    <if>
+                      <condition>OBJECT(TEMP.tau_csr).sortkey eq ''</condition>
+                      <then>
+                        <info switch='log_erd'>'CAUTION: YOU SHOULD NOT SEE THIS UNLESS UNIT TESTING.'</info>
+                        <!--<get_proc_text>
+                          <name>'generate_sortkey_'~OBJECT(TEMP.tau_csr).id_view</name>
+                          <output>TEMP.txt</output>
+                        </get_proc_text>
+                        <info switch='log_erd'>'proc_text='~TEMP.txt</info>-->
+                        <!--<call_proc_for_object>
+                          <name>'set_sort_field'</name>
+                          <object_id>TEMP.tau_csr</object_id>
+                        </call_proc_for_object>-->
+                      </then>
+                    </if>
+
+                    <c>Set a flag indicating if this usage record is a live parent usage record</c>
+                    <index_select>
+                      <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+                      <field name="id_view">TEMP.id_view</field>
+                      <cursor>TEMP.csr4</cursor>
+                      <then>
+                        <do>OBJECT(TEMP.tau_csr).is_live_parent = '1'</do>
+                      </then>
+                    </index_select>
+
+                    <if>
+                      <condition>OBJECT(TEMP.tau_csr).orig_usage_interval ne '' and OBJECT(TEMP.tau_csr).orig_usage_interval ne OBJECT(TEMP.tau_csr).id_usage_interval</condition>
+                      <then>
+                        <do>OBJECT(TEMP.tau_csr).deleted = ''</do>
+                      </then>
+                    </if>
+
+                    <!--<print>'Checking1 to see if the charge ['~OBJECT(TEMP.tau_csr).id_sess~'] is deleted ['~OBJECT(TEMP.tau_csr).deleted~'] and orig ['~OBJECT(TEMP.tau_csr).orig_usage_interval ~'] and curr interval ['~OBJECT(TEMP.tau_csr).id_usage_interval~']'</print>-->
+
+
+                    <c>Add the object to the usage hook hook</c>
+                    <object_ref_count_get>
+                      <object_id>TEMP.tau_csr</object_id>
+                      <ref_count>TEMP.refs</ref_count>
+                    </object_ref_count_get>
+                    <info switch='log_erd'>'ADD USAGE TO HOOK: oid='~TEMP.tau_csr~',refs='~TEMP.refs~', id_sess='~OBJECT(TEMP.tau_csr).id_sess~', deleted='~OBJECT(TEMP.tau_csr).deleted</info>
+                    <usage_hook_add_object>
+                      <hook_id>TEMP.hook_id</hook_id>
+                      <object_id>TEMP.tau_csr</object_id>
+                    </usage_hook_add_object>
+                    <object_ref_count_get>
+                      <object_id>TEMP.tau_csr</object_id>
+                      <ref_count>TEMP.refs</ref_count>
+                    </object_ref_count_get>
+                    <info switch='log_erd'>'DONE ADDING USAGE TO HOOK: oid='~TEMP.tau_csr~',refs='~TEMP.refs~', id_sess='~OBJECT(TEMP.tau_csr).id_sess~', deleted='~OBJECT(TEMP.tau_csr).deleted</info>
+
+                    <c>iterate the pv</c>
+                    <!--<print>'calling cursor next for pv_csr'~TEMP.pv_csr</print>-->
+                    <cursor_next>TEMP.pv_csr</cursor_next>
+                    <!--<print>'AFTER calling cursor next for pv_csr'~TEMP.pv_csr</print>-->
+                    <index_remove>
+                      <index>'PV_CURSORS'</index>
+                      <field name="id_view">TEMP.id_view</field>
+                    </index_remove>
+                    <index_insert>
+                      <index>'PV_CURSORS'</index>
+                      <field name="id_view">TEMP.id_view</field>
+                      <field name="pv_table">TEMP.pv_table</field>
+                      <field name="pv_csr">TEMP.pv_csr</field>
+                    </index_insert>
+                  </then>
+                  <else>
+                    <call_proc_for_current_object>
+                      <name>'get_pv_table_name'</name>
+                      <param name="id_view">TEMP.id_view</param>
+                      <param name="table_name">TEMP.pv_table</param>
+                    </call_proc_for_current_object>
+                    <do>
+                      TEMP.extra=(TEMP.id_sess GT TEMP.pv_id_sess)
+                      ? ('Looks like TAU is missing id_sess='~TEMP.pv_id_sess~'.')
+                      : ('Looks like '~TEMP.pv_table~' is missing id_sess='~TEMP.id_sess~'.')
+                    </do>
+                    <fatal>'Error, not expecting to fail join from t_acc_usage to product view ['~TEMP.pv_table~'] for TAU.id_sess='~TEMP.id_sess~', PV.id_sess='~TEMP.pv_id_sess~', TAU.id_view='~TEMP.id_view~', pv_eof='~TEMP.pv_eof~'  '~TEMP.extra</fatal>
+                  </else>
+                </if>
+              </then>
+              <else>
+                <fatal>'Error, got t_acc_usage but no product view for id_sess='~TEMP.id_sess</fatal>
+              </else>
+            </index_select>
+          </loop>
+        </file_select>
+
+      </stopwatch>
+
+
+
+
+      <info switch='log_erd'>'Looking for trailing AUAT records to delete'</info>
+      <while>
+        <condition>TEMP.auat_csr ne ''</condition>
+        <loop>
+          <info switch='log_erd'>'LOOKS LIKE SOMEONE DELETED USAGE WITH ID_SESS=['~OBJECT(TEMP.auat_csr).id_sess~']'</info>
+          <do>TEMP.auat_delete_ctr+=1</do>
+          <db_bulk_insert>
+            <login_object>GLOBAL.target_login</login_object>
+            <name>GLOBAL.deleted_usage_table</name>
+            <commit_size>1000</commit_size>
+            <!--<field name="hook_id">TEMP.hook_id</field>-->
+            <field name="id_usage_interval">TEMP.id_usage_interval</field>
+            <field name="id_sess">OBJECT(TEMP.auat_csr).id_sess</field>
+          </db_bulk_insert>
+          <cursor_next>TEMP.auat_csr</cursor_next>
+        </loop>
+      </while>
+
+      <c>Done cursors so clear them all</c>
+      <debug switch='log_erd'>'Clearing cursor for adjustment transactions.'</debug>
+      <cursor_clear>TEMP.tat_csr</cursor_clear>
+      <if>
+        <condition>GLOBAL.has_tax_table</condition>
+        <then>
+          <debug switch='log_erd'>'Clearing cursor for tax'</debug>
+          <cursor_clear>TEMP.tax_csr</cursor_clear>
+        </then>
+      </if>
+      
+      <debug switch='log_erd'>'Clearing cursor for usage audit trail.'</debug>
+      <cursor_clear>TEMP.auat_csr</cursor_clear>
+      <debug switch='log_erd'>'Clearing cursor for charge audit trail.'</debug>
+      <cursor_clear>TEMP.acat_csr</cursor_clear>
+      <index_select_keys>
+        <index>'PV_CURSORS'</index>
+        <cursor>TEMP.pvc1</cursor>
+        <loop>
+          <do>TEMP.id_view=OBJECT(TEMP.pvc1).id_view</do>
+          <index_select>
+            <index>'PV_CURSORS'</index>
+            <field name="id_view">TEMP.id_view</field>
+            <cursor>TEMP.pvc2</cursor>
+            <loop>
+              <do>TEMP.pv_csr=OBJECT(TEMP.pvc2).pv_csr</do>
+              <do>TEMP.pv_table=OBJECT(TEMP.pvc2).pv_table</do>
+              <debug switch='log_erd'>'Clearing cursor for '~TEMP.pv_table</debug>
+              <cursor_clear>TEMP.pv_csr</cursor_clear>
+            </loop>
+          </index_select>
+        </loop>
+      </index_select_keys>
+
+      <if>
+        <condition>TEMP.auat_delete_ctr GT 0</condition>
+        <then>
+          <info switch='log_erd'>'Fire off the AUAT delete'</info>
+          <db_bulk_insert_flush_all/>
+          <db_execute>
+            <login_object>GLOBAL.target_login</login_object>
+            <statement type="sql">
+              "begin
+              delete a from AGG_USAGE_AUDIT_TRAIL a
+              inner join "~GLOBAL.deleted_usage_table~" b
+              on a.id_sess=b.id_sess
+              and a.id_usage_interval=b.id_usage_interval
+              and a.is_realtime = 0
+              end"
+            </statement>
+            <statement type="oracle">
+              "delete from AGG_USAGE_AUDIT_TRAIL a
+              where exists (
+              select 1 from "~GLOBAL.deleted_usage_table~" b
+              where a.id_sess=b.id_sess
+              and a.id_usage_interval=b.id_usage_interval
+              ) and a.is_realtime = 0"
+            </statement>
+            <num_rows>TEMP.num_rows</num_rows>
+          </db_execute>
+          <info switch='log_erd'>'Deleted '~TEMP.num_rows~ ' from AGG_USAGE_AUDIT_TRAIL, expected to delete='~TEMP.auat_delete_ctr</info>
+        </then>
+        <else>
+          <info switch='log_erd'>'No rows to delete from AGG_USAGE_AUDIT_TRAIL'</info>
+        </else>
+      </if>
+
+
+      <debug switch='log_erd'>'Deleting all the temp table files.'</debug>
+      <bfs_delete_file>
+        <file>TEMP.t_acc_usage_file</file>
+        <result>TEMP.is_deleted</result>
+      </bfs_delete_file>
+      <bfs_delete_file>
+        <file>TEMP.t_adjustment_transaction_file</file>
+        <result>TEMP.is_deleted</result>
+      </bfs_delete_file>
+      <if>
+        <condition>GLOBAL.has_tax_table</condition>
+        <then>
+          <bfs_delete_file>
+            <file>TEMP.t_ic_tax_refeed_trans_file</file>
+            <result>TEMP.is_deleted</result>
+          </bfs_delete_file>
+        </then>
+      </if>
+      <bfs_delete_file>
+        <file>TEMP.agg_usage_audit_trail_file</file>
+        <result>TEMP.is_deleted</result>
+      </bfs_delete_file>
+      <bfs_delete_file>
+        <file>TEMP.agg_charge_audit_trail_file</file>
+        <result>TEMP.is_deleted</result>
+      </bfs_delete_file>
+      <index_select>
+        <index>'PV_FILES'</index>
+        <cursor>TEMP.csr1</cursor>
+        <loop>
+          <do>TEMP.pv_file=OBJECT(TEMP.csr1).pv_file</do>
+          <bfs_delete_file>
+            <file>TEMP.pv_file</file>
+            <result>TEMP.is_deleted</result>
+          </bfs_delete_file>
+        </loop>
+      </index_select>
+
+
+
+    </stopwatch>
+
+
+    <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).update_amp_local_usage_timer'>
+      <debug switch='log_erd'>'Updating Local Usage Table to reflect that this node owns all id_accs in the hook.'</debug>
+      <db_execute>
+        <login_object>GLOBAL.target_login</login_object>
+        <statement type='oracle'>
+          "update (select old.node_id old_node_id from "~GLOBAL.amp_local_usage_table~" old,"~GLOBAL.usage_hook_table~" new where old.id_acc=new.id_acc and old.node_id != "~GLOBAL.node_id~") set old_node_id="~GLOBAL.node_id
+        </statement>
+        <statement type='sql'>
+          "WITH CTE AS (select old.node_id old_node_id from "~GLOBAL.amp_local_usage_table~" old,"~GLOBAL.usage_hook_table~" new where old.id_acc=new.id_acc and old.node_id != "~GLOBAL.node_id~") UPDATE CTE set old_node_id="~GLOBAL.node_id
+        </statement>
+        <num_rows>TEMP.num_rows</num_rows>
+      </db_execute>
+    </stopwatch>
+
+    <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).load_amp_local_usage_timer'>
+
+      <info switch='log_erd'>'Inserting newly retrieved usage into '~GLOBAL.amp_local_usage_table~' from '~GLOBAL.usage_hook_table~' WHERE node_id is NULL'</info>
+      <db_execute>
+        <login_object>GLOBAL.target_login</login_object>
+        <statement>
+          "insert into "~GLOBAL.amp_local_usage_table~" (id_acc,node_id) select id_acc,"~GLOBAL.node_id~" from "~GLOBAL.usage_hook_table~" where node_id = -1"
+        </statement>
+        <num_rows>TEMP.num_rows</num_rows>
+      </db_execute>
+    </stopwatch>
+
+    <debug switch='log_erd'>'Done retrieving usage for interval '~TEMP.id_usage_interval~'. Hook ID =  '~TEMP.hook_id</debug>
+
+  </proc>
+
+
+  <proc name='usage_cursor_noop'>
+
+  </proc>
+
+</procs>

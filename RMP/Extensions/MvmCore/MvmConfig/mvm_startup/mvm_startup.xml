@@ -1,0 +1,84 @@
+<proc name="mvm_startup" namespace="mvm_startup">
+  
+  <run_once>
+    
+    <!-- same as db table -->
+    <define_memory_index>
+      <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+      <key_field>'physical_node_id'</key_field>
+      <field>'server'</field>
+      <field>'starting_proc'</field>
+      <field>'starting_args'</field>
+      <field>'physical_cluster'</field>
+      <field>'logical_cluster'</field>
+      <field>'num_cores'</field>
+      <field>'parent_physical_node_id'</field>
+    </define_memory_index>
+    
+    <!-- same as db table -->
+    <define_memory_index>
+      <index>'MVM_LOGICAL_CLUSTER_NODES'</index>
+      <key_field>'logical_node_id'</key_field>
+      <field>'physical_node_id'</field>
+      <field>'weight'</field>
+      <field>'logical_cluster'</field>
+    </define_memory_index>
+
+    <!-- maps logical nodes to physical nodes -->
+    <define_memory_index>
+      <index>'LOGICAL_TO_PHYSICAL_NODE_MAP'</index>
+      <key_field>'logical_node_id'</key_field>
+      <field>'physical_node_id'</field>
+      <field>'is_primary'</field>
+    </define_memory_index>
+
+    <!-- all logical nodes in your logical cluster -->
+    <define_memory_index>
+      <index>'LOGICAL_NODE_IDS'</index>
+      <key_field>'logical_node_id'</key_field>
+    </define_memory_index>
+
+    <!-- all physical nodes in your logical cluster -->
+    <define_memory_index>
+      <index>'PHYSICAL_NODE_IDS'</index>
+      <key_field>'physical_node_id'</key_field>
+    </define_memory_index>
+
+    <!--all physical nodes in you logical cluster but yourself -->
+    <define_memory_index>
+      <index>'SLAVE_PHYSICAL_NODE_IDS'</index>
+      <key_field>'physical_node_id'</key_field>
+    </define_memory_index>
+    
+    <!-- for backward compatability gets set to the physical node id of the lowest logical node id in the cluster -->
+    <do>GLOBAL.master_id=OBJECT(GLOBAL.args_object).parent_physical_node_id</do>
+    
+    
+  </run_once>
+
+  <print>'Dumping command line args_object'</print>
+  <print>dump_object(GLOBAL.args_object)</print>
+
+
+  <c>Do the appropriate startup based on the node type...</c>
+  <if>
+    <condition>
+      GLOBAL.is_cluster_node eq ''
+      and
+      GLOBAL.physical_cluster eq ''
+      and
+      GLOBAL.logical_cluster eq ''
+    </condition>
+    <then>
+      <call_proc>'startup_standalone_node'</call_proc>
+    </then>
+    <condition>GLOBAL.is_cluster_node eq 1</condition>
+    <then>
+      <call_proc>'startup_cluster_node'</call_proc>
+    </then>
+    <else>
+      <call_proc>'startup_monitor_node'</call_proc>
+    </else>
+  </if>
+
+</proc>

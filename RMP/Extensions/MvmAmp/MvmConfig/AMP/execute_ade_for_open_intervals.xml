@@ -1,0 +1,95 @@
+<procs>
+  <proc name='execute_amp_for_open_intervals'>
+
+    <!--<initialize>
+
+      <spawn>
+        <object_type>'LOGGER'</object_type>
+        <object_id>GLOBAL.logger</object_id>
+      </spawn>
+      <do>OBJECT(GLOBAL.logger).log_type='console'</do>
+      <do>OBJECT(GLOBAL.logger).log_level='info'</do>
+
+      <define_mvm_cluster>
+        --><!--<query>'select machine, user, password, port_start, port_end, order from mvm_cluster_nodes'</query>--><!--
+        --><!--<node machine='localhost' user='Controller' password='MetraTech1' bin='D:\MetraTech\RMP\Bin' port_start='50000' port_end='50001'/>--><!--
+      </define_mvm_cluster>
+
+    </initialize>-->
+
+    <set_server_mode_on/>
+
+    <startup_slaves>
+      <slave_count>'*'</slave_count>
+      <num_started>GLOBAL.slave_count</num_started>
+    </startup_slaves>
+    
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query>
+        "select id_usage_cycle, min(id_interval) id_interval, min(dt_start) dt_start, min(dt_end) dt_end from t_usage_interval where tx_interval_status = 'O' group by id_usage_cycle"
+      </query>
+      <cursor>TEMP.open_intervals</cursor>
+      <loop>
+        <print>'CALLING AMP FOR INTERVAL['~OBJECT(TEMP.open_intervals).id_interval~']'</print>
+        <call_proc_for_current_object>
+          <name>'generate_work_for_interval'</name>
+          <param name='id_interval'>OBJECT(TEMP.open_intervals).id_interval</param>
+          <param name='eop_mode'>'0'</param>
+        </call_proc_for_current_object>
+
+        <!--<print>'CALLING PROCESS_DECISION_WORK FOR INTERVAL['~OBJECT(TEMP.open_intervals).id_interval~']'</print>-->
+        <call_proc_for_current_object>
+          <name>'process_decision_work'</name>
+          <param name='id_interval'>OBJECT(TEMP.open_intervals).id_interval</param>
+        </call_proc_for_current_object>
+
+        <!--<print>'CALLING PROCESS_DECISION_WORK FOR INTERVAL['~OBJECT(TEMP.open_intervals).id_interval~']'</print>-->
+        <call_proc_for_current_object>
+          <name>'unapply_obsolete_work_for_interval'</name>
+          <param name='id_interval'>OBJECT(TEMP.open_intervals).id_interval</param>
+        </call_proc_for_current_object>
+
+        <call_proc_for_current_object>
+          <name>'reset_global_context'</name>
+        </call_proc_for_current_object>
+        
+      </loop>
+    </db_select>
+
+    <slave_node_id_select>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.slave_id=OBJECT(TEMP.csr).node_id</do>
+        <!--<print>'got a slave-'~TEMP.slave_id</print>-->
+
+        <remote_queue_proc>
+          <name>'persist_counters'</name>
+          <process_id>TEMP.slave_id</process_id>
+          <batch_id>TEMP.my_batch_id</batch_id>
+          <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+          <param name='batch_id'>TEMP.my_batch_id</param>
+          <param name='node_id'>TEMP.slave_id</param>
+        </remote_queue_proc>
+
+        <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+
+      </loop>
+    </slave_node_id_select>
+
+    <print>'shutting down the cluster'</print>
+    <set_server_mode_off/>
+    <shutdown_cluster/>
+
+    <db_call_proc>
+      <login_object>GLOBAL.target_login</login_object>
+      <name>'mvm_complete_mvm_run_id'</name>
+      <param name="p_mvm_run_id">GLOBAL.mvm_run_id</param>
+      <param name="p_preserve_tables">'-1'</param>
+      <param name="p_preserve_offset">'31'</param>
+    </db_call_proc>
+
+    <sleep>5000</sleep>
+
+  </proc>
+</procs>

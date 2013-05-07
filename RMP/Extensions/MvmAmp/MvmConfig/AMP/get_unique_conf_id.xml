@@ -1,0 +1,30 @@
+<procs>
+  <proc name='get_unique_conf_id'>
+    <if>
+      <condition>OBJECT.c_uniqueconfid eq ''</condition>
+      <then>
+        <db_call_proc>
+          <login_object>GLOBAL.target_login</login_object>
+          <name>'prem_getuniqueconfid2'</name>
+          <param name="rkount">1</param>
+          <param name="a_id_conf">OBJECT.c_uniqueconfid</param>
+        </db_call_proc>
+      </then>
+    </if>
+  </proc>
+  <proc name='get_unique_conf_id_parent'>
+    <if>
+      <condition>OBJECT(OBJECT.parent_oid).c_uniqueconfid eq ''</condition>
+      <then>
+        <db_call_proc>
+          <login_object>GLOBAL.target_login</login_object>
+          <name>'prem_getuniqueconfid2'</name>
+          <param name="rkount">1</param>
+          <param name="a_id_conf">OBJECT(OBJECT.parent_oid).c_uniqueconfid</param>
+        </db_call_proc>
+      </then>
+    </if>
+    <do>OBJECT.c_uniqueconferenceid = OBJECT(OBJECT.parent_oid).c_uniqueconfid</do>
+  </proc>
+</procs>
+

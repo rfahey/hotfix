@@ -1,0 +1,49 @@
+<proc name="bg_relock_boundary_groups">
+  <param name='got_lock' mode='out'/>
+
+  <initialize>
+    <define_memory_index>
+      <index>'BOUNDARY_GROUP_RELOCKS'</index>
+      <field>'boundary_group_id'</field>
+    </define_memory_index>
+  </initialize>
+
+  <index_clear>
+    <index>'BOUNDARY_GROUP_RELOCKS'</index>
+  </index_clear>
+  <index_select_keys>
+    <index>'BOUNDARY_GROUP_LOCKS'</index>
+    <cursor>TEMP.bg_locks</cursor>
+    <loop>
+      <call_proc_for_current_object>
+        <name>'bg_unlock_boundary_group'</name>
+        <param name='boundary_group_id'>OBJECT(TEMP.bg_locks).boundary_group_id</param>
+        <param name='remove_from_cache'>0</param>
+        <param name='got_unlock'>TEMP.got_unlock</param>
+      </call_proc_for_current_object>
+      <index_insert>
+        <index>'BOUNDARY_GROUP_RELOCKS'</index>
+        <field name="boundary_group_id">OBJECT(TEMP.bg_locks).boundary_group_id</field>
+      </index_insert>
+    </loop>
+  </index_select_keys>
+
+  <print>'Starting relock loop'</print>
+  <index_select>
+    <index>'BOUNDARY_GROUP_RELOCKS'</index>
+    <order_by>OBJECT.boundary_group_id</order_by>
+    <cursor>TEMP.bg_locks</cursor>
+    <loop>
+      <print>'Attempting to relock bg ['~OBJECT(TEMP.bg_locks).boundary_group_id~']'</print>
+      <call_proc_for_current_object>
+        <name>'bg_lock_boundary_group'</name>
+        <param name='boundary_group_id'>OBJECT(TEMP.bg_locks).boundary_group_id</param>
+        <param name='got_lock'>TEMP.got_lock</param>
+      </call_proc_for_current_object>
+    </loop>
+  </index_select>
+  <print>'Finishing relock loop'</print>
+
+
+
+</proc>

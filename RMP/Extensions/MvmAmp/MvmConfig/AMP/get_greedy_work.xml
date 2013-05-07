@@ -1,0 +1,411 @@
+<procs>
+
+  <!-- ==================================================================== -->
+  <!-- Given a decision, finds other decisions that also use reference      -->
+  <!-- theses same accounts. Write to CURRENT_WORK all these decisions.     -->
+  <!-- Also set-up CURRENT_PRIORITIES holding their corresponding           -->
+  <!-- tier priorities.                                                     -->
+  <!--                                                                      -->
+  <!-- Input:                                                               -->
+  <!--   bucket_object      - the instantiated decision to consider.        -->
+  <!--   attempt_lock       - 1 if we should try to lock the account        -->
+  <!--                        associated with the decision.                 -->
+  <!--   original_priority  - the original priority of the decision.        -->
+  <!--                                                                      -->
+  <!-- Results:                                                             -->
+  <!--   CURRENT_ACCOUNTS    - output map of accounts associated with       -->
+  <!--                         current work.                                -->
+  <!--   CURRENT_PRIORITIES  - output map of decisions to tier priority     -->
+  <!--                         for the decisions we are interested in.      -->
+  <!--   CURRENT_WORK        - output map for the decisions we want to      -->
+  <!--                         want to work on.                             -->
+  <!-- ==================================================================== -->
+  <proc name='get_greedy_work'>
+    <param name='bucket_object'/>
+    <param name='attempt_lock'/>
+    <param name='original_priority'/>
+    <param name='initial_call'/>
+
+    <initialize>
+
+      <define_memory_index>
+        <index>'CURRENT_ACCOUNTS'</index>
+        <key_field>'id_acc'</key_field>
+        <field>'is_member'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'CURRENT_BUCKETS'</index>
+        <key_field>'bucket_object'</key_field>
+      </define_memory_index>
+
+      <!-- A map of decision (bucket) to tier priority: CURRENT_PRIORITIES -->
+      <define_memory_index>
+        <index>'CURRENT_PRIORITIES'</index>
+        <key_field>'priority'</key_field>
+        <field>'bucket_object'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'CURRENT_WORK'</index>
+        <key_field>'bucket_object'</key_field>
+        <!--<field>'bucket_object'</field>-->
+      </define_memory_index>
+      <define_memory_index>
+        <index>'CURRENT_WORK_REMAINING'</index>
+        <field>'bucket_object'</field>
+        <!--<field>'bucket_object'</field>-->
+      </define_memory_index>
+      <define_memory_index>
+        <index>'CURRENT_COMPLETED_WORK'</index>
+        <key_field>'bucket_object'</key_field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'CURRENT_PRECOMPLETED_WORK'</index>
+        <key_field>'bucket_object'</key_field>
+        <field>'master_bucket_object'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'ALL_PRECOMPLETED_WORK'</index>
+        <key_field>'bucket_object'</key_field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'SKIPPED_WORK'</index>
+        <key_field>'bucket_object'</key_field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'TEMP_WORK'</index>
+        <key_field>'bucket_object'</key_field>
+        <!--<field>'bucket_object'</field>-->
+      </define_memory_index>
+    </initialize>
+
+    <debug switch='log_scheduling'>'Considering if the slave should ask for more work.'</debug>
+    <debug switch='log_scheduling'>'The slave will ask for more work if there is another decision that requires the same usage.'</debug>
+
+    <!-- Map of decisions we should process: CURRENT_BUCKETS -->
+    <index_clear>
+      <index>'CURRENT_BUCKETS'</index>
+    </index_clear>
+    <index_clear>
+      <index>'CURRENT_PRIORITIES'</index>
+    </index_clear>
+    <index_clear>
+      <index>'CURRENT_WORK'</index>
+    </index_clear>
+    <index_clear>
+      <index>'CURRENT_WORK_REMAINING'</index>
+    </index_clear>
+    <index_clear>
+      <index>'SKIPPED_WORK'</index>
+    </index_clear>
+    <index_clear>
+      <index>'TEMP_WORK'</index>
+    </index_clear>
+    <index_clear>
+      <index>'CURRENT_PRECOMPLETED_WORK'</index>
+    </index_clear>
+
+
+    <!-- Get all accounts that are involved in this decision. -->
+    <debug switch='log_scheduling'>'Determining all the accounts that are involved in this decision.'</debug>
+
+    <if>
+      <condition> OBJECT(TEMP.bucket_object).hard_audit_point eq '1' and OBJECT(TEMP.bucket_object).tier_priority LT GLOBAL.hard_stop_priority</condition>
+      <then>
+        <debug switch='log_scheduling'>'Found a hard audit point in initial work ['~OBJECT(TEMP.bucket_object).tier_priority~'], so forcing work to return to parent after this pass'</debug>
+        <do>GLOBAL.hard_stop_priority = OBJECT(TEMP.bucket_object).tier_priority</do>
+      </then>
+    </if>
+
+    <index_select_keys>
+      <index>'CURRENT_COMPLETED_WORK'</index>
+      <cursor>TEMP.curr_comp_work</cursor>
+      <loop>
+        <index_insert>
+          <index>'TEMP_WORK'</index>
+          <field name="bucket_object">OBJECT(TEMP.curr_comp_work).bucket_object</field>
+        </index_insert>
+      </loop>
+    </index_select_keys>
+
+    <index_select>
+      <index>'TEMP_WORK'</index>
+      <field name="bucket_object">TEMP.bucket_object</field>
+      <cursor>TEMP.temp_work</cursor>
+      <else>
+        <index_insert>
+          <index>'TEMP_WORK'</index>
+          <field name="bucket_object">TEMP.bucket_object</field>
+        </index_insert>
+      </else>
+    </index_select>
+    
+    
+    
+
+    <index_select_keys>
+      <index>'TEMP_WORK'</index>
+      <cursor>TEMP.temp_work</cursor>
+      <loop>
+        <do>TEMP.temp_bucket_object = OBJECT(TEMP.temp_work).bucket_object</do>
+        <!--<print>'Looking2 GET_GREEDY up with ['~OBJECT(TEMP.temp_bucket_object).decision_unique_id~']'</print>-->
+        <do>TEMP.junk_counter = 0</do>
+        <index_select>
+          <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          <field name="bucket_object">TEMP.temp_bucket_object</field>
+          <cursor>TEMP.agg_bucket_accs</cursor>
+          <loop>
+            <debug switch='log_scheduling'>'Checking account ['~OBJECT(TEMP.agg_bucket_accs).id_acc~']'</debug>
+            <do>TEMP.junk_counter += 1</do>
+        <!-- and put them in CURRENT_ACCOUNTS -->
+            <index_select>
+              <index>'CURRENT_ACCOUNTS'</index>
+              <field name="id_acc">OBJECT(TEMP.agg_bucket_accs).id_acc</field>
+              <cursor>TEMP.curr_accs</cursor>
+              <else>
+                <debug switch='log_scheduling'>'Inserting account ['~OBJECT(TEMP.agg_bucket_accs).id_acc~']'</debug>
+                <index_insert>
+                  <index>'CURRENT_ACCOUNTS'</index>
+                  <field name="id_acc">OBJECT(TEMP.agg_bucket_accs).id_acc</field>
+                  <field name="is_member">'1'</field>
+                </index_insert>
+              </else>
+            </index_select>
+          </loop>
+        </index_select>
+        <debug switch='log_scheduling'>'Done getting accounts with counter = ['~TEMP.junk_counter~']'</debug>
+      </loop>
+    </index_select_keys>
+
+    <index_select_keys>
+      <index>'CURRENT_ACCOUNTS'</index>
+      <cursor>TEMP.curr_accs</cursor>
+      <loop>
+        <debug switch='log_scheduling'>'Checking account ['~OBJECT(TEMP.curr_accs).id_acc~']'</debug>
+        <index_select>
+          <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+          <field name="id_acc">OBJECT(TEMP.curr_accs).id_acc</field>
+          <cursor>TEMP.acc_agg_buckets</cursor>
+          <loop>
+            <debug switch='log_scheduling'>'Checking account ['~OBJECT(TEMP.curr_accs).id_acc~'] for bucket ['~OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).decision_unique_id~'], obj ['~OBJECT(TEMP.acc_agg_buckets).bucket_object~']'</debug>
+            <if> 
+              <!-- If the priority of our given decision has hire priority -->
+              <!-- over other decision we found then... -->
+              <condition>OBJECT(TEMP.bucket_object).tier_priority LTE OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).tier_priority</condition>
+              <then>
+	        <debug switch='log_scheduling'>'Checking that we have not already completed decision: '~OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).decision_unique_id</debug>
+
+               <!-- Make sure we haven't already completed these other decisions -->
+                <index_select>
+                  <!--<index>'CURRENT_COMPLETED_WORK'</index>-->
+                  <index>'ALL_PRECOMPLETED_WORK'</index>
+                  <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+                  <cursor>TEMP.completed_work</cursor>
+                  <else>
+                    <index_select>
+                      <!--<index>'CURRENT_COMPLETED_WORK'</index>-->
+                      <index>'CURRENT_BUCKETS'</index>
+                      <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+                      <cursor>TEMP.current_buckets</cursor>
+                      <else>
+                        <debug switch='log_scheduling'>'Inserting bucket ['~OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).decision_unique_id~']'</debug>
+                        <index_insert>
+                          <index>'CURRENT_BUCKETS'</index>
+                          <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+                        </index_insert>
+                        <index_insert>
+                          <index>'CURRENT_PRIORITIES'</index>
+                          <field name="bucket_object">OBJECT(TEMP.acc_agg_buckets).bucket_object</field>
+                          <field name="priority">OBJECT(OBJECT(TEMP.acc_agg_buckets).bucket_object).tier_priority</field>
+                        </index_insert>
+                      </else>
+                    </index_select>
+                  </else>
+                </index_select>
+              </then>
+            </if>
+          </loop>
+        </index_select>
+      </loop>
+    </index_select_keys>
+
+    <!-- Loop through the decisions we'd like to process -->
+    <index_select_keys>
+      <index>'ALL_PRECOMPLETED_WORK'</index>
+      <cursor>TEMP.all_comp_csr</cursor>
+      <loop>
+        <index_select>
+          <index>'CURRENT_COMPLETED_WORK'</index>
+          <field name="bucket_object">OBJECT(TEMP.all_comp_csr).bucket_object</field>
+          <cursor>TEMP.completed_work</cursor>
+          <else>
+            <index_insert>
+              <index>'CURRENT_WORK'</index>
+              <field name="bucket_object">OBJECT(TEMP.all_comp_csr).bucket_object</field>
+            </index_insert>
+            <!--<index_insert>
+              <index>'CURRENT_PRIORITIES'</index>
+              <field name="bucket_object">OBJECT(TEMP.all_comp_csr).bucket_object</field>
+              <field name="priority">OBJECT(OBJECT(TEMP.all_comp_csr).bucket_object).tier_priority</field>
+            </index_insert>-->
+          </else>
+        </index_select>
+      </loop>
+    </index_select_keys>
+    
+
+    <do>TEMP.can_be_greedy = '1'</do>
+    <index_select>
+      <index>'CURRENT_COMPLETED_WORK'</index>
+      <field name="bucket_object">TEMP.bucket_object</field>
+      <cursor>TEMP.completed_work</cursor>
+      <else>
+        <debug switch='log_scheduling'>'Inserting main bucket ['~OBJECT(TEMP.bucket_object).decision_unique_id~']'</debug>
+        <index_select>
+          <index>'CURRENT_WORK'</index>
+          <field name="bucket_object">TEMP.bucket_object</field>
+          <cursor>TEMP.curr_work</cursor>
+          <else>
+            <index_insert>
+              <index>'CURRENT_WORK'</index>
+              <field name="bucket_object">TEMP.bucket_object</field>
+            </index_insert>
+          </else>
+        </index_select>
+        <if>
+          <condition>(OBJECT(TEMP.bucket_object).charge_on_final ne '' or OBJECT(TEMP.bucket_object).tier_type Eq 'bulk' or OBJECT(TEMP.bucket_object).tier_type Eq 'bulk_source' or OBJECT(TEMP.bucket_object).tier_type Eq 'bulk_aggregate')</condition>
+          <then>
+            <!--<do>TEMP.can_be_greedy = '0'</do>-->
+          </then>
+        </if>
+      </else>
+    </index_select>
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).tier_priority ne '' and OBJECT(TEMP.bucket_object).tier_priority LTE GLOBAL.hard_stop_priority</condition>
+      <then>
+        <debug switch='log_scheduling'>'Incorporating more work!!!!'</debug>
+        <call_proc_for_current_object>
+          <name>'incorporate_more_work'</name>
+          <param name='priority'>OBJECT(TEMP.bucket_object).tier_priority</param>
+          <param name='attempt_lock'>TEMP.attempt_lock</param>
+          <param name='original_priority'>TEMP.original_priority</param>
+          <param name='can_be_greedy'>TEMP.can_be_greedy</param>
+        </call_proc_for_current_object>
+        <debug switch='log_scheduling'>'Done incorporating more work!!!!'</debug>
+      </then>
+    </if>
+
+    <do>TEMP.min_blocking_priority = GLOBAL.hard_stop_priority</do>
+    <index_select_keys>
+      <index>'CURRENT_WORK'</index>
+      <cursor>TEMP.current_work</cursor>
+      <loop>
+        <do>TEMP.current_bucket = OBJECT(TEMP.current_work).bucket_object</do>
+        <c>Check to see if this decision requires an audit point and is lower priority than my current priority. If so, cannot include.</c>
+        <if>
+          <condition>(OBJECT(TEMP.current_bucket).charge_on_final ne '' or OBJECT(TEMP.current_bucket).tier_type Eq 'bulk' or OBJECT(TEMP.current_bucket).tier_type Eq 'bulk_source' or OBJECT(TEMP.current_bucket).tier_type Eq 'bulk_aggregate')</condition>
+          <then>
+            <debug switch='log_scheduling'>'Found audit point in scheduled work ['~OBJECT(TEMP.current_bucket).tier_priority~']'</debug>
+            <if>
+              <condition>OBJECT(TEMP.current_bucket).tier_priority LT TEMP.min_blocking_priority</condition>
+              <then>
+                <do>TEMP.min_blocking_priority = OBJECT(TEMP.current_bucket).tier_priority</do>
+              </then>
+            </if>
+          </then>
+        </if>
+        <if>
+          <condition> OBJECT(TEMP.current_bucket).hard_audit_point eq '1'</condition>
+          <then>
+            <debug switch='log_scheduling'>'Found a hard audit point in scheduled work ['~OBJECT(TEMP.current_bucket).tier_priority~'], so forcing work to return to parent after this pass'</debug>
+            <if>
+              <condition>OBJECT(TEMP.current_bucket).tier_priority LT TEMP.min_blocking_priority</condition>
+              <then>
+                <do>TEMP.min_blocking_priority = OBJECT(TEMP.current_bucket).tier_priority</do>
+              </then>
+            </if>
+            <if>
+              <condition>OBJECT(TEMP.current_bucket).tier_priority LT GLOBAL.hard_stop_priority</condition>
+              <then>
+                <do>GLOBAL.hard_stop_priority = OBJECT(TEMP.current_bucket).tier_priority</do>
+              </then>
+            </if>
+          </then>
+        </if>
+      </loop>
+    </index_select_keys>
+
+    <index_clear>
+      <index>'CURRENT_PRECOMPLETED_WORK'</index>
+    </index_clear>
+    
+    <index_select_keys>
+      <index>'CURRENT_WORK'</index>
+      <cursor>TEMP.current_work</cursor>
+      <loop>
+        <do>TEMP.current_bucket = OBJECT(TEMP.current_work).bucket_object</do>
+        <index_select>
+          <index>'ALL_PRECOMPLETED_WORK'</index>
+          <field name="bucket_object">TEMP.current_bucket</field>
+          <cursor>TEMP.all_precompleted_work</cursor>
+          <else>
+            <if>
+              <condition>OBJECT(TEMP.current_bucket).tier_priority LTE GLOBAL.hard_stop_priority</condition>
+              <then>
+                <debug switch='log_scheduling'>'Inserting PRECOMPLETE bucket ['~TEMP.current_bucket~'] with priority ['~OBJECT(TEMP.current_bucket).tier_priority~']'</debug>
+                <index_insert>
+                  <index>'CURRENT_PRECOMPLETED_WORK'</index>
+                  <field name="bucket_object">TEMP.current_bucket</field>
+                  <field name="master_bucket_object">TEMP.bucket_object</field>
+                </index_insert>
+                <index_insert>
+                  <index>'ALL_PRECOMPLETED_WORK'</index>
+                  <field name="bucket_object">TEMP.current_bucket</field>
+                </index_insert>
+              </then>
+            </if>
+          </else>
+        </index_select>
+        <c>Check to see if this decision requires an audit point and is lower priority than my current priority. If so, cannot include.</c>
+        <if>
+          <condition>OBJECT(TEMP.current_bucket).tier_priority GT TEMP.min_blocking_priority</condition>
+          <then>
+            <debug switch='log_scheduling'>'Found scheduled work after an audit point ['~OBJECT(TEMP.current_bucket).tier_priority~']'</debug>
+            <index_remove>
+              <index>'CURRENT_WORK'</index>
+              <field name="bucket_object">TEMP.current_bucket</field>
+            </index_remove>
+          </then>
+        </if>
+      </loop>
+    </index_select_keys>
+
+    <debug switch='log_scheduling'>'Pushing PRECOMPLETED_WORK_MAP'</debug>
+    <push_index>
+      <process_id>GLOBAL.master_id</process_id>
+      <clear_source>0</clear_source>
+      <source>
+        <index>'CURRENT_PRECOMPLETED_WORK'</index>
+      </source>
+      <target>
+        <index>'PRECOMPLETED_WORK_MAP'</index>
+      </target>
+    </push_index>
+
+    <debug switch='log_scheduling'>'Pushing PRECOMPLETED_WORK'</debug>
+    <push_index>
+      <process_id>GLOBAL.master_id</process_id>
+      <clear_source>1</clear_source>
+      <source>
+        <index>'CURRENT_PRECOMPLETED_WORK'</index>
+      </source>
+      <target>
+        <index>'PRECOMPLETED_WORK'</index>
+      </target>
+    </push_index>
+
+    <debug switch='log_scheduling'>'Done with get greedy work'</debug>
+
+  </proc>
+
+</procs>

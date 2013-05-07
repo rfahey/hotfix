@@ -1,0 +1,86 @@
+<procs>
+
+  <!-- ===================================================================== -->
+  <!--                                                                       -->
+  <!-- Inputs:                                                               -->
+  <!--   bucket_object                                                       -->
+  <!--                                                                       -->
+  <!-- Outputs:                                                              -->
+  <!--   bucket_overlay  - the newly created child decision instance.        -->
+  <!-- ===================================================================== -->
+
+  <proc name='create_sub_child_decision'>
+    <param name='bucket_object'/>
+    <param name='bucket_overlay'/>
+    <param name='new_bucket_object' mode='out'/>
+    <param name='delta_tracking_available'/>
+    <param name='delta_tracking_on'/>
+
+
+
+    <do>TEMP.delta_tracking_available = TEMP.delta_tracking_available eq ''?0:TEMP.delta_tracking_available</do>
+    <do>TEMP.delta_tracking_on = TEMP.delta_tracking_on eq ''?0:TEMP.delta_tracking_on</do>
+    <spawn>
+      <internal_type>'format_array_delta'</internal_type>
+      <object_type>'TIER_BUCKET'</object_type>
+      <object_id>TEMP.new_bucket_object</object_id>
+      <delta_tracking_support>TEMP.delta_tracking_available</delta_tracking_support>
+      <delta_tracking_on>TEMP.delta_tracking_on</delta_tracking_on>
+    </spawn>
+    <do>object_delta_set_state(TEMP.new_bucket_object,'SettingNew')</do>
+    <object_delta_add_table>
+      <object_id>TEMP.new_bucket_object</object_id>
+      <table_name>'AGG_DECISION_INFO'</table_name>
+    </object_delta_add_table>
+    <do>object_delta_add_object_ref_field(TEMP.new_bucket_object,"AGG_DECISION_INFO","decision_object_id")</do>
+
+    <print>'Before overlay['~dump_object(TEMP.new_bucket_object)~']'</print>
+    <inherit_object>
+      <source>TEMP.bucket_object</source>
+      <target>TEMP.new_bucket_object</target>
+    </inherit_object>
+    <print>'After overlay['~dump_object(TEMP.new_bucket_object)~']'</print>
+    <inherit_object>
+      <source>TEMP.bucket_overlay</source>
+      <target>TEMP.new_bucket_object</target>
+    </inherit_object>
+    <do>OBJECT(TEMP.new_bucket_object).decision_object_id = TEMP.new_bucket_object</do>
+    <do>OBJECT(TEMP.new_bucket_object).decision_unique_id = TEMP.new_bucket_object</do>
+    <print>'After parent object['~dump_object(TEMP.new_bucket_object)~']'</print>
+
+    <!--<print>'I am calling create_child_decision with tier_type ['~OBJECT(TEMP.new_bucket_object).tier_type~']'</print>-->
+    <!--<print>'overlay with tier_type ['~OBJECT(TEMP.bucket_overlay).tier_type~']'</print>-->
+
+    <if>
+      <condition>OBJECT(TEMP.bucket_overlay).account_qualification_group ne '' and OBJECT(TEMP.new_bucket_object).account_qualification_group Ne 'bulk_node'</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'generate_acc_qual_group_proc'</name>
+          <param name='account_qualification_group'>OBJECT(TEMP.bucket_overlay).account_qualification_group</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+
+
+        <index_select>
+          <index>'ACC_QUAL_GROUPS'</index>
+          <field name="id_acc">OBJECT(TEMP.new_bucket_object).id_acc</field>
+          <field name="group">OBJECT(TEMP.new_bucket_object).account_qualification_group</field>
+          <cursor>TEMP.child_accs</cursor>
+          <else>
+            <call_dynamic_proc_for_current_object>
+              <name>'generate_acc_qual_'~OBJECT(TEMP.new_bucket_object).account_qualification_group</name>
+              <param name='id_acc'>OBJECT(TEMP.new_bucket_object).id_acc</param>
+              <param name='curr_decision'>TEMP.new_bucket_object</param>
+            </call_dynamic_proc_for_current_object>
+          </else>
+        </index_select>
+    
+    <index_insert>
+      <index>'REBUILT_DECISIONS_FOR_ACC'</index>
+      <field name="decision_object_id">TEMP.new_bucket_object</field>
+    </index_insert>
+
+  </proc>
+
+</procs>

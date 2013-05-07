@@ -1,0 +1,86 @@
+<procs>
+
+  <!-- Call execute_ade_for_interval passed in a parameter taken -->
+  <!-- from the command line -->
+
+  <proc name='determine_logical_node'>
+    <param name='id_acc'/>
+    <param name='logical_instance_id' mode='out'/>
+    <!--<print>'Detemining logical node for ['~TEMP.id_acc~']'</print>-->
+
+    <initialize>
+      <define_memory_index>
+        <index>'ACC_BOUNDARY_GROUP_MAP'</index>
+        <key_field>'id_acc'</key_field>
+        <field>'boundary_group_id'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'BOUNDARY_GROUP_LOGICAL_INSTANCE_MAP'</index>
+        <key_field>'boundary_group_id'</key_field>
+        <field>'logical_instance_id'</field>
+      </define_memory_index>
+    </initialize>
+
+    <do>index_get(index => "ACC_BOUNDARY_GROUP_MAP", id_acc=>TEMP.id_acc, boundary_group_id=>TEMP.my_boundary_group)</do>
+
+    <!--<print>'Checking for id_acc['~TEMP.id_acc~'] BG['~TEMP.my_boundary_group~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+    <if>
+      <condition>TEMP.my_boundary_group eq ''</condition>
+      <then>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select * from agg_boundary_group_acc_map where id_acc = $${TEMP.id_acc}"
+          </query>
+          <cursor>TEMP.abgm_csr</cursor>
+          <then>
+            <do>TEMP.my_boundary_group = OBJECT(TEMP.abgm_csr).boundary_group_id</do>
+            <index_insert>
+              <index>'ACC_BOUNDARY_GROUP_MAP'</index>
+              <field name="id_acc">TEMP.id_acc</field>
+              <field name="boundary_group_id">OBJECT(TEMP.abgm_csr).boundary_group_id</field>
+            </index_insert>
+            <!--<print>'Found for id_acc BG['~TEMP.my_boundary_group~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+          </then>
+        </db_select>
+      </then>
+    </if>
+
+
+    <do>index_get(index => "BOUNDARY_GROUP_LOGICAL_INSTANCE_MAP", boundary_group_id=>TEMP.my_boundary_group, logical_instance_id=>TEMP.logical_instance_id)</do>
+    <!--<print>'Checking for BG['~TEMP.my_boundary_group~'] ['~TEMP.logical_instance_id~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+    <if>
+      <condition>TEMP.logical_instance_id eq ''</condition>
+      <then>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select * from agg_boundary_groups where boundary_group_id = $${TEMP.my_boundary_group}"
+          </query>
+          <cursor>TEMP.abg_csr</cursor>
+          <then>
+            <do>TEMP.logical_instance_id = OBJECT(TEMP.abg_csr).logical_instance_id</do>
+            <index_insert>
+              <index>'BOUNDARY_GROUP_LOGICAL_INSTANCE_MAP'</index>
+              <field name="boundary_group_id">TEMP.my_boundary_group</field>
+              <field name="logical_instance_id">TEMP.logical_instance_id</field>
+            </index_insert>
+            <!--<print>'Found for BG['~TEMP.my_boundary_group~'] ['~TEMP.logical_instance_id~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+          </then>
+        </db_select>
+      </then>
+    </if>
+
+    <if>
+      <condition>TEMP.logical_instance_id eq ''</condition>
+      <then>
+        <do>TEMP.logical_instance_id=1</do>
+        <print>'defaulting logical_instance_id to 1'</print>
+      </then>
+    </if>
+
+  </proc>
+
+</procs>
+
+

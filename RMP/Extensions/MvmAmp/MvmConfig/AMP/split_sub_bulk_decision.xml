@@ -1,0 +1,59 @@
+<procs>
+  <proc name='split_sub_bulk_decision'>
+    <param name='bucket_object'/>
+
+
+    <do>OBJECT(TEMP.bucket_object).orig_tier_start = OBJECT(TEMP.bucket_object).tier_start</do>
+    <do>OBJECT(TEMP.bucket_object).orig_tier_end = OBJECT(TEMP.bucket_object).tier_end</do>
+
+    <print>'Creating new bulk decision!'</print>
+
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).id_acc = OBJECT(TEMP.bucket_object).id_acc</do>
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_priority = OBJECT(TEMP.bucket_object).tier_priority - 0.0000001</do>
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).account_qualification_group = OBJECT(TEMP.bucket_object).account_qualification_group</do>
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_category = 'b'</do>
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_type = 'bulk_source'</do>
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_start = '2'</do>
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_end = '1'</do>
+
+    <call_proc_for_current_object>
+      <name>'create_sub_child_decision'</name>
+      <param name='bucket_object'>TEMP.bucket_object</param>
+      <param name='bucket_overlay'>GLOBAL.bulk_nosplit_object_id</param>
+      <param name='new_bucket_object'>TEMP.my_source_bucket</param>
+      <param name='delta_tracking_available'>1</param>
+      <param name='delta_tracking_on'>0</param>
+    </call_proc_for_current_object>
+
+
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_priority = OBJECT(TEMP.bucket_object).tier_priority + 0.0000001</do>
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_category = 'a'</do>
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_type = 'bulk_target'</do>
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_start = OBJECT(TEMP.bucket_object).tier_start</do>
+    <do>OBJECT(GLOBAL.bulk_nosplit_object_id).tier_end = OBJECT(TEMP.bucket_object).tier_end</do>
+
+    <call_proc_for_current_object>
+      <name>'create_sub_child_decision'</name>
+      <param name='bucket_object'>TEMP.bucket_object</param>
+      <param name='bucket_overlay'>GLOBAL.bulk_nosplit_object_id</param>
+      <param name='new_bucket_object'>TEMP.my_target_bucket</param>
+      <param name='delta_tracking_available'>1</param>
+      <param name='delta_tracking_on'>0</param>
+    </call_proc_for_current_object>
+
+
+
+    
+    <do>OBJECT(TEMP.my_source_bucket).aggregate_to_parent = '1'</do>
+    <do>OBJECT(TEMP.my_source_bucket).orig_tier_start = OBJECT(TEMP.bucket_object).tier_start</do>
+    <do>OBJECT(TEMP.my_source_bucket).orig_tier_end = OBJECT(TEMP.bucket_object).tier_end</do>
+
+    <do>OBJECT(TEMP.my_target_bucket).previous_dimension = TEMP.bucket_object</do>
+    <do>OBJECT(TEMP.my_source_bucket).next_dimension = TEMP.bucket_object</do>
+
+    <do>OBJECT(TEMP.my_source_bucket).bulk_target_obj_id = TEMP.my_target_bucket</do>
+    <do>OBJECT(TEMP.my_target_bucket).bulk_source_obj_id = TEMP.my_source_bucket</do>
+
+  </proc>
+
+</procs>

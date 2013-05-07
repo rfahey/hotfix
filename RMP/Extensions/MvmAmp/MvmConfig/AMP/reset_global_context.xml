@@ -1,0 +1,20 @@
+<procs>
+  <proc name='reset_global_context'>
+    <index_select>
+      <index>'GLOBAL_PARAMS'</index>
+      <field name='param_name'>'eop_mode'</field>
+      <cursor>TEMP.my_global</cursor>
+      <then>
+        <do>GLOBAL.eop_mode = OBJECT(TEMP.my_global).param_value</do>
+      </then>
+    </index_select>
+    <index_select>
+      <index>'GLOBAL_PARAMS'</index>
+      <field name='param_name'>'id_interval'</field>
+      <cursor>TEMP.my_global</cursor>
+      <then>
+        <do>GLOBAL.id_interval = OBJECT(TEMP.my_global).param_value</do>
+      </then>
+    </index_select>
+  </proc>
+</procs>

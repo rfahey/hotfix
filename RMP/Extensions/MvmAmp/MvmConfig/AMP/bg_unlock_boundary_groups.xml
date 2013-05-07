@@ -1,0 +1,15 @@
+<proc name="bg_unlock_boundary_groups">
+  <param name='got_unlock' mode='out'/>
+  <index_select_keys>
+    <index>'BOUNDARY_GROUP_LOCKS'</index>
+    <cursor>TEMP.bg_locks</cursor>
+    <loop>
+      <call_proc_for_current_object>
+        <name>'bg_unlock_boundary_group'</name>
+        <param name='boundary_group_id'>OBJECT(TEMP.bg_locks).boundary_group_id</param>
+        <param name='remove_from_cache'>1</param>
+        <param name='got_unlock'>TEMP.got_unlock</param>
+      </call_proc_for_current_object>
+    </loop>
+  </index_select_keys>
+</proc>

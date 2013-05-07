@@ -1,0 +1,8 @@
+<procs>
+  <proc name='aggregate_decision_to_parent'>
+    <param name='bucket_object'/>
+
+    
+  </proc>
+
+</procs>

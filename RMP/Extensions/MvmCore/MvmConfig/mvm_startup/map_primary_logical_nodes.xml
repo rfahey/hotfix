@@ -1,0 +1,221 @@
+<proc name="map_primary_logical_nodes">
+ 
+  
+
+  <log switch="log_startup">'Organize physical nodes by server'</log>
+  <define_memory_index>
+    <index>'PHYSICAL_NODES_BY_SERVER'</index>
+    <key_field>'server'</key_field>
+    <field>'physical_node_id'</field>
+  </define_memory_index>
+  <index_select>
+    <index>'PRIMARY_PHYSICAL_NODES'</index>
+    <cursor>TEMP.csr</cursor>
+    <loop>
+      <index_insert>
+        <index>'PHYSICAL_NODES_BY_SERVER'</index>
+        <field name="server">OBJECT(TEMP.csr).server</field>
+        <field name="physical_node_id">OBJECT(TEMP.csr).physical_node_id</field>
+      </index_insert>
+    </loop>
+  </index_select>
+
+  <log switch="log_startup">'PHYSICAL_NODES_BY_SERVER:'</log>
+  <index_select_keys>
+    <index>'PHYSICAL_NODES_BY_SERVER'</index>
+    <cursor>TEMP.keys</cursor>
+    <loop>
+      <log switch="log_startup">'server='~OBJECT(TEMP.keys).server</log>
+      <index_select>
+        <index>'PHYSICAL_NODES_BY_SERVER'</index>
+        <field name="server">OBJECT(TEMP.keys).server</field>
+        <cursor>TEMP.csr</cursor>
+        <loop>
+          <log switch="log_startup">'..physical_node_id='~OBJECT(TEMP.csr).physical_node_id</log>
+        </loop>
+      </index_select>
+    </loop>
+  </index_select_keys>
+  
+  <do>GLOBAL.physical_nodes_array_count</do>
+  <define_memory_index>
+    <index>'PHYSICAL_NODES_ARRAY'</index>
+    <key_field>'i'</key_field>
+    <field>'physical_node_id'</field>
+    <field>'server'</field>
+  </define_memory_index>
+
+  
+  <log switch="log_startup">'Order physical nodes by round robin on server so if we have fewer logical than physical we spread across servers'</log>
+  <do>TEMP.server_i=0</do>
+  <do>OBJECT.physical_nodes_array_count=0</do>
+  <while>
+  <condition>OBJECT.physical_nodes_array_count LT OBJECT.primary_physical_nodes_count</condition>
+    <loop>
+
+      <log switch="log_startup">'get the current server'</log>
+      <index_get>
+        <index>'PRIMARY_SERVERS_ARRAY'</index>
+        <field name="i">TEMP.server_i</field>
+        <field name="server">TEMP.server</field>
+        <else>
+          <fatal>'unexpected'</fatal>
+        </else>
+      </index_get>
+      <!--<print>'got server='~TEMP.server</print>-->
+      
+      <index_select>
+        <index>'PHYSICAL_NODES_BY_SERVER'</index>
+        <field name="server">TEMP.server</field>
+        <cursor>TEMP.csr</cursor>
+        <then>
+          <do>TEMP.physical_node_id=OBJECT(TEMP.csr).physical_node_id</do>
+          <!--<print>'got physical_node_id='~TEMP.physical_node_id</print>-->
+          
+          <index_insert>
+            <index>'PHYSICAL_NODES_ARRAY'</index>
+            <field name="i">OBJECT.physical_nodes_array_count</field>
+            <field name="physical_node_id">TEMP.physical_node_id</field>
+          </index_insert>
+          <do>OBJECT.physical_nodes_array_count+=1</do>
+
+          <c>pull this node of the list</c>
+          <index_remove>
+            <index>'PHYSICAL_NODES_BY_SERVER'</index>
+            <field name="server">TEMP.server</field>
+            <removal_option>'first'</removal_option>
+          </index_remove>
+          
+        </then>
+        <else>
+          <print>'we must have all nodes for server ['~TEMP.server~']'</print>
+        </else>
+      </index_select>
+      
+      <do>TEMP.server_i=TEMP.server_i LT (OBJECT.primary_servers_array_count-1) ? TEMP.server_i+1 : 0</do>
+
+    </loop>
+  </while>
+
+
+  <log switch="log_startup">'PHYSICAL_NODES_ARRAY:'</log>
+  <index_select_keys>
+    <index>'PHYSICAL_NODES_ARRAY'</index>
+    <cursor>TEMP.keys</cursor>
+    <loop>
+      <index_select>
+        <index>'PHYSICAL_NODES_ARRAY'</index>
+        <field name="i">OBJECT(TEMP.keys).i</field>
+        <cursor>TEMP.csr</cursor>
+        <loop>
+          <print>dump_object(TEMP.csr)</print>
+        </loop>
+      </index_select>
+    </loop>
+  </index_select_keys>
+  
+
+
+  <log switch="log_startup">'Round robin assign logical nodes to physical nodes'</log>
+  <do>TEMP.physical_i=0</do>
+  <db_select>
+    <login_object>GLOBAL.target_login</login_object>
+    <query>
+      "select
+      logical_cluster,nodes,has_backup_nodes
+      from mvm_logical_cluster_def a where logical_cluster=$${OBJECT.logical_cluster}"
+    </query>
+    <cursor>TEMP.csr</cursor>
+    <loop>
+
+      <counter_select>
+        <from>1</from>
+        <to>OBJECT(TEMP.csr).nodes</to>
+        <cursor>TEMP.ctr_csr</cursor>
+        <loop>
+          
+          <do>TEMP.ctr=OBJECT(TEMP.ctr_csr).value</do>
+          <do>TEMP.logical_node_id=TEMP.ctr</do>
+          <log switch="log_startup">'mapping logical_node_id '~TEMP.logical_node_id~'...'</log>
+          
+          <index_get>
+            <index>'PHYSICAL_NODES_ARRAY'</index>
+            <field name="i">TEMP.physical_i</field>
+            <field name="physical_node_id">TEMP.physical_node_id</field>
+            <then>
+              <print>'looked up physical_node_id=['~TEMP.physical_node_id~']'</print>
+            </then>
+            <else>
+              <fatal>'Unexpected, no entry in PHYSICAL_NODES_ARRAY for i='~TEMP.physical_i</fatal>
+            </else>
+          </index_get>
+
+          <print>'NOW1 physical_node_id=['~TEMP.physical_node_id~']'</print>
+          
+          <index_insert>
+            <index>'MVM_LOGICAL_CLUSTER_NODES'</index>
+            <field name="logical_node_id">TEMP.logical_node_id</field>
+            <field name="physical_node_id">TEMP.physical_node_id</field>
+            <field name="weight">1</field>
+            <field name="logical_cluster">OBJECT.logical_cluster</field>
+          </index_insert>
+
+          <print>'NOW2 physical_node_id=['~TEMP.physical_node_id~']'</print>
+
+
+          <index_select>
+            <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+            <field name="physical_node_id">TEMP.physical_node_id</field>
+            <cursor>TEMP.junk_csr</cursor>
+            <then>
+              <print>'already setup physical_node_id=[~TEMP.physical_node_id~']'</print>
+            </then>
+            <else>
+              <print>'NOW3 physical_node_id=['~TEMP.physical_node_id~']'</print>
+
+              <index_get>
+                <index>'PHYSICAL_NODE_INFO'</index>
+                <field name="physical_node_id">TEMP.physical_node_id</field>
+                <field name="physical_cluster">TEMP.physical_cluster</field>
+                <field name="server">TEMP.server</field>
+                <else>
+                  <fatal>'unexpected, no entry in PHYSICAL_NODE_INFO for physical_node_id=[~TEMP.physical_node_id~']'</fatal>
+                </else>
+              </index_get>
+              <print>'NOW4 physical_node_id=['~TEMP.physical_node_id~']'</print>
+
+              <call_proc_for_current_object>
+                <name>'build_cluster_node_args'</name>
+                <param name="physical_cluster">TEMP.physical_cluster</param>
+                <param name="logical_cluster">OBJECT.logical_cluster</param>
+                <param name="logical_node_id">TEMP.logical_node_id</param>
+                <param name="physical_node_id">TEMP.physical_node_id</param>
+                <param name="starting_proc">TEMP.starting_proc</param>
+                <param name="starting_args">TEMP.starting_args</param>
+              </call_proc_for_current_object>
+              <print>'NOW5 physical_node_id=['~TEMP.physical_node_id~']'</print>
+
+              <index_insert>
+                <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+                <field name="physical_node_id">TEMP.physical_node_id</field>
+                <field name="physical_cluster">TEMP.physical_cluster</field>
+                <field name="logical_cluster">OBJECT.logical_cluster</field>
+                <field name="server">TEMP.server</field>
+                <field name="num_cores">1</field>
+                <field name="starting_proc">TEMP.starting_proc</field>
+                <field name="starting_args">TEMP.starting_args</field>
+              </index_insert>
+              
+            </else>
+          </index_select>
+         
+          <do>TEMP.physical_i=TEMP.physical_i LT (OBJECT.physical_nodes_array_count-1) ? TEMP.physical_i+1 : 0</do> 
+          
+        </loop>
+      </counter_select>
+     
+    </loop>
+  </db_select>
+  
+  
+</proc>

@@ -1,0 +1,60 @@
+<proc name="startup_physical_cluster">
+
+  <info switch="log_startup">'starting physical cluster nodes'</info>
+
+  <do>TEMP.ide_physical_node_id = ''</do>
+  <if>
+    <condition>GLOBAL.ide_logical_node_id ne ''</condition>
+    <then>
+      <index_get>
+        <index>'LOGICAL_TO_PHYSICAL_NODE_MAP'</index>
+        <field name="logical_node_id">GLOBAL.ide_logical_node_id</field>
+        <field name="physical_node_id">TEMP.ide_physical_node_id</field>
+      </index_get>
+      <info>'set ide_physical_node_id='~TEMP.ide_physical_node_id</info>
+    </then>
+  </if>
+  
+  <do>TEMP.start_batch_id=''</do>
+  <index_select_keys>
+    <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+    <cursor>TEMP.keys</cursor>
+    <loop>
+      <index_select>
+        <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+        <field name="physical_node_id">OBJECT(TEMP.keys).physical_node_id</field>
+        <cursor>TEMP.csr</cursor>
+        <loop>
+
+          <do>TEMP.args=OBJECT(TEMP.csr).starting_args</do>
+          <!--<print>'got args: '~TEMP.args</print>-->
+
+          <do>TEMP.ide=TEMP.ide_physical_node_id eq OBJECT(TEMP.keys).physical_node_id</do>
+          
+          <mvm_start>
+            <server>OBJECT(TEMP.csr).server</server>
+            <physical_node_id>OBJECT(TEMP.csr).physical_node_id</physical_node_id>
+            <args>TEMP.args</args>
+            <batch_id>TEMP.start_batch_id</batch_id>
+            <ide>TEMP.ide</ide>
+          </mvm_start>
+           
+       
+        </loop>
+      </index_select>
+    </loop>
+  </index_select_keys>
+
+  <print>'waiting for mvm to startup...'</print>
+  <mvm_start_wait>
+    <batch_id>TEMP.start_batch_id</batch_id>
+    <connect_timeout_secs>30</connect_timeout_secs>
+    <initialize_timeout_secs>30</initialize_timeout_secs>
+  </mvm_start_wait>
+
+  <print>'Good all mvms are up...'</print>
+
+  <print>'Done starting physical_cluster=['~GLOBAL.physical_cluster~']'</print>
+
+</proc>
+

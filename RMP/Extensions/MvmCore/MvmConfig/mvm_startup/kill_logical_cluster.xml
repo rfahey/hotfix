@@ -1,0 +1,100 @@
+<procs>
+  <proc name="kill_logical_cluster">
+    <do>TEMP.logical_cluster=GLOBAL.logical_cluster</do>
+
+    <if>
+      <condition>TEMP.logical_cluster eq ''</condition>
+      <then>
+        <fatal>'Error, cannot join_nrt_cluster without passing "-logical_cluster=SomeName" on the command line'</fatal>
+      </then>
+    </if>
+
+
+    <log switch="log_startup">'killing logical_cluster logical_cluster=['~TEMP.logical_cluster~']'</log>
+
+    <log switch="log_startup">'Read in the logical to physical node mapping'</log>
+    <define_memory_index>
+      <index>'LOGICAL_TO_PHYSICAL_NODE_MAP'</index>
+      <key_field>'logical_node_id'</key_field>
+      <field>'physical_node_id'</field>
+      <field>'is_primary'</field>
+    </define_memory_index>
+    <define_memory_index>
+      <index>'LOGICAL_NODE_IDS'</index>
+      <key_field>'logical_node_id'</key_field>
+    </define_memory_index>
+    <do>GLOBAL.num_logical_nodes=0</do>
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query>
+        "select distinct a.node_type,a.physical_node_id, b.server, b.port,b.pid,b.status
+        from (
+          select physical_node_id, 'resource_node' as node_type
+          from mvm_resource_nodes
+          where logical_cluster=$${TEMP.logical_cluster}
+        union
+          select physical_node_id, 'logical_node' as node_type
+          from mvm_logical_cluster_nodes
+          where logical_cluster=$${TEMP.logical_cluster}
+        ) a
+        inner join mvm_physical_cluster_nodes b on a.physical_node_id=b.physical_node_id"
+      </query>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.node_type=OBJECT(TEMP.csr).node_type</do>
+        <do>TEMP.pid=OBJECT(TEMP.csr).pid</do>
+        <do>TEMP.physical_node_id=OBJECT(TEMP.csr).physical_node_id</do>
+        <do>TEMP.server=OBJECT(TEMP.csr).server</do>
+
+        <c>
+          THE MODULE SHOULD DO THIS, BUT FOR NOW I JUST KILL
+          -- if process doesn't exist and status is still run/starting (status=doa)
+          -- if process exist, try connect
+          -- if cannot connect, process kill (status=killed_cannot_connect)
+          -- else send shutdown nice msg (status=received_shutdown_nice)
+          -- if not dead after nice secs, call shutdown abort (status=received_shutdown_aborted)
+          -- if not down after abort secs, process kill (status=killed_after_abort_failed)
+        </c>
+
+        <if>
+          <condition>TEMP.pid ne ''</condition>
+          <then>
+            
+            <print>'KILL: '~TEMP.node_type~' with physical_node_id='~TEMP.physical_node_id~' on server='~TEMP.server~' pid='~TEMP.pid</print>
+            
+            <do>TEMP.kill='kill -f '~TEMP.pid</do>
+            <if>
+              <condition>is_local_host(TEMP.server)</condition>
+              <then>
+                <system_command_select>
+                  <command>TEMP.kill</command>
+                  <cursor>TEMP.c</cursor>
+                  <loop>
+                    <info>OBJECT(TEMP.c).value</info>
+                  </loop>
+                </system_command_select>
+              </then>
+              <else>
+                <mvm_launch>
+                  <server>TEMP.server</server>
+                  <command></command>
+                </mvm_launch>
+              </else>
+            </if>
+          </then>
+        </if>
+        
+        
+      </loop>
+    </db_select>
+
+
+
+  </proc>
+
+  <proc name="kill_physical_node">
+    
+  </proc>
+  
+
+</procs>

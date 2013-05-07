@@ -1,0 +1,70 @@
+<procs>
+  <proc name ='generate_field_format_id'>
+    <index_clear>
+      <index>'TEMP_FIELD_STORAGE'</index>
+    </index_clear>
+
+    <split>
+      <source>OBJECT.field_audit</source>
+      <delimiter>"|"</delimiter>
+      <limit>2</limit>
+      <target>TEMP.dummy_delim</target>
+      <target>TEMP.remaining_string</target>
+    </split>
+    <while>
+      <condition>TEMP.remaining_string ne ''</condition>
+      <loop>
+        <split>
+          <source>TEMP.remaining_string</source>
+          <delimiter>"|"</delimiter>
+          <limit>2</limit>
+          <target>TEMP.current_field</target>
+          <target>TEMP.remaining_string</target>
+        </split>
+        <index_insert>
+          <index>'TEMP_FIELD_STORAGE'</index>
+          <field name='dummy'>'1'</field>
+          <field name='field_id'>TEMP.current_field</field>
+        </index_insert>
+      </loop>
+    </while>
+    <do>TEMP.field_audit='|'</do>
+    <do>TEMP.my_format_id = GLOBAL.max_format_id</do>
+    <do>GLOBAL.max_format_id += 1</do>
+    <index_select>
+      <index>'TEMP_FIELD_STORAGE'</index>
+      <field name='dummy'>'1'</field>
+      <order_by  type="numeric">OBJECT.field_id</order_by>
+      <cursor>TEMP.my_fields</cursor>
+     
+      <loop>
+        <index_select>
+          <index>'PERSISTED_FIELD_IDS'</index>
+          <field name='field_id'>OBJECT(TEMP.my_fields).field_id</field>
+          <cursor>TEMP.my_field_info</cursor>
+          <then>
+            <do>TEMP.field_audit ~=OBJECT(TEMP.my_field_info).table_name~"."~OBJECT(TEMP.my_field_info).field_name~"|"</do>
+            <index_insert>
+              <index>'FIELD_FORMAT_FIELDS'</index>
+              <field name='format_id'>TEMP.my_format_id</field>
+              <field name='field_name'>OBJECT(TEMP.my_field_info).field_name</field>
+              <field name='field_id'>OBJECT(TEMP.my_fields).field_id</field>
+            </index_insert>
+          </then>
+        </index_select>
+      </loop>
+    </index_select>
+
+
+    <index_insert>
+      <index>'FIELD_FORMATS'</index>
+      <field name='field_audit'>OBJECT.field_audit</field>
+      <field name='format_id'>TEMP.my_format_id</field>
+      <field name='format_string'>TEMP.field_audit</field>
+      <field name='is_persisted'>'0'</field>
+    </index_insert>
+    <print>'Field audit is ['~OBJECT.field_audit~'] format string is ['~TEMP.field_audit~']'</print>
+    <do>OBJECT.field_format_id = TEMP.my_format_id</do>
+  </proc>
+
+</procs>

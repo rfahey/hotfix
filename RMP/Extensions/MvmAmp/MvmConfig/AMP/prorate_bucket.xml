@@ -1,0 +1,113 @@
+<procs>
+  <proc name='prorate_bucket'>
+    <param name='my_bucket'/>
+
+<!-- prorate_bucket currently called with NULL argument, so this
+	print_object invocation causes a crash
+    
+    <debug>'entered prorate_bucket'</debug>
+    <call_proc_for_object>
+        <name>'print_object'</name>
+        <object_id>TEMP.my_bucket</object_id>
+    </call_proc_for_object>
+-->
+
+    <if>
+      <condition>OBJECT(TEMP.my_bucket).tier_proration_method ne ''</condition>
+      <then>
+        <if>
+          <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'interval' </condition>
+          <then>
+            <do>TEMP.prorate_start_date = OBJECT(TEMP.my_bucket).interval_start_date</do>
+            <do>TEMP.actual_start_date = OBJECT(TEMP.my_bucket).interval_start_date</do>
+          </then>
+          <else>
+            <do>TEMP.prorate_start_date = OBJECT(TEMP.my_bucket).start_date</do>
+            <do>TEMP.actual_start_date = OBJECT(TEMP.my_bucket).start_date</do>
+          </else>
+        </if>
+        <if>
+          <condition>TEMP.prorate_start_date ne '' and (OBJECT(TEMP.my_bucket).tier_proration_method Eq 'prorate activation' or OBJECT(TEMP.my_bucket).tier_proration_method Eq 'prorate both')</condition>
+          <then>
+            <do>TEMP.prorate_start_date = OBJECT(TEMP.my_bucket).prorate_start_date</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'interval' </condition>
+          <then>
+            <do>TEMP.prorate_end_date = OBJECT(TEMP.my_bucket).interval_end_date</do>
+            <do>TEMP.actual_end_date = OBJECT(TEMP.my_bucket).interval_end_date</do>
+          </then>
+          <else>
+            <do>TEMP.prorate_end_date = OBJECT(TEMP.my_bucket).end_date</do>
+            <do>TEMP.actual_end_date = OBJECT(TEMP.my_bucket).end_date</do>
+          </else>
+        </if>
+        <if>
+          <condition>TEMP.prorate_end_date ne '' and (OBJECT(TEMP.my_bucket).tier_proration_method Eq 'prorate termination' or OBJECT(TEMP.my_bucket).tier_proration_method Eq 'prorate both')</condition>
+          <then>
+            <do>TEMP.prorate_end_date = OBJECT(TEMP.my_bucket).prorate_end_date</do>
+          </then>
+        </if>
+        <if>
+          <condition>TEMP.prorate_start_date ne TEMP.actual_start_date or TEMP.prorate_end_date ne TEMP.actual_end_date</condition>
+          <then>
+            <date_diff>
+              <first_date>TEMP.prorate_end_date</first_date>
+              <second_date>TEMP.prorate_start_date</second_date>
+              <output>TEMP.active_seconds</output>
+            </date_diff>
+            <date_diff>
+              <first_date>TEMP.actual_end_date</first_date>
+              <second_date>TEMP.actual_start_date</second_date>
+              <output>TEMP.cycle_seconds</output>
+            </date_diff>
+            <if>
+              <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'monthly'</condition>
+              <then>
+                <date_diff>
+                  <first_date>TEMP.prorate_end_date</first_date>
+                  <second_date>TEMP.prorate_start_date</second_date>
+                  <output type='monthly'>TEMP.active_seconds</output>
+                </date_diff>
+                <date_diff>
+                  <first_date>TEMP.actual_end_date</first_date>
+                  <second_date>TEMP.actual_start_date</second_date>
+                  <output type='monthly'>TEMP.cycle_seconds</output>
+                </date_diff>
+              </then>
+            </if>
+            <do>TEMP.proration_factor = TEMP.active_seconds/TEMP.cycle_seconds</do>
+            <do>OBJECT(TEMP.my_bucket).proration_factor = TEMP.active_seconds/TEMP.cycle_seconds</do>
+            <if>
+              <condition>OBJECT(TEMP.my_bucket).cycle_unit_type Eq 'interval'</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.my_bucket).cycle_units_per_tier gt '1'</condition>
+                  <then>
+                    <c>multi-interval proration</c>
+                    <do>TEMP.spanning_proration_factor = (OBJECT(TEMP.my_bucket).intervals_remaining + TEMP.proration_factor)/OBJECT(TEMP.my_bucket).cycle_units_per_tier</do>
+                    <do>OBJECT(TEMP.my_bucket).proration_factor = (OBJECT(TEMP.my_bucket).intervals_remaining + TEMP.proration_factor)/OBJECT(TEMP.my_bucket).cycle_units_per_tier</do>
+                    <do>OBJECT(TEMP.my_bucket).tier_start = OBJECT(TEMP.my_bucket).tier_start*TEMP.spanning_proration_factor</do>
+                    <do>OBJECT(TEMP.my_bucket).tier_end = OBJECT(TEMP.my_bucket).tier_end*TEMP.spanning_proration_factor</do>
+                  </then>
+                  <else>
+                    <c>single interval proration</c>
+                    <do>OBJECT(TEMP.my_bucket).tier_start = OBJECT(TEMP.my_bucket).tier_start*TEMP.proration_factor</do>
+                    <do>OBJECT(TEMP.my_bucket).tier_end = OBJECT(TEMP.my_bucket).tier_end*TEMP.proration_factor</do>
+                  </else>
+                </if>
+              </then>
+              <else>
+                <c>calendar-based proration</c>
+                <do>OBJECT(TEMP.my_bucket).tier_start = OBJECT(TEMP.my_bucket).tier_start*TEMP.proration_factor</do>
+                <do>OBJECT(TEMP.my_bucket).tier_end = OBJECT(TEMP.my_bucket).tier_end*TEMP.proration_factor</do>
+              </else>
+            </if>
+          </then>
+        </if>
+      </then>
+    </if>
+  </proc>
+
+</procs>

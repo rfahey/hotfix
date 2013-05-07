@@ -1,0 +1,47 @@
+<proc name="bg_unlock_boundary_group">
+  <param name='boundary_group_id'/>
+  <param name='remove_from_cache'/>
+  <param name='got_unlock' mode='out'/>
+  <do>TEMP.got_unlock = 1</do>
+  <index_select>
+    <index>'BOUNDARY_GROUP_LOCKS'</index>
+    <field name="boundary_group_id">TEMP.boundary_group_id</field>
+    <cursor>TEMP.bg_lock_row</cursor>
+    <then>
+      <if>
+        <condition>OBJECT(TEMP.bg_lock_row).lock_guid ne ''</condition>
+        <then>
+          <db_execute>
+            <login_object>GLOBAL.target_login</login_object>
+            <statement>
+              "update agg_boundary_groups set lock_date = NULL, lock_guid = NULL where boundary_group_id = $${TEMP.boundary_group_id} and lock_guid = $${OBJECT(TEMP.bg_lock_row).lock_guid}"
+            </statement>
+            <num_rows>TEMP.num_rows</num_rows>
+          </db_execute>
+          <print>'Setting GUID to NULL for lock_guid ['~OBJECT(TEMP.bg_lock_row).lock_guid~']'</print>
+          <if>
+            <condition>TEMP.num_rows ne 1</condition>
+            <then>
+              <print>'INVALID BOUNDARY GROUP LOCK: attempted to unlock a boundary group that was not locked by this process group_id ['~TEMP.boundary_group_id~'] lock guid ['~OBJECT(TEMP.bg_lock_row).lock_guid~']'</print>
+              <do>TEMP.got_unlock = 0</do>
+            </then>
+          </if>
+          <index_remove>
+            <index>'BOUNDARY_GROUP_LOCKS'</index>
+            <field name="boundary_group_id">TEMP.boundary_group_id</field>
+          </index_remove>
+          <if>
+            <condition>TEMP.remove_from_cache ne '1'</condition>
+            <then>
+              <index_insert>
+                <index>'BOUNDARY_GROUP_LOCKS'</index>
+                <field name="boundary_group_id">TEMP.boundary_group_id</field>
+                <field name="lock_guid">''</field>
+              </index_insert>
+            </then>
+          </if>
+        </then>
+      </if>
+    </then>
+  </index_select>
+</proc>

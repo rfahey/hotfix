@@ -1,0 +1,167 @@
+<procs>
+  <proc name="convert_currency_amount">
+    <param name='source_field'/>
+    <param name='source_currency'/>
+    <param name='target_field' mode='out'/>
+    <param name='target_currency'/>
+    <param name='effective_date'/>
+
+    <run_once>
+      <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).conv_curr_run_once' counter='OBJECT(GLOBAL.counter_object).conv_curr_run_once_ctr' >
+        <define_memory_index>
+          <index>'ALL_CURRENCY_CONVERSIONS'</index>
+          <key_field>'source_currency_code'</key_field>
+          <key_field>'target_currency_code'</key_field>
+          <key_field type='search'>'start_date'</key_field>
+          <field>'exchange_rate'</field>
+        </define_memory_index>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query type="oracle">
+            "select currency_src source_currency_code, currency_dst target_currency_code, vt_start start_date, to_char(currency_rate) exchange_rate from t_ic_exchange_rates"
+          </query>
+          <!--<query type="sql">
+          "SELECT a.currency source_currency_code, b.currency target_currency_code, dbo.mtmindate() start_date, b.fx_usd/a.fx_usd exchange_rate FROM t_prem_currencyconversion a
+                    INNER JOIN t_prem_currencyconversion b ON 1 = 1"
+        </query>-->
+          <query type="sql">
+            "SELECT /*SUBSTRING(sed.nm_enum_data, 42, 3)*/ sed.id_enum_data source_currency_code, /*SUBSTRING(ted.nm_enum_data, 42, 3)*/ ted.id_enum_data target_currency_code, IsNull(eff.dt_start, dbo.mtmindate()) start_date, pcc.c_ExchangeRate exchange_rate
+            FROM t_pt_currencyconversion pcc
+            INNER JOIN t_rsched rsc ON rsc.id_sched = pcc.id_sched
+            INNER JOIN t_effectivedate eff on eff.id_eff_date = rsc.id_eff_date
+            INNER JOIN t_enum_data sed on sed.id_enum_data = pcc.c_SourceCurrency
+            INNER JOIN t_enum_data ted on ted.id_enum_data = pcc.c_TargetCurrency
+            WHERE 1=1 AND pcc.tt_end = dbo.mtmaxdate ()
+            ORDER BY IsNull(eff.dt_start, dbo.mtmaxdate()), pcc.n_order"
+          </query>
+          <cursor>TEMP.currency_cur</cursor>
+          <loop>
+            <if>
+              <condition>OBJECT(TEMP.currency_cur).source_currency_code ne '' and OBJECT(TEMP.currency_cur).target_currency_code ne ''</condition>
+              <then>
+
+                <do>TEMP.source_currency_enum=OBJECT(TEMP.currency_cur).source_currency_code</do>
+                <do>TEMP.target_currency_enum=OBJECT(TEMP.currency_cur).target_currency_code</do>
+                <!--<call_proc_for_current_object>
+                  <name>'convert_to_enum'</name>
+                  <param name='value'>TEMP.source_currency_enum</param>
+                  <param name='namespace'>'Global/SystemCurrencies/SystemCurrencies'</param>
+                  <param name='success'>TEMP.enum_success</param>
+                </call_proc_for_current_object>
+                <call_proc_for_current_object>
+                  <name>'convert_to_enum'</name>
+                  <param name='value'>TEMP.target_currency_enum</param>
+                  <param name='namespace'>'Global/SystemCurrencies/SystemCurrencies'</param>
+                  <param name='success'>TEMP.enum_success</param>
+                </call_proc_for_current_object>-->
+                <index_insert>
+                  <index>'ALL_CURRENCY_CONVERSIONS'</index>
+                  <field name='source_currency_code'>OBJECT(TEMP.currency_cur).source_currency_code</field>
+                  <field name='target_currency_code'>OBJECT(TEMP.currency_cur).target_currency_code</field>
+                  <field name='start_date'>OBJECT(TEMP.currency_cur).start_date</field>
+                  <field name='exchange_rate'>OBJECT(TEMP.currency_cur).exchange_rate</field>
+                </index_insert>
+                <if>
+                  <condition>TEMP.source_currency_enum Ne OBJECT(TEMP.currency_cur).source_currency_code</condition>
+                  <then>
+                    <index_insert>
+                      <index>'ALL_CURRENCY_CONVERSIONS'</index>
+                      <field name='source_currency_code'>TEMP.source_currency_enum</field>
+                      <field name='target_currency_code'>TEMP.target_currency_enum</field>
+                      <field name='start_date'>OBJECT(TEMP.currency_cur).start_date</field>
+                      <field name='exchange_rate'>OBJECT(TEMP.currency_cur).exchange_rate</field>
+                    </index_insert>
+                  </then>
+                </if>
+              </then>
+            </if>
+          </loop>
+        </db_select>
+      </stopwatch>
+    </run_once>
+
+    <!--<to_lower>
+		<input>TEMP.source_currency</input>
+		<output>TEMP.source_currency</output>
+	</to_lower>
+	<to_lower>
+		<input>TEMP.target_currency</input>
+		<output>TEMP.target_currency</output>
+	</to_lower>-->
+
+
+    <!--<print>'BEFORE ENUM CURRENCY CONVERSION: for ['~TEMP.source_currency~'] to ['~TEMP.target_currency~'] on ['~TEMP.effective_date~']!!!!!!!!!!!!'</print>-->
+    <!--<do>TEMP.source_currency_enum=TEMP.source_currency</do>
+    <call_proc_for_current_object>
+        <name>'convert_to_enum'</name>
+        <param name='value'>TEMP.source_currency_enum</param>
+        <param name='namespace'>'Global/SystemCurrencies/SystemCurrencies'</param>
+        <param name='success'>TEMP.enum_success</param>
+    </call_proc_for_current_object>
+	<if>
+	    <condition>TEMP.enum_success eq '1'</condition>
+		<then>
+		    <do>TEMP.source_currency=TEMP.source_currency_enum</do>
+		</then>
+	</if>-->
+
+    <!--<do>TEMP.target_currency_enum=TEMP.target_currency</do>
+    <call_proc_for_current_object>
+        <name>'convert_to_enum'</name>
+        <param name='value'>TEMP.target_currency_enum</param>
+        <param name='namespace'>'Global/SystemCurrencies/SystemCurrencies'</param>
+        <param name='success'>TEMP.enum_success</param>
+    </call_proc_for_current_object>
+	<if>
+	    <condition>TEMP.enum_success eq '1'</condition>
+		<then>
+		    <do>TEMP.target_currency=TEMP.target_currency_enum</do>
+		</then>
+	</if>-->
+
+    <!--<print>'AFTER ENUM CURRENCY CONVERSION: for ['~TEMP.source_currency~'] to ['~TEMP.target_currency~'] on ['~TEMP.effective_date~']!!!!!!!!!!!!'</print>-->
+
+    <!--<stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).conv_curr' counter='OBJECT(GLOBAL.counter_object).conv_curr_ctr' >-->
+
+      <!--<index_select>
+      <index>'ALL_CURRENCY_CONVERSIONS'</index>
+      <field name="source_currency_code">TEMP.source_currency</field>
+      <field name="target_currency_code">TEMP.target_currency</field>
+      <field name="start_date">TEMP.effective_date</field>
+      <cursor>TEMP.currency_cur</cursor>
+      <then>
+        <do>TEMP.target_field = TEMP.source_field * OBJECT(TEMP.currency_cur).exchange_rate</do>
+          <print>'Exchanging inside ['~TEMP.source_field~'] from ['~TEMP.source_currency~'] to ['~TEMP.target_currency~'] giving ['~TEMP.target_field~']'</print>
+      </then>
+      <else>
+        <print>'CURRENCY CONVERSION ERROR: No exchange rate found for ['~TEMP.source_currency~'] to ['~TEMP.target_currency~'] on ['~TEMP.effective_date~']!!!!!!!!!!!!'</print>
+      </else>
+      </index_select>-->
+      <if>
+        <condition>TEMP.source_currency Ne TEMP.target_currency</condition>
+        <then>
+          <c> Index get is here for when it supports the searchable indexes</c>
+          <index_get>
+            <index>'ALL_CURRENCY_CONVERSIONS'</index>
+            <field name='source_currency_code'>TEMP.source_currency</field>
+            <field name='target_currency_code'>TEMP.target_currency</field>
+            <field name='start_date'>TEMP.effective_date</field>
+            <then>
+              <do>TEMP.target_field = TEMP.source_field * OBJECT(TEMP.currency_cur).exchange_rate</do>
+            </then>
+            <else>
+              <!--<print>'CURRENCY CONVERSION ERROR: No exchange rate found for ['~TEMP.source_currency~'] to ['~TEMP.target_currency~'] on ['~TEMP.effective_date~']!!!!!!!!!!!!'</print>-->
+            </else>
+          </index_get>
+        </then>
+        <else>
+          <do>TEMP.target_field = TEMP.source_field</do>
+        </else>
+      </if>
+
+
+
+      <!--<print>'Exchanging outside ['~TEMP.source_field~'] from ['~TEMP.source_currency~'] to ['~TEMP.target_currency~'] giving ['~TEMP.target_field~']'</print>-->
+    <!--</stopwatch>-->
+  </proc>
+</procs>

@@ -1,0 +1,62 @@
+<proc name="bg_remove_aqg_from_boundary_group">
+  <param name='id_acc'/>
+  <param name='account_qualification_group'/>
+  <param name='boundary_group_id' mode='out'/>
+  <param name='force_remove'/>
+
+  <call_proc_for_current_object>
+    <name>'bg_lock_boundary_group_for_aqg'</name>
+    <param name='boundary_group_id'>TEMP.boundary_group_id</param>
+    <param name='id_acc'>TEMP.id_acc</param>
+    <param name='account_qualification_group'>TEMP.account_qualification_group</param>
+    <param name='got_lock'>TEMP.got_lock</param>
+  </call_proc_for_current_object>
+  
+  <do>TEMP.removed_aqg = 0</do>
+  <do>TEMP.counter = 0</do>
+
+  <if>
+    <condition>TEMP.got_lock eq 1</condition>
+    <then>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select count(*) group_counter from agg_decision_info where id_acc = $${TEMP.id_acc} and account_qualification_group = $${TEMP.account_qualification_group} and (end_date > (getdate() - 90) or end_date IS NULL)"
+        </query>
+        <cursor>TEMP.bgam_csr</cursor>
+        <then>
+          <do>TEMP.counter = OBJECT(TEMP.bgam_csr).group_counter</do>
+        </then>
+      </db_select>
+      <if>
+        <condition>TEMP.counter eq 0 or TEMP.force_remove eq 1</condition>
+        <then>
+          <db_execute>
+            <login_object>GLOBAL.target_login</login_object>
+            <statement>
+              "delete agg_boundary_group_aqg_map where id_acc = $${TEMP.id_acc} and account_qualification_group = $${TEMP.account_qualification_group}"
+            </statement>
+            <num_rows>TEMP.num_rows</num_rows>
+          </db_execute>
+          <db_execute>
+            <login_object>GLOBAL.target_login</login_object>
+            <statement>
+              "update agg_boundary_group_acc_map set group_counter = group_counter - 1 where id_acc in (select child_id_acc from AGG_AQG_MAP where id_acc = $${TEMP.id_acc} and account_qualification_group = $${TEMP.account_qualification_group})"
+            </statement>
+            <num_rows>TEMP.num_rows</num_rows>
+          </db_execute>
+          <db_execute>
+            <login_object>GLOBAL.target_login</login_object>
+            <statement>
+              "delete agg_boundary_group_acc_map where id_acc in (select child_id_acc from AGG_AQG_MAP where id_acc = $${TEMP.id_acc} and account_qualification_group = $${TEMP.account_qualification_group})
+              and 1 > group_counter"
+            </statement>
+            <num_rows>TEMP.num_rows</num_rows>
+          </db_execute>
+          <do>TEMP.removed_aqg = 1</do>
+        </then>
+      </if>
+    </then>
+  </if>
+
+</proc>

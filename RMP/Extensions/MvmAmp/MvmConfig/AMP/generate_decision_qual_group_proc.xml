@@ -1,0 +1,178 @@
+<procs>
+  <proc name='generate_decision_qual_group_proc'>
+    <initialize>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select distinct decision_qualification_group decision_qualification_group from decision_qualification_groups"
+        </query>
+        <cursor>TEMP.dec_qual_groups</cursor>
+        <loop>
+          <do>TEMP.decision_qualification_group = OBJECT(TEMP.dec_qual_groups).decision_qualification_group</do>
+          <do>
+            TEMP.my_dq_proc="<![CDATA[
+<proc name='determine_dec_qual_"~TEMP.decision_qualification_group~"'>
+  <param name='bucket_object'/>
+  <param name='qualifies' mode='out'/>
+  <print>'Determining decision qual group ["~TEMP.decision_qualification_group~"]'</print>
+  <print>'With bucket object ['~TEMP.bucket_object)~']'</print>
+  <print>'With dimension bucket object ['~OBJECT(TEMP.bucket_object).dimension_ref_1~']'</print>
+  <print>'And decision dimension tier start = ['~OBJECT(OBJECT(TEMP.bucket_object).dimension_ref_1).tier_start~']'</print>
+  <print>'And decision dimension tier end = ['~OBJECT(OBJECT(TEMP.bucket_object).dimension_ref_1).tier_end~']'</print>
+  <print>'And decision dimension current tier bucket = ['~OBJECT(OBJECT(TEMP.bucket_object).dimension_ref_1).qualified_total~']'</print>
+  <do>TEMP.qualifies = '1'</do>
+            ]]>"
+          </do>
+
+       
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select * from decision_qualification_groups where decision_qualification_group = $${TEMP.decision_qualification_group} order by row_num"
+          </query>
+          <cursor>TEMP.dec_qual_rows</cursor>
+          <loop>
+            <if>
+              <condition>OBJECT(TEMP.dec_qual_rows).filter ne ''</condition>
+              <then>
+                <do>TEMP.curr_filter = OBJECT(TEMP.dec_qual_rows).filter</do>
+                <do>TEMP.success = '1'</do>
+                <do>TEMP.group_counter = 0</do>
+                <while>
+                  <condition>TEMP.success eq '1'</condition>
+                  <loop>
+                    <match>
+                      <input>TEMP.curr_filter</input>
+                      <regex>"GROUP\.(\w+)"</regex>
+                      <success>TEMP.success</success>
+                      <capture>TEMP.my_group</capture>
+                    </match>
+                    <if>
+                      <condition>TEMP.success eq '1'</condition>
+                      <then>
+                        <do>TEMP.group_counter += 1</do>
+                        <replace>
+                          <input>TEMP.curr_filter</input>
+                          <old_value>'GROUP.'~TEMP.my_group</old_value>
+                          <new_value>'TEMP.nested_dec_qual_'~TEMP.group_counter</new_value>
+                          <output>TEMP.curr_filter</output>
+                        </replace>
+                        <do>
+                          TEMP.my_dq_proc~="<![CDATA[
+      <call_proc_for_current_object>
+        <name>'determine_dec_qual_"~TEMP.my_group~"'</name>
+        <param name='bucket_object'>TEMP.bucket_object</param>
+        <param name='qualifies'>TEMP.nested_dec_qual_"~TEMP.group_counter~"</param>
+      </call_proc_for_current_object>
+                    ]]>"
+                        </do>
+                      </then>
+                    </if>
+                  </loop>
+                </while>
+                <do>TEMP.success = '1'</do>
+                <while>
+                  <condition>TEMP.success eq '1'</condition>
+                  <loop>
+                    <match>
+                      <input>TEMP.curr_filter</input>
+                      <regex>"DECISION\.(\w+)"</regex>
+                      <success>TEMP.success</success>
+                      <capture>TEMP.my_field</capture>
+                    </match>
+                    <if>
+                      <condition>TEMP.success eq '1'</condition>
+                      <then>
+                        <replace>
+                          <input>TEMP.curr_filter</input>
+                          <old_value>'DECISION.'~TEMP.my_field</old_value>
+                          <new_value>'OBJECT(TEMP.bucket_object).'~TEMP.my_field</new_value>
+                          <output>TEMP.curr_filter</output>
+                        </replace>
+                      </then>
+                    </if>
+                  </loop>
+                </while>
+                <do>TEMP.success = '1'</do>
+                <while>
+                  <condition>TEMP.success eq '1'</condition>
+                  <loop>
+                    <match>
+                      <input>TEMP.curr_filter</input>
+                      <regex>"USAGE\.(\w+)"</regex>
+                      <success>TEMP.success</success>
+                      <capture>TEMP.my_field</capture>
+                    </match>
+                    <if>
+                      <condition>TEMP.success eq '1'</condition>
+                      <then>
+                        <replace>
+                          <input>TEMP.curr_filter</input>
+                          <old_value>'USAGE.'~TEMP.my_field</old_value>
+                          <new_value>'OBJECT.'~TEMP.my_field</new_value>
+                          <output>TEMP.curr_filter</output>
+                        </replace>
+                      </then>
+                    </if>
+                  </loop>
+                </while>
+                <do>TEMP.success = '1'</do>
+                <while>
+                  <condition>TEMP.success eq '1'</condition>
+                  <loop>
+                    <match>
+                      <input>TEMP.curr_filter</input>
+                      <regex>"DIMENSION\((\d+)\)\.(\w+)"</regex>
+                      <success>TEMP.success</success>
+                      <capture>TEMP.my_dimension</capture>
+                      <capture>TEMP.my_field</capture>
+                    </match>
+                    <if>
+                      <condition>TEMP.success eq '1'</condition>
+                      <then>
+                        <replace>
+                          <input>TEMP.curr_filter</input>
+                          <old_value>'DIMENSION('~TEMP.my_dimension~').'</old_value>
+                          <new_value>'OBJECT(OBJECT(TEMP.bucket_object).dimension_ref_'~TEMP.my_dimension~').'</new_value>
+                          <output>TEMP.curr_filter</output>
+                        </replace>
+                      </then>
+                    </if>
+                  </loop>
+                </while>
+                <call_proc_for_current_object>
+                  <name>'replace_enum_strings'</name>
+                  <param name='source_string'>TEMP.curr_filter</param>
+                  <param name='target_string'>TEMP.curr_filter</param>
+                </call_proc_for_current_object>
+                
+                <do>
+                  TEMP.my_dq_proc~="<![CDATA[
+      <if>
+        <condition>"~TEMP.curr_filter~"</condition>
+        <else>
+          <do>TEMP.qualifies = '0'</do>
+        </else>
+      </if>
+                  ]]>"
+                </do>
+
+              </then>
+            </if>
+          </loop>
+        </db_select>
+        <do>
+          TEMP.my_dq_proc~="<![CDATA[
+</proc>
+          ]]>"
+        </do>
+        <!--<print>TEMP.my_dq_proc</print>-->
+        <execute_immediate>TEMP.my_dq_proc</execute_immediate>
+
+        </loop>
+      </db_select>
+    </initialize>
+  </proc>
+
+</procs>

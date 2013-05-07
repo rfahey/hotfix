@@ -1,0 +1,120 @@
+<procs>
+  <proc name="normalize_usage_audit_trail">
+    <param name='id_interval'/>
+    <if>
+      <condition>TEMP.id_interval eq ''</condition>
+      <then>
+        <do>TEMP.id_interval = GLOBAL.id_interval</do>
+      </then>
+    </if>
+
+    <print>'NORMALIZING ['~TEMP.id_interval~']'</print>
+    <db_select_dynamic>
+      <login_object>GLOBAL.target_login</login_object>
+      <query>
+        "select distinct id_payee, id_usage_interval from agg_usage_audit_trail where id_usage_interval = "~TEMP.id_interval~" "
+      </query>
+      <cursor>TEMP.master_csr</cursor>
+      <run>
+        <create_memory_index_from_cursor>
+          <index>'NORMALIZE_WORKLIST'</index>
+          <cursor>TEMP.master_csr</cursor>
+          <key_field>'id_payee'</key_field>
+          <key_field>'id_usage_interval'</key_field>
+        </create_memory_index_from_cursor>
+      </run>
+    </db_select_dynamic>
+
+    <set_server_mode_on/>
+
+    <startup_slaves>
+      <slave_count>'*'</slave_count>
+      <num_started>GLOBAL.slave_count</num_started>
+    </startup_slaves>
+
+    <do>GLOBAL.producer_queue_length=2</do>
+    <do>GLOBAL.reduce_ctr=0</do>
+
+  <time ms='TEMP.ms'>
+    <map_reduce>
+      <producer_queue_length>GLOBAL.producer_queue_length</producer_queue_length>
+      <producer_proc>
+        <name>'produce_normalize_work'</name>
+      </producer_proc>
+      <consumer_proc>
+        <name>'consume_normalize_work'</name>
+      </consumer_proc>
+      <reducer_proc>
+        <name>'reduce_normalize_work'</name>
+      </reducer_proc>
+    </map_reduce>
+  </time>
+
+    <slave_node_id_select>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.slave_id=OBJECT(TEMP.csr).node_id</do>
+        <!--<print>'got a slave-'~TEMP.slave_id</print>-->
+
+        <remote_queue_proc>
+          <name>'persist_counters'</name>
+          <process_id>TEMP.slave_id</process_id>
+          <batch_id>TEMP.my_batch_id</batch_id>
+          <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+          <param name='batch_id'>TEMP.my_batch_id</param>
+          <param name='node_id'>TEMP.slave_id</param>
+        </remote_queue_proc>
+
+        <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+
+      </loop>
+    </slave_node_id_select>
+
+  <!--<print>'***********************************************************'</print>
+  <print>'slave_count2='~GLOBAL.slave_count~' work_count='~GLOBAL.work_count~' producer_queue_length='~GLOBAL.producer_queue_length~' ms='~TEMP.ms~' reduce ctr='~GLOBAL.reduce_ctr</print>
+  <print>'***********************************************************'</print>-->
+
+    <print>'shutting down the cluster'</print>
+    <set_server_mode_off/>
+    <shutdown_cluster/>
+
+    <sleep>5000</sleep>
+
+  </proc>
+
+  <proc name='produce_normalize_work'>
+    <param name='pipe_cursor'/>
+    <index_select_keys>
+      <index>'NORMALIZE_WORKLIST'</index>
+      <cursor>TEMP.my_worklist</cursor>
+      <loop>
+        <print>'Piping account to normalize ['~OBJECT(TEMP.my_worklist).id_payee~']'</print>
+        <pipe_row>TEMP.my_worklist</pipe_row>
+      </loop>
+    </index_select_keys>
+    <while>
+      <condition>1</condition>
+      <loop>
+        <print>'pipe null produce_normalize_work'</print>
+        <pipe_row>''</pipe_row>
+      </loop>
+    </while>
+    <print>'Exit produce_normalize_work'</print>
+
+
+  </proc>
+
+  <proc name='consume_normalize_work'>
+    <print>'consuming normalize work id_acc['~OBJECT.id_payee~'] interval ['~OBJECT.id_usage_interval~']'</print>
+    <call_proc_for_current_object>
+      <name>'normalize_audit_trail_for_payee'</name>
+      <param name='id_payee'>OBJECT.id_payee</param>
+      <param name='id_interval'>OBJECT.id_usage_interval</param>
+    </call_proc_for_current_object>
+  </proc>
+
+  <proc name='reduce_normalize_work'>
+    <do>GLOBAL.reduce_ctr+=1</do>
+    <debug>'reducing normalize work for payee'~OBJECT.id_payee~', total_reduce_ctr='~GLOBAL.reduce_ctr</debug>
+  </proc>
+</procs>

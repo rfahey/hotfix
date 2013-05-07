@@ -1,0 +1,29 @@
+<procs>
+  <proc name='clear_between_intervals'>
+    <index_clear>
+      <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+    </index_clear>
+
+
+    <if>
+      <condition>GLOBAL.ade_local_usage_table ne ''</condition>
+      <then>
+        <db_execute>
+          <login_object>GLOBAL.target_login</login_object>
+          <statement type="sql">
+            "begin
+            truncate table "~GLOBAL.ade_local_usage_table~"
+            end"
+          </statement>
+          <statement type="oracle">
+            "begin
+            delete "~GLOBAL.ade_local_usage_table~";
+            end;"
+          </statement>
+          <num_rows>TEMP.num_rows</num_rows>
+        </db_execute>
+        <info>'truncated local usage table '~GLOBAL.ade_local_usage_table</info>
+      </then>
+    </if>
+  </proc>
+</procs>

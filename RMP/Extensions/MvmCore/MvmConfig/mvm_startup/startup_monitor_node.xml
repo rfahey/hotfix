@@ -1,0 +1,71 @@
+<proc name="startup_monitor_node">
+
+  <do>GLOBAL.is_monitor_node=1</do>
+
+  <print>'physical_cluster='~GLOBAL.physical_cluster</print>
+  <do>GLOBAL.physical_cluster=nvl(GLOBAL.physical_cluster,'localhost')</do>
+  <print>'physical_cluster='~GLOBAL.physical_cluster</print>
+
+
+  <if>
+    <condition>GLOBAL.logical_cluster eq ''</condition>
+    <then>
+      <call_proc_for_current_object>
+        <name>'create_one_to_one_logical_from_physical_cluster'</name>
+        <param name="physical_cluster">GLOBAL.physical_cluster</param>
+        <param name="logical_cluster">GLOBAL.logical_cluster</param>
+      </call_proc_for_current_object>
+      <print>'created logical_cluster=['~GLOBAL.logical_cluster~']'</print>
+    </then>
+
+    <else>
+      <call_proc_for_current_object>
+        <name>'map_logical_onto_physical_cluster'</name>
+        <param name="logical_cluster">GLOBAL.logical_cluster</param>
+        <param name="physical_cluster">GLOBAL.physical_cluster</param>
+      </call_proc_for_current_object>
+    </else>
+  </if>
+
+  <if>
+    <condition>OBJECT(GLOBAL.args_object).proc ne '' and OBJECT(GLOBAL.args_object).cluster_proc eq ''</condition>
+    <then>
+      <print>'*************** setting up parent child relationship'</print>
+      <call_proc>'dump_mvm_physical_cluster_nodes'</call_proc>
+      <call_proc_for_current_object>
+        <name>'setup_parent_physical_node_id'</name>
+        <param name="logical_cluster">GLOBAL.logical_cluster</param>
+        <param name="physical_cluster">GLOBAL.physical_cluster</param>
+      </call_proc_for_current_object>
+      <call_proc>'dump_mvm_physical_cluster_nodes'</call_proc>
+    </then>
+  </if>
+
+  <call_proc>'persist_mvm_physical_cluster_nodes'</call_proc>
+  <call_proc>'persist_mvm_logical_cluster_nodes'</call_proc>
+
+  <call_proc_for_current_object>
+    <name>'read_cluster_info_from_db'</name>
+    <param name="logical_cluster">GLOBAL.logical_cluster</param>
+  </call_proc_for_current_object>
+
+  <call_proc_for_current_object>
+    <name>'startup_physical_cluster'</name>
+    <param name="physical_cluster">GLOBAL.physical_cluster</param>
+    <param name="detached">GLOBAL.detached</param>
+  </call_proc_for_current_object>
+
+  <if>
+    <condition>GLOBAL.detach ne 1</condition>
+    <then>
+      <print>'since you did NOT pass -detach=1 on the commandline this node is going to stay up to as a monitor node for the cluster we just launched.'</print>
+      <while>
+        <condition>1</condition>
+        <loop>
+          <console>'ctrl-c on this window will kill the entire logical_cluster='~GLOBAL.logical_cluster</console>
+          <sleep>60000</sleep>
+        </loop>
+      </while>
+    </then>
+  </if>
+</proc>

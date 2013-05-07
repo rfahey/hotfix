@@ -1,0 +1,32 @@
+<procs>
+  <proc name='determine_account_resolution_node'>
+    <param name='id_acc'/>
+    <param name='logical_instance_id' mode='out'/>
+
+    <initialize>
+      <do>GLOBAL.max_temp_node_id = 1</do>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select nodes from mvm_logical_cluster_def where logical_cluster = 'nrt_cluster'"
+        </query>
+        <cursor>TEMP.mlc_csr</cursor>
+        <loop>
+          <do>GLOBAL.max_temp_node_id = OBJECT(TEMP.mlc_csr).nodes</do>
+        </loop>
+      </db_select>
+
+    </initialize>
+
+    <!--<print>'I have id_acc ['~TEMP.id_acc~']'</print>-->
+    <do>TEMP.logical_instance_id = mod(TEMP.id_acc, GLOBAL.max_temp_node_id) + 1</do>
+    <if>
+      <condition>TEMP.logical_instance_id eq ''</condition>
+      <then>
+          <do>TEMP.logical_instance_id = 1</do>
+      </then>
+    </if>
+    
+  </proc>
+
+</procs>

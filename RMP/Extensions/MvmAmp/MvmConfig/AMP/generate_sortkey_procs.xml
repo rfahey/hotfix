@@ -1,0 +1,206 @@
+<procs>
+  <proc name="generate_sortkey_procs">
+    <initialize>
+      <print>'init generate_sortkey_procs'</print>
+      <define_memory_index>
+        <index>'PV_SORTKEYS'</index>
+        <key_field>'table_name'</key_field>
+        <field>'sortkey_order'</field>
+        <field>'sortkey_filter'</field>
+        <field>'sortkey_expression'</field>
+      </define_memory_index>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select LOWER(productview_name) table_name, nvl(sortkey_order,999999999) sortkey_order, sortkey_filter, sortkey_expression from agg_pv_sortkeys"
+        </query>
+        <query type="sql">
+          "select LOWER(productview_name) table_name, ISNULL(sortkey_order,999999999) sortkey_order, sortkey_filter, sortkey_expression from agg_pv_sortkeys"
+        </query>
+        <cursor>TEMP.pv_sortkeys</cursor>
+        <loop>
+          <index_insert>
+            <index>'PV_SORTKEYS'</index>
+            <field name='table_name'>OBJECT(TEMP.pv_sortkeys).table_name</field>
+            <field name='sortkey_order'>OBJECT(TEMP.pv_sortkeys).sortkey_order</field>
+            <field name='sortkey_filter'>OBJECT(TEMP.pv_sortkeys).sortkey_filter</field>
+            <field name='sortkey_expression'>OBJECT(TEMP.pv_sortkeys).sortkey_expression</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select lower(SUBSTR(a.nm_table_name,6,99)) productview_name from t_prod_view a"
+        </query>
+        <query type="sql">
+          "select lower(SUBSTRING(a.nm_table_name,6,99)) productview_name from t_prod_view a"
+        </query>
+        <cursor>TEMP.pvs</cursor>
+        <loop>
+          <do>TEMP.found_null = '0'</do>
+          <call_proc_for_current_object>
+            <name>'get_pv_id'</name>
+            <param name='table_name'>OBJECT(TEMP.pvs).productview_name</param>
+            <param name='id_view'>TEMP.id_view</param>
+          </call_proc_for_current_object>
+          <index_select>
+            <index>'PV_SORTKEYS'</index>
+            <field name="table_name">OBJECT(TEMP.pvs).productview_name</field>
+            <cursor>TEMP.pv_keys</cursor>
+            <loop>
+              <if>
+                <condition>OBJECT(TEMP.pv_keys).sortkey_filter eq ''</condition>
+                <then>
+                  <do>TEMP.found_null = '1'</do>
+                </then>
+              </if>
+            </loop>
+          </index_select>
+          <if>
+            <condition>TEMP.found_null eq '0'</condition>
+            <then>
+              <index_select>
+                <index>'PV_SORTKEYS'</index>
+                <field name="table_name">''</field>
+                <cursor>TEMP.pv_keys</cursor>
+                <then>
+                  <index_insert>
+                    <index>'PV_SORTKEYS'</index>
+                    <field name='table_name'>OBJECT(TEMP.pvs).productview_name</field>
+                    <field name='sortkey_order'>OBJECT(TEMP.pv_keys).sortkey_order</field>
+                    <field name='sortkey_filter'>OBJECT(TEMP.pv_keys).sortkey_filter</field>
+                    <field name='sortkey_expression'>OBJECT(TEMP.pv_keys).sortkey_expression</field>
+                  </index_insert>
+                </then>
+              </index_select>
+            </then>
+          </if>
+          <do>TEMP.found_null = '0'</do>
+          <do>TEMP.spacer = '  '</do>
+          <do>TEMP.else_closer = ''</do>
+          <do>TEMP.before_else = ''</do>
+          <do>TEMP.after_else = ''</do>
+          <do>
+            TEMP.my_sortkey_proc="<![CDATA[
+<proc name='generate_sortkey_"~TEMP.id_view~"'>]]>"
+          </do>
+          <index_select>
+            <index>'PV_SORTKEYS'</index>
+            <field name="table_name">OBJECT(TEMP.pvs).productview_name</field>
+            <order_by  type="numeric">OBJECT.sortkey_order</order_by>
+            <cursor>TEMP.pv_keys</cursor>
+           
+            <loop>
+              <if>
+                <condition>OBJECT(TEMP.pv_keys).sortkey_filter ne '' and TEMP.found_null ne '1'</condition>
+                <then>
+                  <do>TEMP.spacer = TEMP.spacer~'    '</do>
+                  <do>
+                    TEMP.my_sortkey_proc~="<![CDATA["~TEMP.before_else~"
+"~TEMP.spacer~"  <if>
+"~TEMP.spacer~"    <condition>"~OBJECT(TEMP.pv_keys).sortkey_filter~"</condition>
+"~TEMP.spacer~"    <then>
+"~TEMP.spacer~"      <do>OBJECT.sortkey = "~OBJECT(TEMP.pv_keys).sortkey_expression~"</do>
+"~TEMP.spacer~"    </then>]]>"
+                  </do>
+                  <do>TEMP.else_closer = TEMP.after_else~TEMP.else_closer</do>
+                  <do>
+                    TEMP.before_else = "<![CDATA[
+"~TEMP.spacer~"    <else>]]>"
+                  </do>
+                  <do>
+                    TEMP.after_else = "<![CDATA[
+"~TEMP.spacer~"    </else>
+"~TEMP.spacer~"  </if>]]>"
+                  </do>
+                </then>
+                <else>
+                  <if>
+                    <condition>TEMP.found_null eq '0'</condition>
+                    <then>
+                      <do>
+                        TEMP.my_sortkey_proc~="<![CDATA["~TEMP.before_else~"
+"~TEMP.spacer~"      <do>OBJECT.sortkey = "~OBJECT(TEMP.pv_keys).sortkey_expression~"</do>]]>"
+                      </do>
+                      <do>TEMP.else_closer = TEMP.after_else~TEMP.else_closer</do>
+                      <do>TEMP.found_null = '1'</do>
+                    </then>
+                  </if>
+                </else>
+              </if>
+              <do>TEMP.remaining = OBJECT(TEMP.pv_keys).sortkey_filter ~ ' ' ~ OBJECT(TEMP.pv_keys).sortkey_expression</do>
+              <do>TEMP.success = '1'</do>
+              <do>TEMP.parent_field = ''</do>
+              <do>TEMP.regex='OBJECT\(OBJECT\.parent_oid\)\.(\w+).*'</do>
+              <while>
+                <condition>TEMP.success eq '1'</condition>
+                <loop>
+                  <match>
+                    <input>TEMP.remaining</input>
+                    <regex>TEMP.regex</regex>
+                    <success>TEMP.success</success>
+                    <capture>TEMP.parent_field</capture>
+                  </match>
+                  <if>
+                    <condition>TEMP.success eq '1'</condition>
+                    <then>
+                      <replace>
+                        <input>TEMP.remaining</input>
+                        <old_value>'OBJECT(OBJECT.parent_oid).'~TEMP.parent_field</old_value>
+                        <new_value>'replacedparentfield.'~TEMP.parent_field</new_value>
+                        <output>TEMP.remaining</output>
+                      </replace>
+                      <index_select>
+                        <index>'ID_VIEW_PARENTS'</index>
+                        <field name="id_view">TEMP.id_view</field>
+                        <cursor>TEMP.parent_csr</cursor>
+                        <loop>
+
+                          <do>TEMP.have_field = '0'</do>
+                          <index_select>
+                            <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+                            <field name="id_view">OBJECT(TEMP.parent_csr).id_view_parent</field>
+                            <cursor>TEMP.existing_csr</cursor>
+                            <loop>
+                              <if>
+                                <condition>OBJECT(TEMP.existing_csr).field_name eq TEMP.parent_field</condition>
+                                <then>
+                                  <do>TEMP.have_field = '1'</do>
+                                </then>
+                              </if>
+                            </loop>
+                          </index_select>
+                          <if>
+                            <condition>TEMP.have_field eq '0'</condition>
+                            <then>
+                              <!--<print>'I am inserting ['~TEMP.parent_field~'] for id_view ['~TEMP.parent_id_view~']'</print>-->
+                              <index_insert>
+                                <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+                                <field name="id_view">OBJECT(TEMP.parent_csr).id_view_parent</field>
+                                <field name="field_name">TEMP.parent_field</field>
+                              </index_insert>
+                            </then>
+                          </if>
+                        </loop>
+                      </index_select>
+                    </then>
+                  </if>
+                </loop>
+              </while>
+            </loop>
+          </index_select>
+          <do>
+            TEMP.my_sortkey_proc~="<![CDATA["~TEMP.else_closer~"
+</proc>
+            ]]>"
+          </do>
+          <!-- <print>TEMP.my_sortkey_proc</print> -->
+          <execute_immediate>TEMP.my_sortkey_proc</execute_immediate>
+        </loop>
+      </db_select>
+    </initialize>
+  </proc>
+
+</procs>

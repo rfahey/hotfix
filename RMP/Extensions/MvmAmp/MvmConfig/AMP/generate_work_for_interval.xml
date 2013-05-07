@@ -1,0 +1,799 @@
+<!-- This group of proc's determines...  -->
+<!-- The main proc is generate_work_for_interval. -->
+<!-- This proc uses the map-reduce model for using slave -->
+<!-- processes to help determine the work to do. -->
+
+<procs>
+
+  <!-- ===================================================================== -->
+  <!--                                                                       -->
+  <!-- Determine the work to be done using map reduce.                       -->
+  <!--                                                                       -->
+  <!-- Inputs:                                                               -->
+  <!--     id_interval  The interval that we are interested in.              -->
+  <!--                                                                       -->
+  <!-- Results:                                                              -->
+  <!--                                                                       -->
+  <!-- ===================================================================== -->
+
+  <proc name='generate_work_for_interval'>
+    <param name='id_interval'/>
+    <param name='id_billgroup' default='0'/>
+    <param name='eop_mode'/>
+
+    <!-- Instantiate structures that are used by this file. -->
+    <initialize>
+      <print>'init generate_work_for_interval'</print>
+      <do>GLOBAL.skip_recursive_decision_lookup = '1'</do>
+
+
+      <!--<spawn>
+        <object_type>'LOGGER'</object_type>
+        <object_id>GLOBAL.logger</object_id>
+      </spawn>
+      <do>OBJECT(GLOBAL.logger).log_level='info'</do>
+
+      <define_mvm_cluster>
+        -->
+      <!--<query>'select machine, user, password, port_start, port_end, order from mvm_cluster_nodes'</query>-->
+      <!--
+        -->
+      <!--<node machine='localhost' user='Controller' password='MetraTech1' bin='D:\MetraTech\RMP\Bin' port_start='50000' port_end='50001'/>-->
+      <!--
+        -->
+      <!--
+      </define_mvm_cluster>-->
+
+      <!-- ACC_CONSIDERED is a map that tracks accounts that we've already considered -->
+      <!-- This prevents us for possible hitting an event loop reconsidering accounts -->
+      <!-- over and over again. Only used locally by this file. -->
+      <define_memory_index>
+        <index>'ACC_CONSIDERED'</index>
+        <key_field>'id_acc'</key_field>
+      </define_memory_index>
+
+      <!-- ACC_TO_PRODUCE is a multimap of accounts/intervals that we are currently -->
+      <!-- processing while try to build up a complete list of accounts to process. -->
+      <!-- As we process results received by slave processes, we add to ACC_TO_PRODUCE. -->
+      <!-- Only used locally by this file. -->
+      <define_memory_index>
+        <index>'ACC_TO_PRODUCE'</index>
+        <key_field>'id_acc'</key_field>
+        <key_field>'id_interval'</key_field>
+      </define_memory_index>
+
+      <c>aqg_consumer pushes to here, aqg_reducer puts this where is needs to go and adds to ACC_TO_PRODUCE.</c>
+      <!-- ACC_TO_REDUCE is not used should be deleted! -->
+      <define_memory_index synchronized='true'>
+        <index>'ACC_TO_REDUCE'</index>
+        <key_field>'id_acc'</key_field>
+        <field>'member_id_acc'</field>
+      </define_memory_index>
+
+      <!-- ACC_DECISIONS is not used and should be deleted! -->
+      <define_memory_index synchronized='true'>
+        <index>'ACC_DECISIONS'</index>
+        <key_field>'id_acc'</key_field>
+        <field>'decision_id'</field>
+      </define_memory_index>
+
+      <!-- DECISION_ACCS is not used and should be deleted! -->
+      <define_memory_index synchronized='true'>
+        <index>'DECISION_ACCS'</index>
+        <key_field>'id_acc'</key_field>
+        <key_field>'decision_id'</key_field>
+        <field>'child_id_acc'</field>
+      </define_memory_index>
+
+      <define_memory_index synchronized='true'>
+        <index>'GLOBAL_PARAMS'</index>
+        <key_field>'param_name'</key_field>
+        <field>'param_value'</field>
+      </define_memory_index>
+
+    </initialize>
+
+    <debug>'Determining what work needs to be done for interval '~TEMP.id_interval</debug>
+
+    <index_clear>
+      <index>'ACC_CONSIDERED'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACC_TO_PRODUCE'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACC_TO_REDUCE'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACC_DECISIONS'</index>
+    </index_clear>
+    <index_clear>
+      <index>'DECISION_ACCS'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACCOUNTS_ADDED'</index>
+    </index_clear>
+    <!-- DOC: We clear BUCKET_CHILDREN before it's created here. -->
+    <!-- DOC: It doesn't hurt anything, although it makes code look weird. -->
+    <!-- DOC: "indices" are added to the GLOBAL object -->
+    <!-- DOC: creation of "indeces" belongs in initialization blocks, but this is not required -->
+    <!-- DOC: These are multimaps -->
+    <index_clear>
+      <index>'BUCKET_CHILDREN'</index>
+    </index_clear>
+    <index_clear>
+      <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+    </index_clear>
+    <index_clear>
+      <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACCOUNT_CACHE'</index>
+    </index_clear>
+
+    <index_clear>
+      <index>'GLOBAL_PARAMS'</index>
+    </index_clear>
+    <index_insert>
+      <index>'GLOBAL_PARAMS'</index>
+      <field name='param_name'>'eop_mode'</field>
+      <field name='param_value'>TEMP.eop_mode</field>
+    </index_insert>
+    <index_insert>
+      <index>'GLOBAL_PARAMS'</index>
+      <field name='param_name'>'id_interval'</field>
+      <field name='param_value'>TEMP.id_interval</field>
+    </index_insert>
+
+
+
+
+    <!-- DOC: what can the express of a "do" be? assignment -->
+    <do>GLOBAL.producer_queue_length=2</do>
+    <do>GLOBAL.reduce_ctr=0</do>
+
+
+    <!-- QUESTION: true? -->
+    <!-- Table AGG_BUNDLE_POS is used to hold the PO ids  -->
+    <!-- that reference PTs used by the decisions we are processing. -->
+    <!-- Used only locally by this file. -->
+
+    <!-- DOC: dynamic, string is evaluated every time. -->
+    <db_execute_dynamic>
+      <!-- DOC: namespaces (AMP/Global/anywhere) -->
+      <login_object>GLOBAL.target_login</login_object>
+      <statement type="oracle">
+        "truncate table AGG_BUNDLE_POS"
+      </statement>
+      <statement type="sql">
+        "truncate table AGG_BUNDLE_POS"
+      </statement>
+      <num_rows>TEMP.num_rows</num_rows>
+    </db_execute_dynamic>
+
+    <if>
+      <condition>GLOBAL.my_pt_list ne ''</condition>
+      <then>
+        <!-- Fill up table AGG_BUNDLE_POS -->
+        <!-- Put the PO ids we are interested in into agg_bundle_pos -->
+        <!-- We already have a list of PTs that the decisions want -->
+        <!-- so look for which PO's are using them. -->
+
+        <debug>'Determining the POs that reference the parameter tables used in decisions.'</debug>
+        <db_execute_dynamic>
+          <login_object>GLOBAL.target_login</login_object>
+          <statement type="oracle">
+            "insert into AGG_BUNDLE_POS select distinct id_po FROM t_pl_map WHERE id_paramtable IN("~GLOBAL.my_pt_list~") AND id_sub IS NULL"
+          </statement>
+          <statement type="sql">
+            "insert into AGG_BUNDLE_POS select distinct id_po FROM t_pl_map WHERE id_paramtable IN("~GLOBAL.my_pt_list~") AND id_sub IS NULL"
+          </statement>
+          <num_rows>TEMP.num_rows</num_rows>
+        </db_execute_dynamic>
+      </then>
+      <else>
+        <debug>'No parameter tables configured with decisions.'</debug>
+      </else>
+    </if>
+
+    <!-- Do the initial seeding for map-reduce: -->
+    <!-- Fill up map ACC_TO_PRODUCE with initial accounts to process -->
+    <!-- Get account ids in the given interval -->
+    <!-- We are only getting accounts that are subscribed to at least -->
+    <!-- one of the POs we are interested in. -->
+    <debug>'Determining the accounts that own decisions (reference a PO with decision PT). Interval ['~TEMP.id_interval~']'</debug>
+    <do>
+      TEMP.my_query = "SELECT a.id_acc FROM t_acc_usage_interval a
+      inner join t_sub b on a.id_acc = b.id_acc
+      inner join agg_bundle_pos c on b.id_po = c.id_po
+      WHERE a.id_usage_interval = $${TEMP.id_interval} and a.tx_status in('O','C')"
+    </do>
+    <if>
+      <condition>TEMP.id_billgroup GT 0</condition>
+      <then>
+        <do>
+          TEMP.my_query = "SELECT a.id_acc FROM t_billgroup_member a
+          inner join t_sub b on a.id_acc = b.id_acc
+          inner join agg_bundle_pos c on b.id_po = c.id_po
+          WHERE a.id_billgroup = $${TEMP.id_billgroup}"
+        </do>
+      </then>
+    </if>
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query>TEMP.my_query</query>
+      <cursor>TEMP.id_acc_list</cursor>
+      <loop>
+        <print>'I AM SUB INSERTING ACCTOPRODUCE ['~OBJECT(TEMP.id_acc_list).id_acc~']'</print>
+        <!-- Inserting into the hash table the accounts that we are interested -->
+        <!-- in and the corresponding interval -->
+        <index_insert>
+          <index>'ACC_TO_PRODUCE'</index>
+          <field name='id_acc'>OBJECT(TEMP.id_acc_list).id_acc</field>
+          <field name='id_interval'>TEMP.id_interval</field>
+        </index_insert>
+      </loop>
+    </db_select>
+
+    <!-- Clear the contents of maps that exist on several slaves -->
+    <!-- and wait until all slaves complete this task -->
+    <slave_node_id_select>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.slave_id=OBJECT(TEMP.csr).node_id</do>
+        <remote_queue_proc>
+          <name>'clear_local_structs'</name>
+          <process_id>TEMP.slave_id</process_id>
+          <batch_id>TEMP.my_batch_id</batch_id>
+          <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+        </remote_queue_proc>
+        <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+
+        <push_index>
+          <process_id>TEMP.slave_id</process_id>
+          <clear_source>0</clear_source>
+          <source>
+            <index>'GLOBAL_PARAMS'</index>
+          </source>
+          <target>
+            <index>'GLOBAL_PARAMS'</index>
+          </target>
+        </push_index>
+
+        <remote_queue_proc>
+          <name>'reset_global_context'</name>
+          <process_id>TEMP.slave_id</process_id>
+          <batch_id>TEMP.my_batch_id</batch_id>
+          <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+        </remote_queue_proc>
+        <!--<wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>-->
+
+      </loop>
+    </slave_node_id_select>
+
+    <!-- QUESTION: what additional accounts are being added here? -->
+    <!-- Add additional accounts to ACC_TO_PRODUCE -->
+    <debug>'Adding the sub-accounts that own decisions to our list of accounts that own decisions.'</debug>
+    <if>
+      <condition>TEMP.id_billgroup GT 0</condition>
+      <then>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query type='sql'>
+            "SELECT a.id_acc FROM t_billgroup_member a
+            inner join t_gsubmember b on a.id_acc = b.id_acc
+            inner join t_sub c on b.id_group = c.id_group
+            inner join agg_bundle_pos d on c.id_po = d.id_po
+            WHERE a.id_billgroup = $${TEMP.id_billgroup}"
+          </query>
+          <query type='oracle'>
+            "SELECT /*+ ORDERED  USE_NL(a) */ a.id_acc FROM
+            agg_bundle_pos d
+            inner join t_sub c on d.id_po = c.id_po
+            inner join t_gsubmember b on c.id_group = b.id_group
+            inner join t_billgroup_member a on b.id_acc = a.id_acc and a.id_billgroup = $${TEMP.id_billgroup}"
+
+          </query>
+          <cursor>TEMP.id_acc_list</cursor>
+          <loop>
+            <!--<print>'I HARD-CODING THE ACCOUNTS to 373 only ['~OBJECT(TEMP.id_acc_list).id_acc~']'</print>-->
+            <print>'I AM GSUB INSERTING ACCTOPRODUCE ['~OBJECT(TEMP.id_acc_list).id_acc~']'</print>
+            <index_insert>
+              <index>'ACC_TO_PRODUCE'</index>
+              <field name='id_acc'>OBJECT(TEMP.id_acc_list).id_acc</field>
+              <field name='id_interval'>TEMP.id_interval</field>
+            </index_insert>
+          </loop>
+        </db_select>
+      </then>
+      <else>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query type='sql'>
+            "SELECT a.id_acc FROM t_acc_usage_interval a
+            inner join t_gsubmember b on a.id_acc = b.id_acc
+            inner join t_sub c on b.id_group = c.id_group
+            inner join agg_bundle_pos d on c.id_po = d.id_po
+            WHERE a.id_usage_interval = $${TEMP.id_interval} and a.tx_status in('O','C')"
+          </query>
+          <query type='oracle'>
+            "SELECT /*+ ORDERED  USE_NL(a) */ a.id_acc FROM
+            agg_bundle_pos d
+            inner join t_sub c on d.id_po = c.id_po
+            inner join t_gsubmember b on c.id_group = b.id_group
+            inner join t_acc_usage_interval a on b.id_acc = a.id_acc and a.id_usage_interval = $${TEMP.id_interval} and a.tx_status in('O','C')"
+
+          </query>
+          <cursor>TEMP.id_acc_list</cursor>
+          <loop>
+            <!--<print>'I HARD-CODING THE ACCOUNTS to 373 only ['~OBJECT(TEMP.id_acc_list).id_acc~']'</print>-->
+            <print>'I AM GSUB INSERTING ACCTOPRODUCE ['~OBJECT(TEMP.id_acc_list).id_acc~']'</print>
+            <index_insert>
+              <index>'ACC_TO_PRODUCE'</index>
+              <field name='id_acc'>OBJECT(TEMP.id_acc_list).id_acc</field>
+              <field name='id_interval'>TEMP.id_interval</field>
+            </index_insert>
+          </loop>
+        </db_select>
+      </else>
+    </if>
+
+
+    <debug>'Distributing the work of creating decision instances for accounts to slaves.'</debug>
+    <debug>'The distribution of the work is based on account.'</debug>
+
+    <!--<set_server_mode_on/>
+
+    <startup_slaves>
+      <slave_count>'*'</slave_count>
+      <num_started>GLOBAL.slave_count</num_started>
+    </startup_slaves>-->
+
+    <!--<sleep>5000</sleep>-->
+
+    <!-- Now we need to process the initial accounts in ACC_TO_PRODUCE to -->
+    <!-- to see if decision configuration causes other accounts to be pulled -->
+    <!-- Rather than do this locally, we are going to use the slaves in the -->
+    <!-- cluster divide load by account. -->
+
+    <!-- DOC: 'ms' times just this pass, 'totalms' accumulates all passes -->
+    <!-- DOC: deprecated by stopwatch -->
+    <time ms='TEMP.ms'>
+      <map_reduce>
+        <!-- how much to produce in advance -->
+        <producer_queue_length>GLOBAL.producer_queue_length</producer_queue_length>
+        <producer_proc>
+          <name>'produce_aqg_work'</name>
+        </producer_proc>
+        <consumer_proc>
+          <name>'consume_aqg_work'</name>
+          <include_object_fields_in_output>1</include_object_fields_in_output>
+        </consumer_proc>
+        <reducer_proc>
+          <name>'reduce_aqg_work'</name>
+        </reducer_proc>
+      </map_reduce>
+      <!--<print>'AFTER MAP_REDUCE'</print>-->
+    </time>
+
+    <!--<print>'***********************************************************'</print>
+    <print>'slave_count='~GLOBAL.slave_count~' work_count='~GLOBAL.work_count~' producer_queue_length='~GLOBAL.producer_queue_length~' ms='~TEMP.ms~' reduce ctr='~GLOBAL.reduce_ctr</print>
+    <print>'***********************************************************'</print>-->
+
+    <!--<print>'shutting down the cluster'</print>-->
+    <!--<set_server_mode_off/>
+    <shutdown_cluster/>-->
+
+  </proc>
+
+  <!-- ===================================================================== -->
+  <!-- PRODUCER                                                              -->
+  <!--                                                                       -->
+  <!-- This the producer in the map-reduce model.  This interates through -->
+  <!-- the initial accounts, passing them out to the slaves.  The slaves -->
+  <!-- are going to check if the account requires other accounts to be processed. -->
+  <!-- If so, these are feed into ACC_TO_PRODUCE (the map of accounts we are going -->
+  <!-- through.  -->
+  <!-- ===================================================================== -->
+  <proc name='produce_aqg_work'>
+    <param name='pipe_cursor'/>
+
+    <!--<index_select_keys>
+      <index>'ACC_TO_PRODUCE'</index>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <print>'I AM PIPING ['~OBJECT(TEMP.csr).id_acc~'] - PRE'</print>
+      </loop>
+    </index_select_keys>-->
+
+    <!-- Distributing the account ids to the slaves for processing -->
+    <!-- The slaves may hand us back more accounts to process. -->
+    <!-- This proc will end when we have finished looping through the accounts -->
+    <!-- AND all the slaves have ended.  -->
+
+    <!-- DOC: the MapReduce engine terminates this proc when the proc -->
+    <!-- DOC: has reported it's done (by pipe of null) and all slaves are done. -->
+    <!-- DOC: <else> executes if there were no loop elements -->
+    <while>
+      <condition>1</condition>
+      <loop>
+        <index_select_keys>
+          <index>'ACC_TO_PRODUCE'</index>
+          <cursor>TEMP.csr</cursor>
+          <loop>
+            <!--<print>'producing id_acc='~OBJECT(TEMP.csr).id_acc</print>-->
+            <index_remove>
+              <index>'ACC_TO_PRODUCE'</index>
+              <field name='id_acc'>OBJECT(TEMP.csr).id_acc</field>
+              <field name='id_interval'>OBJECT(TEMP.csr).id_interval</field>
+            </index_remove>
+            <index_insert>
+              <index>'ACC_CONSIDERED'</index>
+              <field name='id_acc'>OBJECT(TEMP.csr).id_acc</field>
+            </index_insert>
+            <!--<print>'I AM PIPING ['~OBJECT(TEMP.csr).id_acc~'] and ['~TEMP.csr~']'</print>-->
+
+            <!-- Invoke slave to run the consumer proc -->
+            <!-- The cursor object containing the account ID and interval ID becomes -->
+            <!-- the active slave object. -->
+
+            <!-- DOC: pipe_row invokes the consumer proc and making the cursor object be -->
+            <!-- the active object in the consumer proc -->
+            <pipe_row>TEMP.csr</pipe_row>
+          </loop>
+          <else>
+            <!-- We are here if the ACC_TO_PRODUCE is empty. -->
+            <!-- Tell the map reduce engine we THINK we are done. -->
+            <!-- It could be a slave is going to feed more accounts into ACC_TO_PRODUCE -->
+            <!--<print>'producing NULL ROW'</print>-->
+            <pipe_row>''</pipe_row>
+          </else>
+        </index_select_keys>
+      </loop>
+    </while>
+    <debug>'Done passing work to the slaves for instantiating decisions.'</debug>
+  </proc>
+
+
+  <!-- ===================================================================== -->
+  <!-- CONSUMER                                                              -->
+  <!--                                                                       -->
+  <!-- This is the consumer in the map-reduce model.  This runs on the slave.-->
+  <!-- We take the given account and calls get_agg_decisions.                -->
+  <!-- get_agg_decisions shoves more accounts that we have to consider       -->
+  <!-- into ACCOUNTS_ADDED.                                                  -->
+  <!--                                                                       -->
+  <!-- Results:                                                              -->
+  <!--     ACCOUNTS_ADDED          Additional accounts to consider.          -->
+  <!--     AGG_BUCKETS_BY_ACCOUNT                                            -->
+  <!--     AGG_BUCKETS_BY_PRIORITY                                           -->
+  <!--     BUCKET_CHILDREN                                                   -->
+  <!--     ACCOUNTS_BY_AGG_BUCKET                                            -->
+  <!-- ===================================================================== -->
+
+  <proc name='consume_aqg_work'>
+    <!--<print>'consuming id_acc='~OBJECT.id_acc</print>
+    <print>'consuming id_interval='~OBJECT.id_interval</print>-->
+
+    <!--<print>'Jonah consuming a decision!'</print>-->
+    <debug>'This slave is going to create all decisions instances needed for the decisions owned by account ['~OBJECT.id_acc~']'</debug>
+    <call_proc_for_current_object>
+      <name>'get_agg_decisions'</name>
+      <param name="id_acc">OBJECT.id_acc</param>
+      <param name="id_usage_interval">OBJECT.id_interval</param>
+    </call_proc_for_current_object>
+
+    <!--<print>'Jonah consumed a decision!'</print>
+    <index_select_keys>
+      <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.bucket_object = OBJECT(TEMP.csr).bucket_object</do>
+        <print>'Object ['~TEMP.bucket_object~'] Decision id ['~OBJECT(TEMP.bucket_object).decision_unique_id~'] start['~OBJECT(TEMP.bucket_object).start_date~'] end['~OBJECT(TEMP.bucket_object).end_date~'] has accounts :['</print>
+        <index_select>
+          <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          <field name='bucket_object'>OBJECT(TEMP.csr).bucket_object</field>
+          <cursor>TEMP.csr_too</cursor>
+          <loop>
+            <print>'id_acc = '~OBJECT(TEMP.csr_too).id_acc</print>
+          </loop>
+        </index_select>
+        <print>']'</print>
+      </loop>
+    </index_select_keys>-->
+
+    <!--<index_clear>
+      <index>'AGG_BUCKET_MAP'</index>
+    </index_clear>
+    <index_clear>
+      <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+    </index_clear>
+    <index_clear>
+      <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+    </index_clear>
+    <index_clear>
+      <index>'BUCKET_CHILDREN'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACCOUNT_CACHE'</index>
+    </index_clear>-->
+
+    <!-- REAL CLEARS BELOW HERE!!!!-->
+
+    <index_clear>
+      <index>'OVERLAID_CHILD_ACCOUNT_TABLES'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACC_QUAL_GROUPS'</index>
+    </index_clear>
+    <index_clear>
+      <index>'ACCOUNT_CACHE'</index>
+    </index_clear>
+
+    <!--<dump_memory/>-->
+
+    <c> push structures </c>
+    <!--<push_index>
+      <process_id>TEMP.caller_process_id</process_id>
+      <clear_source>1</clear_source>
+      <source>
+        <index>'ACCOUNT_CACHE'</index>
+      </source>
+      <target>
+        <index>'ACCOUNT_CACHE'</index>
+      </target>
+    </push_index>-->
+
+    <!--<push_index>
+      <process_id>TEMP.caller_process_id</process_id>
+      <clear_source>1</clear_source>
+      <source>
+        <index>'AGG_BUCKET_MAP'</index>
+      </source>
+      <target>
+        <index>'AGG_BUCKET_MAP'</index>
+      </target>
+    </push_index>-->
+
+
+    <!--<index_select_keys>
+      <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.id_acc = OBJECT(TEMP.csr).id_acc</do>
+        <index_select>
+          <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+          <field name='id_acc'>TEMP.id_acc</field>
+          <cursor>TEMP.csr1</cursor>
+          <loop>
+            <do>TEMP.bucket_object = OBJECT(TEMP.csr1).bucket_object</do>
+            <print>'Pushing up bucket_accountss ['~TEMP.id_acc~'] for bucket ['~TEMP.bucket_object~'] ['~OBJECT(TEMP.bucket_object).decision_unique_id~'] and priority ['~OBJECT(TEMP.csr).tier_priority~'] and type ['~OBJECT(TEMP.bucket_object).tier_type~']'</print>
+          </loop>
+
+          <else>
+            <print>'NO VALUES!'</print>
+          </else>
+        </index_select>
+      </loop>
+      <else>
+        <print>'NO KEYS!'</print>
+      </else>
+    </index_select_keys>-->
+
+    <!--
+    <index_select_keys>
+      <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <index_select>
+          <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+          <field name='tier_priority'>OBJECT(TEMP.csr).tier_priority</field>
+          <cursor>TEMP.csr1</cursor>
+          <loop>
+            <do>TEMP.bucket_object = OBJECT(TEMP.csr1).bucket_object</do>
+            <print>'Pushing up bucket ['~TEMP.bucket_object~'] ['~OBJECT(TEMP.bucket_object).decision_unique_id~'] and priority ['~OBJECT(TEMP.csr).tier_priority~'] and type ['~OBJECT(TEMP.bucket_object).tier_type~']'</print>
+          </loop>
+
+          <else>
+            <print>'NO VALUES!'</print>
+          </else>
+        </index_select>
+      </loop>
+      <else>
+        <print>'NO KEYS!'</print>
+      </else>
+    </index_select_keys>
+    -->
+
+    <!--<index_select_keys>
+      <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.bucket_object = OBJECT(TEMP.csr).bucket_object</do>
+        <index_select>
+          <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          <field name='bucket_object'>TEMP.bucket_object</field>
+          <cursor>TEMP.csr1</cursor>
+          <loop>
+            <do>TEMP.account = OBJECT(TEMP.csr1).id_acc</do>
+            <print>'Pushing up account ['~TEMP.account~'] for bucket ['~TEMP.bucket_object~'] ['~OBJECT(TEMP.bucket_object).decision_unique_id~'] and priority ['~OBJECT(TEMP.bucket_object).tier_priority~'] and type ['~OBJECT(TEMP.bucket_object).tier_type~']'</print>
+          </loop>
+
+          <else>
+            <print>'NO VALUES!'</print>
+          </else>
+        </index_select>
+      </loop>
+      <else>
+        <print>'NO KEYS!'</print>
+      </else>
+    </index_select_keys>-->
+
+
+    <index_select_keys>
+      <index>'BUCKET_CHILDREN'</index>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.bucket_object = OBJECT(TEMP.csr).parent_bucket_object</do>
+        <do>TEMP.tier_type = OBJECT(TEMP.csr).tier_type</do>
+        <index_select>
+          <index>'BUCKET_CHILDREN'</index>
+          <field name='parent_bucket_object'>TEMP.bucket_object</field>
+          <field name='tier_type'>TEMP.tier_type</field>
+          <cursor>TEMP.csr1</cursor>
+          <loop>
+            <do>TEMP.child_bucket_object = OBJECT(TEMP.csr1).child_bucket_object</do>
+            <print>'Pushing up child_bucket ['~TEMP.child_bucket_object~'] for bucket ['~TEMP.bucket_object~'] ['~OBJECT(TEMP.bucket_object).decision_unique_id~'] and priority ['~OBJECT(TEMP.csr).tier_priority~'] and type ['~OBJECT(TEMP.bucket_object).tier_type~']'</print>
+          </loop>
+
+          <else>
+            <print>'NO VALUES!'</print>
+          </else>
+        </index_select>
+      </loop>
+      <else>
+        <print>'NO KEYS!'</print>
+      </else>
+    </index_select_keys>
+
+    <!-- We are running on the slave and have returned from -->
+    <!-- get_agg_decision.  We have taken the given account -->
+    <!-- an instantiated decisions.  We are going to push the -->
+    <!-- results to the master. -->
+
+    <push_index>
+      <!-- DOC: caller_process_id magic field -->
+      <process_id>TEMP.caller_process_id</process_id>
+      <clear_source>1</clear_source>
+      <source>
+        <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+      </source>
+      <target>
+        <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+      </target>
+    </push_index>
+
+    <push_index>
+      <process_id>TEMP.caller_process_id</process_id>
+      <clear_source>1</clear_source>
+      <source>
+        <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+      </source>
+      <target>
+        <index>'AGG_BUCKETS_BY_PRIORITY'</index>
+      </target>
+    </push_index>
+
+    <push_index>
+      <process_id>TEMP.caller_process_id</process_id>
+      <clear_source>1</clear_source>
+      <source>
+        <index>'BUCKET_CHILDREN'</index>
+      </source>
+      <target>
+        <index>'BUCKET_CHILDREN'</index>
+      </target>
+    </push_index>
+
+    <if>
+      <condition>GLOBAL.skip_recursive_decision_lookup ne '1'</condition>
+      <then>
+        <!-- consider more accounts. -->
+        <push_index>
+          <process_id>TEMP.caller_process_id</process_id>
+          <clear_source>0</clear_source>
+          <source>
+            <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+          </source>
+          <target>
+            <index>'ACCOUNTS_ADDED'</index>
+          </target>
+        </push_index>
+      </then>
+    </if>
+
+    <push_index>
+      <process_id>TEMP.caller_process_id</process_id>
+      <clear_source>1</clear_source>
+      <source>
+        <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+      </source>
+      <target>
+        <index>'ACCOUNTS_BY_AGG_BUCKET'</index>
+      </target>
+    </push_index>
+
+
+  </proc>
+
+  <!-- ===================================================================== -->
+  <!-- REDUCER                                                               -->
+  <!--                                                                       -->
+  <!-- The master invokes this proc to handle the data that was              -->
+  <!-- produced by the slave.  The slave reported back potentially           -->
+  <!-- additional accounts to process. If it's an account we haven't         -->
+  <!-- already seen, we add it to our working list of accounts.              -->
+  <!--                                                                       -->
+  <!-- Results:                                                              -->
+  <!--     ACC_TO_PRODUCE          Appends accounts to condsider to this.    -->
+  <!-- ===================================================================== -->
+
+  <proc name='reduce_aqg_work'>
+    <do>GLOBAL.reduce_ctr+=1</do>
+    <run_once>
+      <do>GLOBAL.my_reduce_threshold = '100000'</do>
+    </run_once>
+
+    <!--<if>
+      <condition>(GLOBAL.reduce_ctr GTE GLOBAL.my_reduce_threshold)</condition>
+      <then>
+        <print>'I am dumping memory['~GLOBAL.reduce_ctr~']!!!!!!!!!!!!'</print>
+        <dump_memory/>
+        <do>GLOBAL.my_reduce_threshold += 100000</do>
+      </then>
+    </if>-->
+    <print>'reducing id_acc='~OBJECT.id_acc~', total_reduce_ctr='~GLOBAL.reduce_ctr</print>
+    <index_select_keys>
+      <index>'ACCOUNTS_ADDED'</index>
+      <cursor>TEMP.csr1</cursor>
+      <loop>
+        <do>TEMP.member_id_acc=OBJECT(TEMP.csr1).id_acc</do>
+        <index_select>
+          <index>'ACC_CONSIDERED'</index>
+          <field name='id_acc'>TEMP.member_id_acc</field>
+          <cursor>TEMP.csr2</cursor>
+          <then>
+            <!--<print>'already considered member id_acc='~TEMP.member_id_acc</print>-->
+          </then>
+          <else>
+            <!--<print>'need to produce member id_acc='~TEMP.member_id_acc</print>-->
+            <index_insert>
+              <index>'ACC_CONSIDERED'</index>
+              <field name='id_acc'>TEMP.member_id_acc</field>
+            </index_insert>
+            <!--<print>'added to AQG_CONSIDERED member id_acc='~TEMP.member_id_acc</print>-->
+            <index_insert>
+              <index>'ACC_TO_PRODUCE'</index>
+              <field name='id_acc'>TEMP.member_id_acc</field>
+              <field name='id_interval'>OBJECT.id_interval</field>
+            </index_insert>
+            <!--<print>'added to AQG_TO_PRODUCE member id_acc='~TEMP.member_id_acc</print>-->
+          </else>
+        </index_select>
+        <index_remove>
+          <index>'ACCOUNTS_ADDED'</index>
+          <field name='id_acc'>OBJECT(TEMP.csr1).id_acc</field>
+        </index_remove>
+      </loop>
+    </index_select_keys>
+
+    <!--<print>'done reducing id_acc='~OBJECT.id_acc</print>-->
+  </proc>
+
+</procs>

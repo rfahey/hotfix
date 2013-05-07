@@ -1,0 +1,61 @@
+<procs>
+  <proc name="check_for_final_bucket_triggers">
+    <param name='bucket_object'/>
+    
+    <if>
+      <condition>OBJECT(TEMP.bucket_object).tier_type Ne 'bulk_aggregate' and OBJECT(TEMP.bucket_object).charge_on_final ne '' and (OBJECT(TEMP.bucket_object).tier_start LT OBJECT(TEMP.bucket_object).qualified_total or (OBJECT(TEMP.bucket_object).tier_start eq '0')) and (OBJECT(TEMP.bucket_object).tier_end eq '' or OBJECT(TEMP.bucket_object).tier_end GTE OBJECT(TEMP.bucket_object).qualified_total or OBJECT(TEMP.bucket_object).qualified_total eq '' or OBJECT(TEMP.bucket_object).charge_final_if_entry eq '1')</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'get_interval_dates'</name>
+          <param name='interval_id'>OBJECT(TEMP.bucket_object).id_usage_interval</param>
+          <param name='start_date'>TEMP.start_date</param>
+          <param name='end_date'>TEMP.end_date</param>
+        </call_proc_for_current_object>
+
+        <print>'FINAL TRIGGER: I have cycle unit type ['~OBJECT(TEMP.bucket_object).cycle_unit_type~'] and ['~OBJECT(TEMP.bucket_object).end_date~'] and ['~TEMP.end_date~']'</print>
+        <if>
+          <condition>
+            (OBJECT(TEMP.bucket_object).cycle_unit_type Eq 'interval' and (OBJECT(TEMP.bucket_object).intervals_remaining eq '' or OBJECT(TEMP.bucket_object).intervals_remaining eq '0'))
+            or (OBJECT(TEMP.bucket_object).cycle_unit_type Ne 'interval' and OBJECT(TEMP.bucket_object).end_date lte TEMP.end_date)
+          </condition>
+          <then>
+            <if>
+              <condition>OBJECT(TEMP.bucket_object).charge_permutation_proc ne ''</condition>
+              <then>
+                <call_dynamic_proc_for_object>
+                  <name>OBJECT(TEMP.bucket_object).charge_permutation_proc</name>
+                  <object_id>TEMP.bucket_object</object_id>
+                  <param name='charge_direction'>'final'</param>
+                  <param name='usage_object'>TEMP.usage_object</param>
+                  <param name='bucket_object'>TEMP.bucket_object</param>
+                  <param name='parent_object'>''</param>
+                  <param name='precalc_amount'>''</param>
+                  <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+                </call_dynamic_proc_for_object>
+              </then>
+              <else>
+                <c>need to fire final trigger for bucket</c>
+                <print>'Firing final bucket trigger['~OBJECT(TEMP.bucket_object).qualified_total~']['~OBJECT(TEMP.bucket_object).tier_start~']['~OBJECT(TEMP.bucket_object).tier_end~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>
+                <call_dynamic_proc_for_object>
+                  <name>'create_charge_'~OBJECT(TEMP.bucket_object).charge_type_id</name>
+                  <object_id>TEMP.bucket_object</object_id>
+                  <param name='charge_direction'>'final'</param>
+                  <param name='usage_object'>TEMP.usage_object</param>
+                  <param name='bucket_object'>TEMP.bucket_object</param>
+                  <param name='parent_object'>''</param>
+                  <param name='precalc_amount'>''</param>
+                  <param name='charge_object_id'>OBJECT(TEMP.bucket_object).charge_object_id</param>
+                </call_dynamic_proc_for_object>
+              </else>
+            </if>
+          </then>
+        </if>
+      </then>
+	  <!--<else>
+        <print>'Ignoring final bucket trigger['~OBJECT(TEMP.bucket_object).qualified_total~']['~OBJECT(TEMP.bucket_object).tier_start~']['~OBJECT(TEMP.bucket_object).tier_end~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>
+	  </else>-->
+    </if>
+  
+  </proc>
+
+</procs>

@@ -1,0 +1,200 @@
+<proc name="set_tax_rates">
+
+  <run_once>
+    <do>GLOBAL.region = 'NA'</do>
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query type="sql">
+        "select 0 total_rows"
+      </query>
+      <query type="oracle">
+        "select count(*) total_rows from user_tab_columns where column_name like '%SERV%' and table_name = 'T_PT_TAXRATE'"
+      </query>
+      <cursor>TEMP.tax_csr</cursor>
+      <then>
+        <if>
+          <condition>OBJECT(TEMP.tax_csr).total_rows GT '0'</condition>
+          <then>
+            <do>GLOBAL.region = 'APAC'</do>
+          </then>
+        </if>
+      </then>
+    </db_select>
+    <if>
+      <condition>GLOBAL.region Eq 'NA'</condition>
+      <then>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query type="sql">
+            "select 0 total_rows"
+          </query>
+          <query type="oracle">
+            "select count(*) total_rows from user_tables where table_name = 'T_IC_TAX_REFEED_TRANS'"
+          </query>
+          <cursor>TEMP.tax_csr</cursor>
+          <loop>
+            <if>
+              <condition>OBJECT(TEMP.tax_csr).total_rows EQ '0'</condition>
+              <then>
+                <do>GLOBAL.region = 'EMEA'</do>
+              </then>
+            </if>
+          </loop>
+        </db_select>
+      </then>
+    </if>
+    
+  </run_once>
+
+  <if>
+    <condition>GLOBAL.region Eq 'EMEA'</condition>
+    <then>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="sql">
+          "select 1"
+        </query>
+        <query type="oracle">
+          "with my_id_pricelists as (select c_pricelist id_pricelist from t_av_internal where id_acc = 123)
+          select /*+ ORDERED USE_NL(f) INDEX(f) */
+          f.*, a.c_city tax_city, b.id_enum_data tax_country, ac.c_tax_rounding
+          from t_av_contact a
+          inner join t_av_internal aa on a.id_acc = aa.id_acc
+          left outer join t_av_ancestorareakey ab on a.id_acc = ab.id_acc and ab.c_ancestorarea = 'COMPANY'
+          left outer join t_ic_company_tax_rounding ac on ab.c_ancestorareakey = ac.c_areakey
+          inner join t_enum_data b on 'INTERCALL.COM/CONFCOMMON/ISOCOUNTRYCODE/'||upper(a.c_country) = upper(b.nm_enum_data)
+          inner join my_id_pricelists c on 1=1
+          inner join t_rsched d on d.id_pricelist = c.id_pricelist
+          inner join t_effectivedate e on e.id_eff_date = d.id_eff_date
+          inner join t_pt_taxrate f on d.id_sched = f.id_sched and f.tt_end = mtmaxdate()
+          where c_contacttype = (select id_enum_data from t_enum_data where upper(nm_enum_data) = upper('metratech.com/accountcreation/contacttype/bill-to'))
+          and a.id_acc = $${OBJECT.id_acc}
+          and (b.id_enum_data = f.c_tax_country or f.c_tax_country IS NULL)
+          and (sysdate > e.dt_start or e.dt_start IS NULL)
+          and (e.dt_end > sysdate or e.dt_end IS NULL)
+          and (upper(c_city) = f.c_tax_city or f.c_tax_city IS NULL)
+          and (aa.c_taxexempt = f.c_tax_exempt or f.c_tax_exempt IS NULL)
+          order by nvl(e.dt_start,mtmindate()) desc, n_order"
+        </query>
+        <cursor>TEMP.tax_csr</cursor>
+        <loop>
+          <do>OBJECT.c_rc_tax_rate = OBJECT(TEMP.tax_csr).c_tax_rate</do>
+          <do>OBJECT.c_rc_tax_cntry = OBJECT(TEMP.tax_csr).tax_country</do>
+          <do>OBJECT.c_rc_tax_exempt_cat = OBJECT(TEMP.tax_csr).c_taxexemptcat</do>
+          <do>OBJECT.c_rc_tax_amt = OBJECT(TEMP.tax_csr).c_tax_rate * OBJECT.c_rc_amt</do>
+          <if>
+            <condition>OBJECT(TEMP.tax_csr).c_tax_rounding eq ''</condition>
+            <then>
+              <call_proc_for_current_object>
+                <name>'round_amount'</name>
+                <param name='source_field'>OBJECT.c_rc_tax_amt</param>
+                <param name='precision'>'6'</param>
+                <param name='target_field'>OBJECT.c_rc_tax_amt</param>
+              </call_proc_for_current_object>
+            </then>
+            <else>
+              <call_proc_for_current_object>
+                <name>'round_currency_amount'</name>
+                <param name='source_field'>OBJECT.c_rc_tax_amt</param>
+                <param name='target_currency'>OBJECT.am_currency</param>
+                <param name='target_field'>OBJECT.c_rc_tax_amt</param>
+              </call_proc_for_current_object>
+            </else>
+          </if>
+        </loop>
+      </db_select>
+    </then>
+  </if>
+
+  <if>
+    <condition>GLOBAL.region Eq 'APAC'</condition>
+    <then>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="sql">
+          "select 1"
+        </query>
+        <query type="oracle">
+          "with my_id_pricelists as (select c_pricelist id_pricelist from t_av_internal where id_acc = 123)
+          select /*+ ORDERED USE_NL(f) INDEX(f) */
+          f.*, a.c_city tax_city, b.id_enum_data tax_country, ac.c_tax_rounding
+          from t_av_contact a
+          inner join t_av_internal aa on a.id_acc = aa.id_acc
+          left outer join t_account_ancestor aa1 on aa1.id_descendent = a.id_acc
+          left outer join t_av_divinfo aa2 on aa1.id_ancestor = aa2.id_acc
+          left outer join t_av_ancestorareakey ab on a.id_acc = ab.id_acc and ab.c_ancestorarea = 'COMPANY'
+          left outer join t_ic_company_tax_rounding ac on ab.c_ancestorareakey = ac.c_areakey
+          inner join t_enum_data b on 'INTERCALL.COM/CONFCOMMON/ISOCOUNTRYCODE/'||upper(a.c_country) = upper(b.nm_enum_data)
+          inner join my_id_pricelists c on 1=1
+          inner join t_rsched d on d.id_pricelist = c.id_pricelist
+          inner join t_effectivedate e on e.id_eff_date = d.id_eff_date
+          inner join t_pt_taxrate f on d.id_sched = f.id_sched and f.tt_end = mtmaxdate()
+          where c_contacttype = (select id_enum_data from t_enum_data where upper(nm_enum_data) = upper('metratech.com/accountcreation/contacttype/bill-to'))
+          and a.id_acc = $${OBJECT.id_acc}
+          and (b.id_enum_data = f.c_tax_country or f.c_tax_country IS NULL)
+          and (sysdate > e.dt_start or e.dt_start IS NULL)
+          and (e.dt_end > sysdate or e.dt_end IS NULL)
+          and (upper(c_city) = f.c_tax_city or f.c_tax_city IS NULL)
+          and (aa.c_taxexempt = f.c_tax_exempt or f.c_tax_exempt IS NULL)
+          and (aa2.c_division_code = f.c_division_id or f.c_division_id IS NULL)
+          order by nvl(e.dt_start,mtmindate()) desc, n_order;"
+        </query>
+        <cursor>TEMP.tax_csr</cursor>
+        <loop>
+          <do>OBJECT.c_rc_tax_rate = OBJECT(TEMP.tax_csr).c_tax_rate</do>
+          <do>OBJECT.c_rc_tax_cntry = OBJECT(TEMP.tax_csr).tax_country</do>
+          <do>OBJECT.c_rc_tax_exempt_cat = OBJECT(TEMP.tax_csr).c_taxexemptcat</do>
+          <do>OBJECT.c_rc_vat_tax_amt = OBJECT(TEMP.tax_csr).c_tax_rate * OBJECT.c_rc_amt</do>
+          <do>OBJECT.c_rc_serv1_tax_rate = OBJECT(TEMP.tax_csr).c_service1_tax_rate</do>
+          <do>OBJECT.c_rc_serv2_tax_rate = OBJECT(TEMP.tax_csr).c_service2_tax_rate</do>
+          <do>OBJECT.c_rc_serv1_tax_amt = OBJECT(TEMP.tax_csr).c_service1_tax_rate * OBJECT.c_rc_amt</do>
+          <do>OBJECT.c_rc_serv2_tax_amt = OBJECT(TEMP.tax_csr).c_service2_tax_rate * OBJECT.c_rc_amt</do>
+          <if>
+            <condition>OBJECT(TEMP.tax_csr).c_tax_rounding eq ''</condition>
+            <then>
+              <call_proc_for_current_object>
+                <name>'round_amount'</name>
+                <param name='source_field'>OBJECT.c_rc_vat_tax_amt</param>
+                <param name='precision'>'6'</param>
+                <param name='target_field'>OBJECT.c_rc_vat_tax_amt</param>
+              </call_proc_for_current_object>
+              <call_proc_for_current_object>
+                <name>'round_amount'</name>
+                <param name='source_field'>OBJECT.c_rc_serv1_tax_amt</param>
+                <param name='precision'>'6'</param>
+                <param name='target_field'>OBJECT.c_rc_serv1_tax_amt</param>
+              </call_proc_for_current_object>
+              <call_proc_for_current_object>
+                <name>'round_amount'</name>
+                <param name='source_field'>OBJECT.c_rc_serv2_tax_amt</param>
+                <param name='precision'>'6'</param>
+                <param name='target_field'>OBJECT.c_rc_serv2_tax_amt</param>
+              </call_proc_for_current_object>
+            </then>
+            <else>
+              <call_proc_for_current_object>
+                <name>'round_currency_amount'</name>
+                <param name='source_field'>OBJECT.c_rc_vat_tax_amt</param>
+                <param name='target_currency'>OBJECT.am_currency</param>
+                <param name='target_field'>OBJECT.c_rc_vat_tax_amt</param>
+              </call_proc_for_current_object>
+              <call_proc_for_current_object>
+                <name>'round_currency_amount'</name>
+                <param name='source_field'>OBJECT.c_rc_serv1_tax_amt</param>
+                <param name='target_currency'>OBJECT.am_currency</param>
+                <param name='target_field'>OBJECT.c_rc_serv1_tax_amt</param>
+              </call_proc_for_current_object>
+              <call_proc_for_current_object>
+                <name>'round_currency_amount'</name>
+                <param name='source_field'>OBJECT.c_rc_serv2_tax_amt</param>
+                <param name='target_currency'>OBJECT.am_currency</param>
+                <param name='target_field'>OBJECT.c_rc_serv2_tax_amt</param>
+              </call_proc_for_current_object>
+            </else>
+          </if>
+        </loop>
+      </db_select>
+    </then>
+  </if>
+
+</proc>

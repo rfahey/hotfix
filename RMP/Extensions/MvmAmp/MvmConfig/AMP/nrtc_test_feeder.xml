@@ -1,0 +1,63 @@
+<procs>
+  <proc name="nrtc_test_feeder">
+
+
+
+    <do>TEMP.should_pull = mod(GLOBAL.node_id,3)</do>
+    <print>'I AM STARTING THE PRODUCER PROC!!!! with ['~GLOBAL.node_id~'] and ['~TEMP.should_pull~']'</print>
+    
+
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query>
+        "select a.*, d.* from j_t_acc_usage a inner join j_t_pv_nonrecurringcharge d on 1=1 where 1 = $${TEMP.should_pull} --inner join t_acc_usage b on 1=1 --inner join jonah c on 1=1"
+      </query>
+      <cursor>TEMP.tau_csr</cursor>
+      <loop>
+
+        <call_proc_for_current_object>
+          <name>'determine_account_resolution_node'</name>
+          <param name='id_acc'>OBJECT(TEMP.tau_csr).id_acc</param>
+          <param name='logical_instance_id'>TEMP.logical_instance_id</param>
+        </call_proc_for_current_object>
+
+        <!--<print>'NOW Routing node is ['~TEMP.logical_instance_id~']'</print> 
+        <print>'Sending id_sess ['~OBJECT(TEMP.tau_csr).id_sess~'] to node ['~TEMP.logical_instance_id~']'</print>-->
+        <spawn>
+          <internal_type>'format_array_delta'</internal_type>
+          <feedback_name>OBJECT(TEMP.tau_csr).id_view</feedback_name>
+          <object_type>'USAGE_EVENT'</object_type>
+          <object_id>TEMP.new_usage_object</object_id>
+          <delta_tracking_support>'1'</delta_tracking_support>
+          <delta_tracking_on>'1'</delta_tracking_on>
+        </spawn>
+        <inherit_object>
+          <source>TEMP.tau_csr</source>
+          <target>TEMP.new_usage_object</target>
+        </inherit_object>
+        <do>object_delta_set_state(TEMP.new_usage_object,'SettingNew')</do>
+        <send_proc_call>
+          <name>'resolve_account_and_route_to_logical_node'</name>
+          <object_id>TEMP.new_usage_object</object_id>
+          <logical_node_id>TEMP.logical_instance_id</logical_node_id>
+          <priority>50</priority>
+        </send_proc_call>
+        <yield_to_higher_priority_work>
+          <did_yield>TEMP.junk</did_yield>
+        </yield_to_higher_priority_work>
+        <!--<print>'Adding dummy DB update to test delta capture!!!!!!'</print>-->
+        <!--<do>GLOBAL.bg_id_counter = (GLOBAL.bg_id_counter eq ''?1000:GLOBAL.bg_id_counter) + 1</do>
+        <do>TEMP.my_bg_id = GLOBAL.bg_id_counter * 10 + GLOBAL.node_id</do>
+        <db_execute>
+          <login_object>GLOBAL.target_login</login_object>
+          <statement>
+            "insert into agg_boundary_groups (boundary_group_id, lock_date, lock_guid, logical_instance_id) values($${TEMP.my_bg_id},null,null,3)"
+          </statement>
+          <num_rows>TEMP.num_rows</num_rows>
+        </db_execute>-->
+      </loop>
+    </db_select>
+    <print>'I AM DONE WITH THE PRODUCER PROC!!!!'</print>
+  </proc>
+
+</procs>

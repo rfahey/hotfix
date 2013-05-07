@@ -1,0 +1,66 @@
+<procs>
+  <proc name='overlay_decision_history'>
+    <param name='my_bucket'/>
+    <print>'Trying to overlay decision history! for decision ['~OBJECT(TEMP.my_bucket).decision_unique_id~']'</print>
+    <index_select>
+      <index>'PREVIOUS_DECISION_INFO'</index>
+      <field name="decision_unique_id">OBJECT(TEMP.my_bucket).decision_unique_id</field>
+      <field name="start_date">OBJECT(TEMP.my_bucket).start_date</field>
+      <field name="end_date">OBJECT(TEMP.my_bucket).end_date</field>
+      <cursor>TEMP.prev_decision_csr</cursor>
+      <then>
+        <print>'I found decision history['~OBJECT(TEMP.my_bucket).tier_metric~']!!!!!'</print>
+        <do>TEMP.orig_interval = OBJECT(TEMP.my_bucket).id_usage_interval</do>
+        <print>'I have amount of ['~OBJECT(TEMP.prev_decision_csr).pre_qualified_amount~']'</print>
+        <inherit_object>
+          <source>TEMP.prev_decision_csr</source>
+          <target>TEMP.my_bucket</target>
+        </inherit_object>
+        <do>OBJECT(TEMP.my_bucket).id_usage_interval = TEMP.orig_interval</do>
+        <do>OBJECT(TEMP.my_bucket).intervals_remaining = OBJECT(TEMP.my_bucket).intervals_remaining - 1</do>
+        <if>
+          <condition>OBJECT(TEMP.my_bucket).tier_metric Eq 'amount'</condition>
+          <then>
+            <do>OBJECT(TEMP.my_bucket).qualified_total = OBJECT(TEMP.my_bucket).pre_qualified_amount</do>
+            <do>OBJECT(TEMP.my_bucket).last_qualified_total = OBJECT(TEMP.my_bucket).pre_qualified_amount</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.my_bucket).tier_metric Eq 'units'</condition>
+          <then>
+            <do>OBJECT(TEMP.my_bucket).qualified_total = OBJECT(TEMP.my_bucket).pre_qualified_units</do>
+            <do>OBJECT(TEMP.my_bucket).last_qualified_total = OBJECT(TEMP.my_bucket).pre_qualified_units</do>
+          </then>
+        </if>
+        <if>
+          <condition>OBJECT(TEMP.my_bucket).tier_metric Eq 'events'</condition>
+          <then>
+            <do>OBJECT(TEMP.my_bucket).qualified_total = OBJECT(TEMP.my_bucket).pre_qualified_events</do>
+            <do>OBJECT(TEMP.my_bucket).last_qualified_total = OBJECT(TEMP.my_bucket).pre_qualified_events</do>
+          </then>
+        </if>
+        <do>OBJECT(TEMP.my_bucket).qualified_units = OBJECT(TEMP.my_bucket).pre_qualified_units</do>
+        <do>OBJECT(TEMP.my_bucket).qualified_amount = OBJECT(TEMP.my_bucket).pre_qualified_amount</do>
+        <do>OBJECT(TEMP.my_bucket).qualified_events = OBJECT(TEMP.my_bucket).pre_qualified_events</do>
+        <do>OBJECT(TEMP.my_bucket).last_qualified_units = OBJECT(TEMP.my_bucket).pre_qualified_units</do>
+        <do>OBJECT(TEMP.my_bucket).last_qualified_amount = OBJECT(TEMP.my_bucket).pre_qualified_amount</do>
+        <do>OBJECT(TEMP.my_bucket).last_qualified_events = OBJECT(TEMP.my_bucket).pre_qualified_events</do>
+        <do>OBJECT(TEMP.my_bucket).total_rated_units = OBJECT(TEMP.my_bucket).pre_total_rated_units</do>
+        <do>OBJECT(TEMP.my_bucket).total_rated_amount_delta = OBJECT(TEMP.my_bucket).pre_total_rated_amount_delta</do>
+        <do>OBJECT(TEMP.my_bucket).total_discount_amount = OBJECT(TEMP.my_bucket).pre_total_discount_amount</do>
+        <do>OBJECT(TEMP.my_bucket).total_discounted_amount = OBJECT(TEMP.my_bucket).pre_total_discounted_amount</do>
+        <do>OBJECT(TEMP.my_bucket).total_discounted_units = OBJECT(TEMP.my_bucket).pre_total_discounted_units</do>
+        <do>OBJECT(TEMP.my_bucket).total_discounted_events = OBJECT(TEMP.my_bucket).pre_total_discounted_events</do>
+        <do>OBJECT(TEMP.my_bucket).total_rated_events = OBJECT(TEMP.my_bucket).pre_total_rated_events</do>
+        <do>OBJECT(TEMP.my_bucket).total_rated_amount_after = OBJECT(TEMP.my_bucket).pre_total_rated_amount_after</do>
+        <do>OBJECT(TEMP.my_bucket).total_rated_units = OBJECT(TEMP.my_bucket).pre_total_rated_units</do>
+        <do>OBJECT(TEMP.my_bucket).agg_applied_tier_counter = 0</do>
+        <do>OBJECT(TEMP.my_bucket).total_generated_events = OBJECT(TEMP.my_bucket).pre_total_generated_events</do>
+        <do>OBJECT(TEMP.my_bucket).total_generated_amount = OBJECT(TEMP.my_bucket).pre_total_generated_amount</do>
+
+        <print>'I have incoming tier amount of ['~OBJECT(TEMP.my_bucket).pre_qualified_amount~'] and outgoing ['~OBJECT(TEMP.my_bucket).qualified_amount~']'</print>
+      </then>
+    </index_select>
+  </proc>
+
+</procs>

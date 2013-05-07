@@ -1,0 +1,329 @@
+<procs>
+
+  <!-- ==================================================================== -->
+  <!-- This is the slave process that is asked to run usage through the     -->
+  <!-- all decisions for the account.                                       -->
+  <!-- Input:                                                               -->
+  <!--   usage_object  - a usage event matching any PV.                     -->
+  <!--                                                                      -->
+  <!-- ==================================================================== -->
+
+  <proc name='process_usage_event'>
+
+    <do>TEMP.usage_object = OBJECT.object_id</do>
+
+    <initialize>
+      <define_memory_index>
+        <index>'CACHED_WORK_BY_ACC'</index>
+        <key_field>'id_acc'</key_field>
+        <field type='object_id'>'bucket_object'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'CACHED_BUCKETS'</index>
+        <key_field type='object_id'>'bucket_object'</key_field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'CACHED_BUCKET_SLICES'</index>
+        <key_field>'bucket_object'</key_field>
+        <key_field type='search'>'start_date'</key_field>
+        <field type='object_id'>'bucket_object_slice'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'DUMMY_CACHED_BUCKET_SLICES'</index>
+        <field type='object_id'>'bucket_object_slice'</field>
+      </define_memory_index>
+      <define_memory_index>
+        <index>'NRT_GENERATED_CHARGES'</index>
+        <key_field>'id_sess'</key_field>
+        <key_field type='object_id'>'usage_object'</key_field>
+      </define_memory_index>
+
+
+    </initialize>
+    <do>TEMP.new_bucket_object = ''</do>
+
+
+    <if>
+      <condition>1 eq 1</condition>
+      <then>
+        
+
+    <!--<print>'Processing usage event ['~OBJECT.id_sess~']'</print>-->
+    <c>Make sure the decisions are cached for the payee of the usage event</c>
+    <index_get>
+      <index>'CACHED_WORK_BY_ACC'</index>
+      <field name='id_acc'>OBJECT(TEMP.usage_object).id_payee</field>
+      <else>
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query>
+            "select distinct a.id_acc, b.decision_unique_id, b.tier_priority, b.tt_start, b.id_sched, b.n_order from AGG_AQG_MAP a
+            inner join agg_decision_info b on a.id_acc = b.id_acc and a.account_qualification_group = b.account_qualification_group
+            where child_id_acc = $${OBJECT(TEMP.usage_object).id_payee} and b.tier_responsiveness = 'realtime'
+            order by b.tier_priority, b.tt_start, b.id_sched, b.n_order"
+          </query>
+          <cursor>TEMP.aqg_csr</cursor>
+          <loop>
+            <index_get>
+              <index>'CACHED_BUCKETS'</index>
+              <field name='bucket_object'>OBJECT(TEMP.aqg_csr).decision_unique_id</field>
+              <else>
+                <db_select>
+                  <login_object>GLOBAL.target_login</login_object>
+                  <query>
+                    "SELECT * from agg_decision_info a
+                    where a.decision_unique_id = $${OBJECT(TEMP.aqg_csr).decision_unique_id}"
+                  </query>
+                  <cursor>TEMP.adi_csr</cursor>
+                  <then>
+                    <spawn>
+                      <internal_type>'format_array_delta'</internal_type>
+                      <object_type>'TIER_BUCKET_INFO'</object_type>
+                      <input_object_id>OBJECT(TEMP.adi_csr).decision_unique_id</input_object_id>
+                      <object_id>TEMP.new_bucket_info_object</object_id>
+                      <inherit_mvm_format_string>OBJECT(TEMP.adi_csr).decision_object_id</inherit_mvm_format_string>
+                      <delta_tracking_support>'0'</delta_tracking_support>
+                      <delta_tracking_on>'0'</delta_tracking_on>
+                    </spawn>
+
+                    <inherit_object>
+                      <source>TEMP.adi_csr</source>
+                      <target>TEMP.new_bucket_info_object</target>
+                    </inherit_object>
+                    <print>'My decision info object is ['~dump_object(OBJECT(TEMP.adi_csr).decision_unique_id)~']'</print>
+                    <index_insert>
+                      <index>'CACHED_BUCKETS'</index>
+                      <field name="bucket_object">OBJECT(TEMP.adi_csr).decision_unique_id</field>
+                    </index_insert>
+                    <db_select>
+                      <login_object>GLOBAL.target_login</login_object>
+                      <query type='sql'>
+                        "SELECT * from agg_decision_audit_trail
+                        where decision_unique_id = $${OBJECT(TEMP.aqg_csr).decision_unique_id} and expiration_date > getdate()
+                        order by start_date"
+                      </query>
+                      <query type='oracle'>
+                        "SELECT * from agg_decision_audit_trail
+                        where decision_unique_id = $${OBJECT(TEMP.aqg_csr).decision_unique_id} and expiration_date > sysdate
+                        order by start_date"
+                      </query>
+                      <cursor>TEMP.adat_csr</cursor>
+                      <loop>
+                        <spawn>
+                          <internal_type>'format_array_delta'</internal_type>
+                          <object_type>'TIER_BUCKET'</object_type>
+                          <object_id>TEMP.new_bucket_object</object_id>
+                          <delta_tracking_support>'1'</delta_tracking_support>
+                          <delta_tracking_on>'1'</delta_tracking_on>
+                        </spawn>
+                        <do>object_delta_set_state(TEMP.new_bucket_object,'SettingNew')</do>
+                        <object_delta_add_table>
+                          <object_id>TEMP.new_bucket_object</object_id>
+                          <table_name>'AGG_DECISION_AUDIT_TRAIL'</table_name>
+                        </object_delta_add_table>
+                        <inherit_object>
+                          <source>OBJECT(TEMP.adi_csr).decision_unique_id</source>
+                          <target>TEMP.new_bucket_object</target>
+                        </inherit_object>
+                        <inherit_object>
+                          <source>TEMP.adat_csr</source>
+                          <target>TEMP.new_bucket_object</target>
+                        </inherit_object>
+
+                        <!--<print>'My decision slice object is ['~dump_object(TEMP.new_bucket_object)~']'</print>-->
+
+                        <!--<print>'Inserting bucket ['~OBJECT(TEMP.adi_csr).decision_unique_id~'] and start ['~OBJECT(TEMP.new_bucket_object).start_date~'] and slice['~TEMP.new_bucket_object~']'</print>-->
+                        <index_insert>
+                          <index>'CACHED_BUCKET_SLICES'</index>
+                          <field name="bucket_object">OBJECT(TEMP.adi_csr).decision_unique_id</field>
+                          <field name="start_date">OBJECT(TEMP.new_bucket_object).start_date</field>
+                          <field name="bucket_object_slice">TEMP.new_bucket_object</field>
+                        </index_insert>
+                        <index_insert>
+                          <index>'DUMMY_CACHED_BUCKET_SLICES'</index>
+                          <field name="bucket_object_slice">TEMP.new_bucket_object</field>
+                        </index_insert>
+                        <!--<print>'My2 decision slice object is ['~dump_object(TEMP.new_bucket_object)~']'</print>-->
+                      </loop>
+                    </db_select>
+                  </then>
+                </db_select>
+              </else>
+            </index_get>
+            <!--<print>'Before insert into struct for id_acc ['~OBJECT(TEMP.usage_object).id_payee~']'</print>-->
+            <index_insert>
+              <index>'CACHED_WORK_BY_ACC'</index>
+              <field name="id_acc">OBJECT(TEMP.usage_object).id_payee</field>
+              <field name="bucket_object">OBJECT(TEMP.aqg_csr).decision_unique_id</field>
+            </index_insert>
+          </loop>
+        </db_select>
+        <index_get>
+          <index>'CACHED_WORK_BY_ACC'</index>
+          <field name='id_acc'>OBJECT(TEMP.usage_object).id_payee</field>
+          <else>
+            <index_insert>
+              <index>'CACHED_WORK_BY_ACC'</index>
+              <field name="id_acc">OBJECT(TEMP.usage_object).id_payee</field>
+              <field name="bucket_object">''</field>
+            </index_insert>
+          </else>
+        </index_get>
+      </else>
+    </index_get>
+
+
+
+    <debug switch='log_usage_record'>'Beginning to iterate through decisions for account owning usage event.'</debug>
+
+    <index_select>
+      <index>'CACHED_WORK_BY_ACC'</index>
+      <field name="id_acc">OBJECT(TEMP.usage_object).id_payee</field>
+      <cursor>TEMP.work_csr</cursor>
+      <loop>
+        <!--<print>'I have cached work for acc ['~OBJECT(TEMP.usage_object).id_payee~']'</print>-->
+        <do>TEMP.bucket_info = OBJECT(TEMP.work_csr).bucket_object</do>
+        <do>TEMP.bucket_slice = ''</do>
+        <do>TEMP.do_interval_comp = '0'</do>
+        <!--<print>'I have usage ['~dump_object(TEMP.usage_object)~'] and bucket ['~dump_object(TEMP.bucket_info)~']'</print>-->
+        <if>
+          <condition>OBJECT(TEMP.usage_object).dt_session gte OBJECT(TEMP.bucket_info).start_date and OBJECT(TEMP.usage_object).dt_session lt OBJECT(TEMP.bucket_info).end_date</condition>
+          <then>
+
+            <do>TEMP.lookup_date = OBJECT(TEMP.usage_object).dt_session</do>
+            <if>
+              <condition>OBJECT(TEMP.bucket_info).cycle_unit_type Eq 'interval'</condition>
+              <then>
+                <do>TEMP.do_interval_comp = '1'</do>
+                <do>TEMP.lookup_date = OBJECT(TEMP.usage_object).id_usage_interval</do>
+              </then>
+            </if>
+            <!--<print>'I am looking up slice with lookup_date ['~TEMP.lookup_date~'] and object ['~OBJECT(TEMP.work_csr).bucket_object~'] ]'~dump_object(TEMP.bucket_info)~']!!!!'</print>-->
+            <index_select>
+              <index>'CACHED_BUCKET_SLICES'</index>
+              <field name='bucket_object'>OBJECT(TEMP.work_csr).bucket_object</field>
+              <field name='start_date'>TEMP.lookup_date</field>
+              <cursor>TEMP.slice_csr</cursor>
+              <then>
+                <do>TEMP.bucket_slice = OBJECT(TEMP.slice_csr).bucket_object_slice</do>
+              </then>
+              <else>
+                <!--<print>'Creating bucket slice because the date does not fit in the boundary'</print>-->
+                <call_proc_for_current_object>
+                  <name>'create_bucket_slice'</name>
+                  <param name='bucket_object'>TEMP.bucket_info</param>
+                  <param name='bucket_slice_object'>TEMP.bucket_slice</param>
+                  <param name='usage_object'>TEMP.usage_object</param>
+                </call_proc_for_current_object>
+              </else>
+            </index_select>
+          </then>
+        </if>
+        <!--<print>'I have bucket slice of ['~TEMP.bucket_slice~'] and obj['~dump_object(TEMP.bucket_slice)~']'</print>-->
+        <if>
+          <!-- Added condition to exclude pushed usage unless pushed usage is explicitly included -->
+          <!-- Added condition to exclude dummy work for decision owners so generated charges always belong to the usage hook -->
+          <!-- Added condition to exclude work that can be skipped -->
+          <condition>(TEMP.bucket_slice ne '1' and TEMP.bucket_slice ne '') and (OBJECT(TEMP.bucket_slice).skip_work ne '1') and (OBJECT(TEMP.usage_object).dt_session gte OBJECT(TEMP.bucket_slice).start_date and OBJECT(TEMP.usage_object).dt_session lt OBJECT(TEMP.bucket_slice).end_date)</condition>
+          <then>
+            <if>
+              <condition>TEMP.do_interval_comp ne '1' or (OBJECT(TEMP.usage_object).id_usage_interval gte OBJECT(TEMP.bucket_slice).interval_start and OBJECT(TEMP.usage_object).id_usage_interval lte OBJECT(TEMP.bucket_slice).interval_end)</condition>
+              <then>
+                <if>
+                  <condition>OBJECT(TEMP.usage_object)._generated_priority eq '' or OBJECT(TEMP.usage_object)._generated_priority LT OBJECT(TEMP.bucket_slice).tier_priority or (OBJECT(TEMP.bucket_slice).include_generated_charges eq '1' and OBJECT(TEMP.usage_object)._generated_bucket eq TEMP.bucket_slice)</condition>
+                  <then>
+                    <!--<print>'Going through decision ['~OBJECT(TEMP.bucket_slice).decision_unique_id~']'</print>-->
+                    <debug switch='log_decisions'>'Pushing usage record id_sess '~OBJECT(TEMP.usage_object).id_sess~' through decision ['~OBJECT(TEMP.bucket_slice).decision_unique_id~']. Priority: '~OBJECT(TEMP.bucket_slice).tier_priority~', start date: '~OBJECT(TEMP.bucket_slice).start_date~', end date: '~OBJECT(TEMP.bucket_slice).end_date~'.'</debug>
+                    <do>OBJECT(TEMP.usage_object).is_realtime = 1</do>
+                    <call_proc_for_current_object>
+                      <name>'process_usage_through_bucket'</name>
+                      <param name='bucket_object'>TEMP.bucket_slice</param>
+                      <param name='usage_object'>TEMP.usage_object</param>
+                    </call_proc_for_current_object>
+                  </then>
+                </if>
+              </then>
+            </if>
+          </then>
+        </if>
+      </loop>
+    </index_select>
+
+
+    <c>Adding denormalize here so we push the changes before releasing the hook</c>
+    <if>
+      <condition>OBJECT(TEMP.usage_object).current_denorm ne ''</condition>
+      <then>
+        <debug switch='log_decisions'>'Calling denorm for object id ['~TEMP.usage_object~']'</debug>
+        <call_dynamic_proc_for_object>
+          <name>'denormalize_charge_qual_'~OBJECT(TEMP.usage_object).current_denorm</name>
+          <object_id>TEMP.usage_object</object_id>
+        </call_dynamic_proc_for_object>
+      </then>
+    </if>
+
+    <do>GLOBAL.my_counter = (GLOBAL.my_counter eq ''?0:GLOBAL.my_counter) + 1</do>
+    <if>
+      <condition>GLOBAL.my_counter eq 1000</condition>
+      <then>
+        <print>'Processed 1000 rows!!!!!!!!!!'</print>
+        <do>GLOBAL.my_counter = 0</do>
+      </then>
+    </if>
+
+    <call_proc_for_current_object>
+      <name>'get_pv_table_name'</name>
+      <param name="id_view">OBJECT(TEMP.usage_object).id_view</param>
+      <param name="table_name">TEMP.pv_table</param>
+    </call_proc_for_current_object>
+    <!--<print>'I got table name ['~TEMP.pv_table~'] for id_view ['~OBJECT(TEMP.usage_object).id_view~']'</print>-->
+
+    <call_proc_for_object>
+      <name>'persist_record_to_table'</name>
+      <object_id>TEMP.usage_object</object_id>
+      <param name='transaction_id'>'not_done_yet'</param>
+      <param name='table_name'>TEMP.pv_table</param>
+      <param name='is_update'>0</param>
+    </call_proc_for_object>
+
+    <!--<print>'Before persist, my object is ['~dump_object(TEMP.usage_object)~']'</print>-->
+    <call_proc_for_object>
+      <name>'persist_record_to_table'</name>
+      <object_id>TEMP.usage_object</object_id>
+      <param name='transaction_id'>'not_done_yet'</param>
+      <param name='table_name'>'T_ACC_USAGE'</param>
+      <param name='is_update'>0</param>
+    </call_proc_for_object>
+
+    <call_proc_for_object>
+      <name>'persist_record_to_table'</name>
+      <object_id>TEMP.usage_object</object_id>
+      <param name='transaction_id'>'not_done_yet'</param>
+      <param name='table_name'>'AGG_USAGE_AUDIT_TRAIL'</param>
+      <param name='is_update'>0</param>
+    </call_proc_for_object>
+
+    <index_select_keys>
+      <index>'NRT_GENERATED_CHARGES'</index>
+      <order_by>OBJECT.id_sess</order_by>
+      <cursor>TEMP.gen_charge_csr</cursor>
+      <then>
+        <index_remove>
+          <index>'NRT_GENERATED_CHARGES'</index>
+          <field name="id_sess">OBJECT(TEMP.gen_charge_csr).id_sess</field>
+          <field name="usage_object">OBJECT(TEMP.gen_charge_csr).usage_object</field>
+        </index_remove>
+        <call_proc_for_object>
+          <name>'process_usage_event'</name>
+          <object_id>OBJECT(TEMP.gen_charge_csr).usage_object</object_id>
+          <param name='usage_object'>OBJECT(TEMP.gen_charge_csr).usage_object</param>
+        </call_proc_for_object>
+      </then>
+    </index_select_keys>
+
+      </then>
+    </if>
+
+  </proc>
+
+</procs>

@@ -1,0 +1,104 @@
+<procs>
+  <proc name='build_compound_audit_trail'>
+    <if>
+      <condition>OBJECT.current_denorm ne ''</condition>
+      <then>
+        <call_dynamic_proc_for_object>
+          <name>'denormalize_charge_qual_'~OBJECT.current_denorm</name>
+          <object_id>OBJECT.object_id</object_id>
+        </call_dynamic_proc_for_object>
+        <!--<call_proc_for_current_object>
+          <name>'audit_object_change'</name>
+          <param name='field_name'>'current_denorm'</param>
+          <param name='field_value'>''</param>
+        </call_proc_for_current_object>-->
+      </then>
+    </if>
+
+    <if>
+      <condition>OBJECT.agg_applied_tier_counter ne ''</condition>
+      <then>
+        <do>TEMP.agg_applied_tiers = '|'</do>
+        <do>TEMP.agg_applied_tier_ranges = '|'</do>
+        <do>TEMP.agg_applied_tier_amounts = '|'</do>
+        <do>TEMP.agg_field = '1'</do>
+        <while>
+          <condition>TEMP.agg_field LTE OBJECT.agg_applied_tier_counter</condition>
+          <loop>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'agg_tier_'~TEMP.agg_field~'_id'</field_name>
+              <output>TEMP.value</output>
+            </get_object_field>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'agg_tier_'~TEMP.agg_field~'_start'</field_name>
+              <output>TEMP.tier_start</output>
+            </get_object_field>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'agg_tier_'~TEMP.agg_field~'_end'</field_name>
+              <output>TEMP.tier_end</output>
+            </get_object_field>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'agg_tier_'~TEMP.agg_field~'_amount_before'</field_name>
+              <output>TEMP.tier_amount_before</output>
+            </get_object_field>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'agg_tier_'~TEMP.agg_field~'_amount_after'</field_name>
+              <output>TEMP.tier_amount_after</output>
+            </get_object_field>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'agg_tier_'~TEMP.agg_field~'_perc_elig'</field_name>
+              <output>TEMP.tier_perc_elig</output>
+            </get_object_field>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'agg_tier_'~TEMP.agg_field~'_cqg'</field_name>
+              <output>TEMP.tier_perc_elig</output>
+            </get_object_field>
+            <do>TEMP.agg_applied_tiers ~= TEMP.value~'-'~TEMP.cqg~'|'</do>
+            <do>TEMP.agg_applied_tier_ranges ~= TEMP.tier_start~'-'~TEMP.tier_end~'|'</do>
+            <do>TEMP.agg_applied_tier_amounts ~= TEMP.tier_amount_before~','~TEMP.tier_amount_after~','~TEMP.tier_perc_elig~'|'</do>
+            <do>TEMP.agg_field += 1</do>
+          </loop>
+        </while>
+
+        <do>OBJECT.agg_applied_tiers = TEMP.agg_applied_tiers</do>
+        <do>OBJECT.agg_applied_tier_ranges = TEMP.agg_applied_tier_ranges</do>
+        <do>OBJECT.agg_applied_tier_amounts = TEMP.agg_applied_tier_amounts</do>
+        
+      </then>
+    </if>
+    <!--<if>
+      <condition>OBJECT.field_format_id ne ''</condition>
+      <then>
+        <do>TEMP.orig_values_packed = '|'</do>
+        <index_select>
+          <index>'FIELD_FORMAT_FIELDS'</index>
+          <field name='format_id'>OBJECT.field_format_id</field>
+          <order_by type="numeric">OBJECT.field_id</order_by>
+          <cursor>TEMP.my_fields</cursor>
+         
+          <loop>
+            <get_object_field>
+              <object_id>OBJECT.object_id</object_id>
+              <field_name>'orig_val_'~OBJECT(TEMP.my_fields).field_name</field_name>
+              <output>TEMP.value</output>
+            </get_object_field>
+            <do>TEMP.orig_values_packed ~= TEMP.value~'|'</do>
+          </loop>
+        </index_select>
+        <call_proc_for_current_object>
+          <name>'audit_object_change'</name>
+          <param name='field_name'>'orig_values_packed'</param>
+          <param name='field_value'>TEMP.orig_values_packed</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>-->
+  </proc>
+
+</procs>

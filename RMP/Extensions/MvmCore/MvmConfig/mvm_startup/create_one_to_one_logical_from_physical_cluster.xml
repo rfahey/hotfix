@@ -1,0 +1,77 @@
+<proc name="create_one_to_one_logical_from_physical_cluster">
+  <param name="physical_cluster"></param>
+  <param name="logical_cluster" mode="out"></param>
+
+  <get_guid>TEMP.logical_cluster</get_guid>
+  <do>TEMP.logical_cluster=TEMP.physical_cluster~'/'~TEMP.logical_cluster</do>
+  <call_proc_for_current_object>
+    <name>'get_num_physical_nodes'</name>
+    <param name="physical_cluster">GLOBAL.physical_cluster</param>
+    <param name="result">TEMP.num_cores</param>
+  </call_proc_for_current_object>
+  <if>
+    <condition>TEMP.num_cores eq ''</condition>
+    <then>
+      <fatal>'error, unknown physical_cluster=['~GLOBAL.physical_cluster~']. Check mvm_physical_cluster_def table.'</fatal>
+    </then>
+  </if>
+
+  <do>GLOBAL.num_physical_cluster_nodes=0</do>
+  <db_select>
+    <query>
+      "
+      select
+      server,
+      num_cores
+      from mvm_physical_cluster_def
+      where physical_cluster = $${TEMP.physical_cluster}
+      order by server"
+    </query>
+    <cursor>TEMP.csr</cursor>
+    <loop>
+      <counter_select>
+        <from>1</from>
+        <to>OBJECT(TEMP.csr).num_cores</to>
+        <cursor>TEMP.ctr_csr</cursor>
+        <loop>
+          <do>TEMP.logical_node_id=(GLOBAL.num_physical_cluster_nodes+=1)</do>
+          <do>TEMP.server=OBJECT(TEMP.csr).server ne 'localhost' ? OBJECT(TEMP.csr).server : GLOBAL.server</do>
+
+          <call_proc_for_current_object>
+            <name>'build_cluster_node_args'</name>
+            <param name="physical_cluster">TEMP.physical_cluster</param>
+            <param name="logical_cluster">TEMP.logical_cluster</param>
+            <param name="logical_node_id">TEMP.logical_node_id</param>
+            <param name="physical_node_id">TEMP.physical_node_id</param>
+            <param name="starting_proc">TEMP.starting_proc</param>
+            <param name="starting_args">TEMP.starting_args</param>
+          </call_proc_for_current_object>
+
+          <index_insert>
+            <index>'MVM_PHYSICAL_CLUSTER_NODES'</index>
+            <field name="physical_node_id">TEMP.physical_node_id</field>
+            <field name="physical_cluster">TEMP.physical_cluster</field>
+            <field name="logical_cluster">TEMP.logical_cluster</field>
+            <field name="server">TEMP.server</field>
+            <field name="num_cores">1</field>
+            <field name="starting_proc">TEMP.starting_proc</field>
+            <field name="starting_args">TEMP.starting_args</field>
+          </index_insert>
+
+          <index_insert>
+            <index>'MVM_LOGICAL_CLUSTER_NODES'</index>
+            <field name="logical_node_id">TEMP.logical_node_id</field>
+            <field name="physical_node_id">TEMP.physical_node_id</field>
+            <field name="weight">1</field>
+            <field name="logical_cluster">TEMP.logical_cluster</field>
+          </index_insert>
+
+        </loop>
+      </counter_select>
+    </loop>
+  </db_select>
+
+
+</proc>
+
+

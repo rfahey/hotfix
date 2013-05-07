@@ -1,0 +1,56 @@
+<procs>
+  <proc name='bg_process_aqg_member_change'>
+    <param name='new_row_object'/>
+
+    <object_delta_get_original>
+      <object_id>TEMP.new_row_object</object_id>
+      <field_name>'child_id_acc'</field_name>
+      <value>TEMP.old_child_id_acc</value>
+    </object_delta_get_original>
+
+    <object_delta_get_original>
+      <object_id>TEMP.new_row_object</object_id>
+      <field_name>'id_acc'</field_name>
+      <value>TEMP.old_id_acc</value>
+    </object_delta_get_original>
+
+    <object_delta_get_original>
+      <object_id>TEMP.new_row_object</object_id>
+      <field_name>'account_qualification_group'</field_name>
+      <value>TEMP.old_account_qualification_group</value>
+    </object_delta_get_original>
+    
+
+    <if>
+      <condition>TEMP.old_account_qualification_group ne '' and (TEMP.old_child_id_acc ne OBJECT(TEMP.new_row_object).child_id_acc or TEMP.old_id_acc ne OBJECT(TEMP.new_row_object).id_acc or TEMP.old_account_qualification_group Ne OBJECT(TEMP.new_row_object).account_qualification_group)</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'bg_remove_acc_from_aqg'</name>
+          <param name='child_id_acc'>TEMP.old_child_id_acc</param>
+          <param name='account_qualification_group'>TEMP.old_account_qualification_group</param>
+          <param name='id_acc'>TEMP.old_id_acc</param>
+          <param name='boundary_group_id'>TEMP.old_aqg_boundary_group</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+    
+    <if>
+      <condition>TEMP.new_row_object ne '' and (TEMP.old_child_id_acc ne OBJECT(TEMP.new_row_object).child_id_acc or TEMP.old_id_acc ne OBJECT(TEMP.new_row_object).id_acc or TEMP.old_account_qualification_group Ne OBJECT(TEMP.new_row_object).account_qualification_group)</condition>
+      <then>
+        <call_proc_for_current_object>
+          <name>'bg_add_acc_to_aqg'</name>
+          <param name='child_id_acc'>OBJECT(TEMP.new_row_object).child_id_acc</param>
+          <param name='account_qualification_group'>OBJECT(TEMP.new_row_object).account_qualification_group</param>
+          <param name='id_acc'>OBJECT(TEMP.new_row_object).id_acc</param>
+          <param name='boundary_group_id'>TEMP.new_aqg_boundary_group</param>
+        </call_proc_for_current_object>
+      </then>
+    </if>
+
+    <call_proc_for_current_object>
+      <name>'bg_unlock_boundary_groups'</name>
+      <param name='got_unlock'>TEMP.got_unlock</param>
+    </call_proc_for_current_object>
+
+  </proc>
+</procs>

@@ -1,0 +1,167 @@
+<procs>
+  <proc name='aggregate_bulk_children'>
+    <param name='bucket_object'/>
+    <initialize>
+      <do>GLOBAL.aggregate_targets = '1'</do>
+    </initialize>
+
+    <!--<print>'Aggregating bulk children!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>-->
+    <do>OBJECT(TEMP.bucket_object).qualified_total = '0'</do>
+    <do>OBJECT(TEMP.bucket_object).qualified_units = '0'</do>
+    <do>OBJECT(TEMP.bucket_object).qualified_amount = '0'</do>
+    <do>OBJECT(TEMP.bucket_object).qualified_events = '0'</do>
+    <index_select>
+      <index>'BUCKET_CHILDREN'</index>
+      <field name='parent_bucket_object'>TEMP.bucket_object</field>
+      <field name='tier_type'>'bulk_source'</field>
+      <cursor>TEMP.my_children</cursor>
+      <loop>
+        <print>'I have decision uid ['~OBJECT(OBJECT(TEMP.my_children).child_bucket_object).decision_unique_id~'] for object_id ['~OBJECT(TEMP.my_children).child_bucket_object~']'</print>
+        <call_proc_for_current_object>
+          <name>'localize_ref'</name>
+          <param name='bucket_object'>OBJECT(TEMP.my_children).child_bucket_object</param>
+        </call_proc_for_current_object>
+        <!--<call_proc_for_current_object>
+          <name>'localize_dimension_refs'</name>
+          <param name='root_bucket_object'>OBJECT(TEMP.my_children).child_bucket_object</param>
+          <param name='bucket_object'>OBJECT(TEMP.my_children).child_bucket_object</param>
+        </call_proc_for_current_object>-->
+        <print>'Aggregating to ['~OBJECT(TEMP.bucket_object).qualified_total~'] with child['~OBJECT(OBJECT(TEMP.my_children).child_bucket_object).decision_unique_id~'] and units ['~OBJECT(OBJECT(TEMP.my_children).child_bucket_object).qualified_units~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>
+        <do>OBJECT(TEMP.bucket_object).qualified_total += (OBJECT(OBJECT(TEMP.my_children).child_bucket_object).qualified_total==''?0:OBJECT(OBJECT(TEMP.my_children).child_bucket_object).qualified_total)</do>
+        <do>OBJECT(TEMP.bucket_object).qualified_units += (OBJECT(OBJECT(TEMP.my_children).child_bucket_object).qualified_units==''?0:OBJECT(OBJECT(TEMP.my_children).child_bucket_object).qualified_units)</do>
+        <do>OBJECT(TEMP.bucket_object).qualified_amount += (OBJECT(OBJECT(TEMP.my_children).child_bucket_object).qualified_amount==''?0:OBJECT(OBJECT(TEMP.my_children).child_bucket_object).qualified_amount)</do>
+        <do>OBJECT(TEMP.bucket_object).qualified_events += (OBJECT(OBJECT(TEMP.my_children).child_bucket_object).qualified_events==''?0:OBJECT(OBJECT(TEMP.my_children).child_bucket_object).qualified_events)</do>
+      </loop>
+    </index_select>
+
+    <if>
+      <condition>GLOBAL.aggregate_targets eq '1'</condition>
+      <then>
+        <do>TEMP.parent_events_remaining = OBJECT(TEMP.bucket_object).qualified_events</do>
+        <do>TEMP.parent_units_remaining = OBJECT(TEMP.bucket_object).qualified_units</do>
+        <do>TEMP.parent_distribution_amount_remaining = OBJECT(TEMP.bucket_object).back_distribute_unit_amount</do>
+        <if>
+          <condition>OBJECT(TEMP.bucket_object).back_distribute_unit_amount eq '-1'</condition>
+          <then>
+            <do>TEMP.parent_distribution_amount_remaining = OBJECT(TEMP.bucket_object).qualified_amount - OBJECT(TEMP.bucket_object).tier_start</do>
+          </then>
+        </if>
+
+        <index_select>
+          <index>'BUCKET_CHILDREN'</index>
+          <field name='parent_bucket_object'>TEMP.bucket_object</field>
+          <field name='tier_type'>'bulk_target'</field>
+          <cursor>TEMP.my_children</cursor>
+          <loop>
+            <do>TEMP.child_object = OBJECT(TEMP.my_children).child_bucket_object</do>
+            <call_proc_for_current_object>
+              <name>'localize_ref'</name>
+              <param name='bucket_object'>TEMP.child_object</param>
+            </call_proc_for_current_object>
+            
+
+            <print>'Assigning ['~OBJECT(TEMP.bucket_object).qualified_total~'] to child['~OBJECT(OBJECT(TEMP.my_children).child_bucket_object).decision_unique_id~']!!!!!!!!!!!!!!!!!!!!!!!!!!!!'</print>
+            <do>OBJECT(TEMP.child_object).qualified_total = OBJECT(TEMP.bucket_object).qualified_total</do>
+            <do>OBJECT(TEMP.child_object).qualified_units = OBJECT(TEMP.bucket_object).qualified_units</do>
+            <do>OBJECT(TEMP.child_object).qualified_amount = OBJECT(TEMP.bucket_object).qualified_amount</do>
+            <do>OBJECT(TEMP.child_object).qualified_events = OBJECT(TEMP.bucket_object).qualified_events</do>
+
+            <if>
+              <condition>OBJECT(TEMP.child_object).back_distribute_unit_amount ne ''</condition>
+              <then>
+                <do>OBJECT(TEMP.child_object).split_bulk = OBJECT(TEMP.child_object).split_bulk==''?(GLOBAL.split_bulk==''?0:GLOBAL.split_bulk):OBJECT(TEMP.child_object).split_bulk</do>
+                <print>'I have back distribute amount of ['~OBJECT(TEMP.child_object).back_distribute_unit_amount~'] and split bulk of ['~OBJECT(TEMP.child_object).split_bulk~'] and units of ['~OBJECT(TEMP.child_object).qualified_units~']'</print>
+                <if>
+                  <condition>OBJECT(TEMP.child_object).back_distribute_unit_amount eq '-1'</condition>
+                  <then>
+                    <do>OBJECT(TEMP.child_object).back_distribute_unit_amount = OBJECT(TEMP.child_object).qualified_amount - OBJECT(TEMP.child_object).tier_start</do>
+                  </then>
+                </if>
+                <if>
+                  <condition>OBJECT(TEMP.child_object).split_bulk ne '0'</condition>
+                  <then>
+                    <!--<do>OBJECT(TEMP.child_object).per_unit_rate = OBJECT(TEMP.child_object).back_distribute_unit_amount/OBJECT(TEMP.child_object).qualified_units</do>-->
+                    <call_proc_for_current_object>
+                      <name>'localize_ref'</name>
+                      <param name='bucket_object'>OBJECT(TEMP.child_object).bulk_source_obj_id</param>
+                    </call_proc_for_current_object>
+                    <do>OBJECT(TEMP.child_object).back_distribute = '1'</do>
+                    
+                    <!--<print>'Hard coding back_distribute_precision to 2 because the BMEs are a pain to use. Remove this.'</print>
+                    <do>OBJECT(TEMP.child_object).back_distribute_precision = '2'</do>
+                    <do>OBJECT(TEMP.bucket_object).back_distribute_precision = '2'</do>-->
+                    
+                    <do>OBJECT(TEMP.child_object).per_unit_amount_remaining = TEMP.parent_distribution_amount_remaining*(OBJECT(OBJECT(TEMP.child_object).bulk_source_obj_id).qualified_units eq ''?0:OBJECT(OBJECT(TEMP.child_object).bulk_source_obj_id).qualified_units)/TEMP.parent_units_remaining</do>
+                    <do>OBJECT(TEMP.child_object).per_unit_units_remaining = (OBJECT(OBJECT(TEMP.child_object).bulk_source_obj_id).qualified_units eq ''?0:OBJECT(OBJECT(TEMP.child_object).bulk_source_obj_id).qualified_units)</do>
+                    <do>TEMP.parent_units_remaining = TEMP.parent_units_remaining - OBJECT(TEMP.child_object).per_unit_units_remaining</do>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).back_distribute_precision ne '' and OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+                      <then>
+                        <round>
+                          <input>OBJECT(TEMP.child_object).per_unit_amount_remaining</input>
+                          <precision>OBJECT(TEMP.bucket_object).back_distribute_precision</precision>
+                          <output>OBJECT(TEMP.child_object).per_unit_amount_remaining</output>
+                        </round>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.bucket_object).back_distribute_currency ne '' and OBJECT(TEMP.bucket_object).back_distribute_precision ne '-99'</condition>
+                      <then>
+                        <call_proc_for_current_object>
+                          <name>'round_currency_amount'</name>
+                          <param name='source_field'>OBJECT(TEMP.child_object).per_unit_amount_remaining</param>
+                          <param name='target_currency'>OBJECT(TEMP.bucket_object).back_distribute_currency</param>
+                          <param name='target_field'>OBJECT(TEMP.child_object).per_unit_amount_remaining</param>
+                        </call_proc_for_current_object>
+                      </then>
+                    </if>
+                    <do>TEMP.parent_distribution_amount_remaining = TEMP.parent_distribution_amount_remaining - OBJECT(TEMP.child_object).per_unit_amount_remaining</do>
+                    <print>'PARENT For this slice, I have amount remaining ['~OBJECT(TEMP.child_object).per_unit_amount_remaining~'] and units remaining ['~OBJECT(TEMP.child_object).per_unit_units_remaining~']'</print>
+                  </then>
+                  <else>
+                    <do>OBJECT(TEMP.child_object).back_distribute = '1'</do>
+                    <do>OBJECT(TEMP.child_object).per_unit_amount_remaining = OBJECT(TEMP.child_object).back_distribute_unit_amount</do>
+                    <do>OBJECT(TEMP.child_object).per_unit_units_remaining = OBJECT(TEMP.child_object).qualified_units</do>
+                  </else>
+                </if>
+              </then>
+            </if>
+
+            <if>
+              <condition>OBJECT(TEMP.child_object).back_distribute_event_amount ne ''</condition>
+              <then>
+                <do>OBJECT(TEMP.child_object).split_bulk = OBJECT(TEMP.child_object).split_bulk==''?(GLOBAL.split_bulk==''?0:GLOBAL.split_bulk):OBJECT(TEMP.child_object).split_bulk</do>
+                <if>
+                  <condition>OBJECT(TEMP.child_object).back_distribute_event_amount eq '-1'</condition>
+                  <then>
+                    <do>OBJECT(TEMP.child_object).back_distribute_event_amount = OBJECT(TEMP.child_object).qualified_amount</do>
+                  </then>
+                </if>
+                <if>
+                  <condition>OBJECT(TEMP.child_object).split_bulk ne '0'</condition>
+                  <then>
+                    <call_proc_for_current_object>
+                      <name>'localize_ref'</name>
+                      <param name='bucket_object'>OBJECT(TEMP.child_object).bulk_source_obj_id</param>
+                    </call_proc_for_current_object>
+                    <do>OBJECT(TEMP.child_object).per_event_rate = OBJECT(TEMP.child_object).back_distribute_event_amount/OBJECT(TEMP.child_object).qualified_events</do>
+                  </then>
+                  <else>
+                    <do>OBJECT(TEMP.child_object).back_distribute = '1'</do>
+                    <do>OBJECT(TEMP.child_object).per_event_amount_remaining = OBJECT(TEMP.child_object).back_distribute_event_amount</do>
+                    <do>OBJECT(TEMP.child_object).per_event_events_remaining = OBJECT(TEMP.child_object).qualified_events</do>
+                  </else>
+                </if>
+              </then>
+            </if>
+            <call_proc_for_current_object>
+              <name>'push_object_copy'</name>
+              <param name='object_id'>TEMP.child_object</param>
+            </call_proc_for_current_object>
+          </loop>
+        </index_select>
+      </then>
+    </if>
+  </proc>
+
+</procs>

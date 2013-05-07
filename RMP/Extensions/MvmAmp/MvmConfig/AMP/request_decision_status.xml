@@ -1,0 +1,29 @@
+<procs>
+  <proc name="request_decision_status">
+    <param name='bucket_object'/>
+    <param name='decision_status' mode='out'/>
+
+    <!--<print>'Starting request_decision_status for bucket ['~TEMP.bucket_object~'] and priority ['~OBJECT(TEMP.bucket_object).tier_priority~']'</print>-->
+    <do>TEMP.decision_status = 'notset'</do>
+    <remote_queue_proc>
+      <name>'check_decision_status'</name>
+      <process_id>GLOBAL.master_id</process_id>
+      <batch_id>TEMP.my_batch_id</batch_id>
+      <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+      <param name='bucket_object'>TEMP.bucket_object</param>
+      <param name='decision_status'>TEMP.decision_status</param>
+    </remote_queue_proc>
+    <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+
+    <batch_output_select>
+      <batch_id>TEMP.my_batch_id</batch_id>
+      <cursor>TEMP.cursor_junk</cursor>
+      <loop>
+        <do>TEMP.decision_status = OBJECT(TEMP.cursor_junk).decision_status</do>
+      </loop>
+    </batch_output_select>
+
+    <!--<print>'Decision status = ['~TEMP.decision_status~']'</print>-->
+  </proc>
+
+</procs>

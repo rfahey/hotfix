@@ -1,0 +1,1919 @@
+<procs>
+
+
+
+  <proc name='generate_charge_procs'>
+    <param name='productview_name'/>
+    <initialize>
+      <do>GLOBAL.avoid_denorm_if_no_changes = '1'</do>
+      <define_memory_index>
+        <index>'CHARGE_FIELDS'</index>
+        <key_field>'charge_name'</key_field>
+        <key_field>'productview_name'</key_field>
+        <field>'field_name'</field>
+        <field>'field_type'</field>
+        <field>'contributing_field'</field>
+        <field>'precision'</field>
+        <field>'currency_field'</field>
+        <field>'percentage_field'</field>
+        <field>'modifier'</field>
+        <field>'filter'</field>
+        <field>'field_order'</field>
+        <field>'direction'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'CHARGES_BY_NAME'</index>
+        <key_field>'charge_name'</key_field>
+        <field>'productview_name'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'FIELDTYPES_FOUND'</index>
+        <key_field>'charge_name'</key_field>
+        <key_field>'field_type'</key_field>
+        <field>'is_found'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'FIELDTYPE_COUNTERS'</index>
+        <key_field>'field_type'</key_field>
+        <field>'curr_counter'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'FIELDS_FOUND'</index>
+        <key_field>'productview_name'</key_field>
+        <key_field>'field_name'</key_field>
+        <key_field>'field_type'</key_field>
+        <field>'is_found'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'ID_VIEW_PARENTS'</index>
+        <key_field>'id_view'</key_field>
+        <field>'id_view_parent'</field>
+      </define_memory_index>
+
+      <define_memory_index>
+        <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+        <key_field>'id_view'</key_field>
+        <field>'field_name'</field>
+      </define_memory_index>
+
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query>
+          "select distinct id_view, id_view_parent from t_view_hierarchy where id_view_parent != id_view"
+        </query>
+        <cursor>TEMP.parent_pv_csr</cursor>
+        <loop>
+          <index_insert>
+            <index>'ID_VIEW_PARENTS'</index>
+            <field name="id_view">OBJECT(TEMP.parent_pv_csr).id_view</field>
+            <field name="id_view_parent">OBJECT(TEMP.parent_pv_csr).id_view_parent</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type="oracle">
+          "select lower(productview_name) productview_name, lower(charge_name) charge_name, lower(field_name) field_name, lower(field_type) field_type, lower(contributing_field) contributing_field, 
+          lower(precision) precision, lower(currency_field) currency_field, lower(percentage_field) percentage_field, modifier, filter, lower(direction) direction, field_order from usage_charge_fields"
+        </query>
+        <query type="sql">
+          "select lower(productview_name) productview_name, lower(charge_name) charge_name, lower(field_name) field_name, lower(field_type) field_type, lower(contributing_field) contributing_field,
+          lower(precision) precision, lower(currency_field) currency_field, lower(percentage_field) percentage_field, modifier, filter, lower(direction) direction, field_order from usage_charge_fields"
+        </query>
+        <cursor>TEMP.usg_charge_fields</cursor>
+        <loop>
+          <replace>
+            <input>OBJECT(TEMP.usg_charge_fields).modifier</input>
+            <old_value>'#CHARGENAME#'</old_value>
+            <new_value>'#chargename#'</new_value>
+            <output>OBJECT(TEMP.usg_charge_fields).modifier</output>
+          </replace>
+          <replace>
+            <input>OBJECT(TEMP.usg_charge_fields).filter</input>
+            <old_value>'#CHARGENAME#'</old_value>
+            <new_value>'#chargename#'</new_value>
+            <output>OBJECT(TEMP.usg_charge_fields).filter</output>
+          </replace>
+          <if>
+            <condition>OBJECT(TEMP.usg_charge_fields).charge_name ne '' and OBJECT(TEMP.usg_charge_fields).productview_name ne ''</condition>
+            <then>
+              <replace>
+                <input>OBJECT(TEMP.usg_charge_fields).field_name</input>
+                <old_value>'#chargename#'</old_value>
+                <new_value>OBJECT(TEMP.usg_charge_fields).charge_name</new_value>
+                <output>OBJECT(TEMP.usg_charge_fields).field_name</output>
+              </replace>
+              <replace>
+                <input>OBJECT(TEMP.usg_charge_fields).contributing_field</input>
+                <old_value>'#chargename#'</old_value>
+                <new_value>OBJECT(TEMP.usg_charge_fields).charge_name</new_value>
+                <output>OBJECT(TEMP.usg_charge_fields).contributing_field</output>
+              </replace>
+              <replace>
+                <input>OBJECT(TEMP.usg_charge_fields).currency_field</input>
+                <old_value>'#chargename#'</old_value>
+                <new_value>OBJECT(TEMP.usg_charge_fields).charge_name</new_value>
+                <output>OBJECT(TEMP.usg_charge_fields).currency_field</output>
+              </replace>
+              <replace>
+                <input>OBJECT(TEMP.usg_charge_fields).percentage_field</input>
+                <old_value>'#chargename#'</old_value>
+                <new_value>OBJECT(TEMP.usg_charge_fields).charge_name</new_value>
+                <output>OBJECT(TEMP.usg_charge_fields).percentage_field</output>
+              </replace>
+              <replace>
+                <input>OBJECT(TEMP.usg_charge_fields).modifier</input>
+                <old_value>'#chargename#'</old_value>
+                <new_value>OBJECT(TEMP.usg_charge_fields).charge_name</new_value>
+                <output>OBJECT(TEMP.usg_charge_fields).modifier</output>
+              </replace>
+              <replace>
+                <input>OBJECT(TEMP.usg_charge_fields).filter</input>
+                <old_value>'#chargename#'</old_value>
+                <new_value>OBJECT(TEMP.usg_charge_fields).charge_name</new_value>
+                <output>OBJECT(TEMP.usg_charge_fields).filter</output>
+              </replace>
+            </then>
+          </if>
+          <call_proc_for_current_object>
+            <name>'replace_enum_strings'</name>
+            <param name='source_string'>OBJECT(TEMP.usg_charge_fields).filter</param>
+            <param name='target_string'>OBJECT(TEMP.usg_charge_fields).filter</param>
+          </call_proc_for_current_object>
+          <call_proc_for_current_object>
+            <name>'replace_enum_strings'</name>
+            <param name='source_string'>OBJECT(TEMP.usg_charge_fields).modifier</param>
+            <param name='target_string'>OBJECT(TEMP.usg_charge_fields).modifier</param>
+          </call_proc_for_current_object>
+
+          <index_insert>
+            <index>'CHARGE_FIELDS'</index>
+            <field name="charge_name">OBJECT(TEMP.usg_charge_fields).charge_name</field>
+            <field name="productview_name">OBJECT(TEMP.usg_charge_fields).productview_name</field>
+            <field name="field_name">OBJECT(TEMP.usg_charge_fields).field_name</field>
+            <field name="field_type">OBJECT(TEMP.usg_charge_fields).field_type</field>
+            <field name="contributing_field">OBJECT(TEMP.usg_charge_fields).contributing_field</field>
+            <field name="precision">OBJECT(TEMP.usg_charge_fields).precision</field>
+            <field name="currency_field">OBJECT(TEMP.usg_charge_fields).currency_field</field>
+            <field name="percentage_field">OBJECT(TEMP.usg_charge_fields).percentage_field</field>
+            <field name="modifier">OBJECT(TEMP.usg_charge_fields).modifier</field>
+            <field name="filter">OBJECT(TEMP.usg_charge_fields).filter</field>
+            <field name="direction">OBJECT(TEMP.usg_charge_fields).direction</field>
+            <field name="field_order">OBJECT(TEMP.usg_charge_fields).field_order</field>
+          </index_insert>
+          <index_insert>
+            <index>'CHARGES_BY_NAME'</index>
+            <field name="charge_name">OBJECT(TEMP.usg_charge_fields).charge_name</field>
+            <field name="productview_name">OBJECT(TEMP.usg_charge_fields).productview_name</field>
+          </index_insert>
+        </loop>
+      </db_select>
+
+      <index_select_keys>
+        <index>'CHARGE_FIELDS'</index>
+        <cursor>TEMP.charge_fields</cursor>
+        <loop>
+          <if>
+            <condition>OBJECT(TEMP.charge_fields).charge_name ne '' and OBJECT(TEMP.charge_fields).productview_name ne ''</condition>
+            <then>
+              <!-- First get any field with productview wildcarded and incorporate it into the charge fields -->
+              <index_select>
+                <index>'CHARGE_FIELDS'</index>
+                <field name="charge_name">OBJECT(TEMP.charge_fields).charge_name</field>
+                <field name="productview_name">''</field>
+                <cursor>TEMP.wildcard_charge_fields</cursor>
+                <loop>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).field_name</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).field_name</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).contributing_field</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).contributing_field</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).currency_field</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).currency_field</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).percentage_field</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).percentage_field</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).modifier</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).modifier</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).filter</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).filter</output>
+                  </replace>
+
+                  <index_insert>
+                    <index>'CHARGE_FIELDS'</index>
+                    <field name="charge_name">OBJECT(TEMP.charge_fields).charge_name</field>
+                    <field name="productview_name">OBJECT(TEMP.charge_fields).productview_name</field>
+                    <field name="field_name">OBJECT(TEMP.wildcard_charge_fields).field_name</field>
+                    <field name="field_type">OBJECT(TEMP.wildcard_charge_fields).field_type</field>
+                    <field name="contributing_field">OBJECT(TEMP.wildcard_charge_fields).contributing_field</field>
+                    <field name="precision">OBJECT(TEMP.wildcard_charge_fields).precision</field>
+                    <field name="currency_field">OBJECT(TEMP.wildcard_charge_fields).currency_field</field>
+                    <field name="percentage_field">OBJECT(TEMP.wildcard_charge_fields).percentage_field</field>
+                    <field name="modifier">OBJECT(TEMP.wildcard_charge_fields).modifier</field>
+                    <field name="filter">OBJECT(TEMP.wildcard_charge_fields).filter</field>
+                    <field name="direction">OBJECT(TEMP.wildcard_charge_fields).direction</field>
+                    <field name="field_order">OBJECT(TEMP.wildcard_charge_fields).field_order</field>
+                  </index_insert>
+                  
+                </loop>
+              </index_select>
+              <!-- Second get any field with charge_name wildcarded and incorporate it into the charge fields -->
+              <index_select>
+                <index>'CHARGE_FIELDS'</index>
+                <field name="charge_name">''</field>
+                <field name="productview_name">OBJECT(TEMP.charge_fields).productview_name</field>
+                <cursor>TEMP.wildcard_charge_fields</cursor>
+                <loop>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).field_name</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).field_name</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).contributing_field</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).contributing_field</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).currency_field</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).currency_field</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).percentage_field</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).percentage_field</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).modifier</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).modifier</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).filter</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).filter</output>
+                  </replace>
+
+                  <index_insert>
+                    <index>'CHARGE_FIELDS'</index>
+                    <field name="charge_name">OBJECT(TEMP.charge_fields).charge_name</field>
+                    <field name="productview_name">OBJECT(TEMP.charge_fields).productview_name</field>
+                    <field name="field_name">OBJECT(TEMP.wildcard_charge_fields).field_name</field>
+                    <field name="field_type">OBJECT(TEMP.wildcard_charge_fields).field_type</field>
+                    <field name="contributing_field">OBJECT(TEMP.wildcard_charge_fields).contributing_field</field>
+                    <field name="precision">OBJECT(TEMP.wildcard_charge_fields).precision</field>
+                    <field name="currency_field">OBJECT(TEMP.wildcard_charge_fields).currency_field</field>
+                    <field name="percentage_field">OBJECT(TEMP.wildcard_charge_fields).percentage_field</field>
+                    <field name="modifier">OBJECT(TEMP.wildcard_charge_fields).modifier</field>
+                    <field name="filter">OBJECT(TEMP.wildcard_charge_fields).filter</field>
+                    <field name="direction">OBJECT(TEMP.wildcard_charge_fields).direction</field>
+                    <field name="field_order">OBJECT(TEMP.wildcard_charge_fields).field_order</field>
+                  </index_insert>
+
+                </loop>
+              </index_select>
+              <!-- Third get any field with charge_name and productview_name wildcarded and incorporate it into the charge fields -->
+              <index_select>
+                <index>'CHARGE_FIELDS'</index>
+                <field name="charge_name">''</field>
+                <field name="productview_name">''</field>
+                <cursor>TEMP.wildcard_charge_fields</cursor>
+                <loop>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).field_name</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).field_name</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).contributing_field</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).contributing_field</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).currency_field</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).currency_field</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).percentage_field</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).percentage_field</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).modifier</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).modifier</output>
+                  </replace>
+                  <replace>
+                    <input>OBJECT(TEMP.wildcard_charge_fields).filter</input>
+                    <old_value>'#chargename#'</old_value>
+                    <new_value>OBJECT(TEMP.charge_fields).charge_name</new_value>
+                    <output>OBJECT(TEMP.wildcard_charge_fields).filter</output>
+                  </replace>
+
+                  <index_insert>
+                    <index>'CHARGE_FIELDS'</index>
+                    <field name="charge_name">OBJECT(TEMP.charge_fields).charge_name</field>
+                    <field name="productview_name">OBJECT(TEMP.charge_fields).productview_name</field>
+                    <field name="field_name">OBJECT(TEMP.wildcard_charge_fields).field_name</field>
+                    <field name="field_type">OBJECT(TEMP.wildcard_charge_fields).field_type</field>
+                    <field name="contributing_field">OBJECT(TEMP.wildcard_charge_fields).contributing_field</field>
+                    <field name="precision">OBJECT(TEMP.wildcard_charge_fields).precision</field>
+                    <field name="currency_field">OBJECT(TEMP.wildcard_charge_fields).currency_field</field>
+                    <field name="percentage_field">OBJECT(TEMP.wildcard_charge_fields).percentage_field</field>
+                    <field name="modifier">OBJECT(TEMP.wildcard_charge_fields).modifier</field>
+                    <field name="filter">OBJECT(TEMP.wildcard_charge_fields).filter</field>
+                    <field name="direction">OBJECT(TEMP.wildcard_charge_fields).direction</field>
+                    <field name="field_order">OBJECT(TEMP.wildcard_charge_fields).field_order</field>
+                  </index_insert>
+
+                </loop>
+              </index_select>
+            </then>
+          </if>
+        </loop>
+      </index_select_keys>
+
+    </initialize>
+
+
+    <call_proc_for_current_object>
+      <name>'get_pv_id'</name>
+      <param name='id_view'>TEMP.id_view</param>
+      <param name='table_name'>TEMP.productview_name</param>
+    </call_proc_for_current_object>
+
+    <do>TEMP.parent_id_view = ''</do>
+    <index_select>
+      <index>'ID_VIEW_PARENTS'</index>
+      <field name="id_view">TEMP.id_view</field>
+      <cursor>TEMP.ivp_csr</cursor>
+      <then>
+        <do>TEMP.parent_id_view = OBJECT(TEMP.ivp_csr).id_view_parent</do>
+      </then>
+    </index_select>
+
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query type="oracle">
+        "select distinct lower(charge_qualification_group) charge_qualification_group from charge_qualification_groups"
+      </query>
+      <query type="sql">
+        "select distinct lower(charge_qualification_group) charge_qualification_group from charge_qualification_groups"
+      </query>
+      <cursor>TEMP.charge_qual_groups</cursor>
+      <loop>
+        <!--<print>'JONAH IS HERE DOING PV['~TEMP.productview_name~'] and ID['~TEMP.id_view~'] and CQ ['~OBJECT(TEMP.charge_qual_groups).charge_qualification_group~']'</print>-->
+        <do>OBJECT.rate_suffix = ''</do>
+        <do>OBJECT.amount_suffix = ''</do>
+        <do>OBJECT.units_suffix = ''</do>
+        <index_clear>
+          <index>'FIELDTYPES_FOUND'</index>
+        </index_clear>
+        <index_clear>
+          <index>'FIELDS_FOUND'</index>
+        </index_clear>
+        <index_clear>
+          <index>'FIELDTYPE_COUNTERS'</index>
+        </index_clear>
+        <do>TEMP.charge_qualification_group = OBJECT(TEMP.charge_qual_groups).charge_qualification_group</do>
+        
+        <db_select>
+          <login_object>GLOBAL.target_login</login_object>
+          <query type="oracle">
+            "select lower(charge_qualification_group) charge_qualification_group, lower(charge_name) charge_name, lower(productview_name) productview_name from charge_qualification_groups where lower(charge_qualification_group) = lower($${TEMP.charge_qualification_group})"
+          </query>
+          <query type="sql">
+            "select lower(charge_qualification_group) charge_qualification_group, lower(charge_name) charge_name, lower(productview_name) productview_name  from charge_qualification_groups where lower(charge_qualification_group) = lower($${TEMP.charge_qualification_group})"
+          </query>
+          <cursor>TEMP.charge_qual_csr</cursor>
+          <loop>
+            <!--<print>'JONAH STARTING LOOP with ['~OBJECT(TEMP.charge_qual_csr).productview_name~'] and ['~TEMP.productview_name~']!!!!!'</print>-->
+            <if>
+              <condition>OBJECT(TEMP.charge_qual_csr).productview_name eq '' or OBJECT(TEMP.charge_qual_csr).productview_name eq TEMP.productview_name</condition>
+              <then>
+                <!--<print>'JONAH IN LOOP with '~TEMP.charge_qualification_group~'_'~TEMP.id_view~'!!!!!!!!!'</print>-->
+                <do>
+                  TEMP.my_ncq_proc="<![CDATA[
+	      <proc name='normalize_charge_qual_"~TEMP.charge_qualification_group~"_"~TEMP.id_view~"'>
+         <if>
+          <condition>OBJECT.current_denorm ne '"~TEMP.charge_qualification_group~"_"~TEMP.id_view~"'</condition>
+          <then>
+          <if>
+            <condition>OBJECT.current_denorm ne ''</condition>
+            <then>
+              <call_dynamic_proc_for_current_object>
+                <name>'denormalize_charge_qual_'~OBJECT.current_denorm</name>
+              </call_dynamic_proc_for_current_object>
+            </then>
+          </if>
+	        <do>OBJECT.current_denorm = '"~TEMP.charge_qualification_group~"_"~TEMP.id_view~"'</do>
+          <do>OBJECT.current_charge = '"~OBJECT(TEMP.charge_qual_csr).charge_name~"'</do>
+          <do>OBJECT.current_denorm_snapshot=get_snapshot()</do>
+	                  ]]>"
+                </do>
+                
+                <do>
+                  TEMP.my_dncq_proc="<![CDATA[
+	      <proc name='denormalize_charge_qual_"~TEMP.charge_qualification_group~"_"~TEMP.id_view~"'>
+        <!--<do>OBJECT(GLOBAL.counter_object).usage_hook_select3_inside_"~TEMP.id_view~"_timer_counter = 1 + (OBJECT(GLOBAL.counter_object).usage_hook_select3_inside_"~TEMP.id_view~"_timer_counter==''?'0':OBJECT(GLOBAL.counter_object).usage_hook_select3_inside_"~TEMP.id_view~"_timer_counter)</do>-->
+        <!-- <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).usage_hook_select3_inside_"~TEMP.id_view~"_timer'> -->
+        <!-- <print>'Denormalizing ['~OBJECT.current_denorm~'] for id_sess['~OBJECT.id_sess~']'</print> -->
+	        <do>OBJECT.current_denorm = ''</do>
+	                  ]]>"
+                </do>
+                <if>
+                  <condition>GLOBAL.avoid_denorm_if_no_changes eq '1'</condition>
+                  <then>
+                    <do>
+                      TEMP.my_dncq_proc~="<![CDATA[
+          <!--<print>'JONAH HERE HAS master_amount ['~OBJECT.master_amount~'] and pre['~OBJECT.master_amount_pre~']'</print>-->
+          <if>
+            <condition>OBJECT.master_amount_pre ne OBJECT.master_amount</condition>
+            <then>
+	                  ]]>"
+                    </do>
+                  </then>
+                </if>
+                <index_select>
+                  <index>'CHARGE_FIELDS'</index>
+                  <field name="charge_name">OBJECT(TEMP.charge_qual_csr).charge_name</field>
+                  <field name="productview_name">TEMP.productview_name</field>
+                  <order_by  type="numeric">OBJECT.field_order</order_by>
+                  <cursor>TEMP.charge_fields</cursor>
+             
+                  <loop>
+                    <do>TEMP.my_field = ''</do>
+                    <!--<do>
+                      TEMP.my_dncq_proc~="<![CDATA[
+                      <do>OBJECT(GLOBAL.counter_object).gen_charge_"~OBJECT(TEMP.charge_fields).field_name~"_counter = 1 + (OBJECT(GLOBAL.counter_object).gen_charge_"~OBJECT(TEMP.charge_fields).field_name~"_counter==''?'0':OBJECT(GLOBAL.counter_object).gen_charge_"~OBJECT(TEMP.charge_fields).field_name~"_counter)</do>
+<stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_"~OBJECT(TEMP.charge_fields).field_name~"_timer'>
+            ]]>"
+                    </do>-->
+                    <if>
+                      <condition>OBJECT(TEMP.charge_fields).filter ne ''</condition>
+                      <then>
+                            <do>
+                              TEMP.my_field~="<![CDATA[
+  <if>
+    <condition>"~OBJECT(TEMP.charge_fields).filter~"</condition>
+    <then>
+            ]]>"
+                            </do>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.charge_fields).field_type Eq 'amount' or OBJECT(TEMP.charge_fields).field_type Eq 'units' or OBJECT(TEMP.charge_fields).field_type Eq 'rate'</condition>
+                      <then>
+                        <index_select>
+                          <index>'FIELDTYPES_FOUND'</index>
+                          <field name="charge_name">OBJECT(TEMP.charge_fields).charge_name</field>
+                          <field name="field_type">OBJECT(TEMP.charge_fields).field_type</field>
+                          <cursor>TEMP.field_types_csr</cursor>
+                          <else>
+                            <do>TEMP.charge_count = ''</do>
+                            <do>TEMP.curr_counter = '0'</do>
+                            <index_select>
+                              <index>'FIELDTYPE_COUNTERS'</index>
+                              <field name="field_type">OBJECT(TEMP.charge_fields).field_type</field>
+                              <cursor>TEMP.field_types</cursor>
+                              <then>
+                                <do>TEMP.charge_count = '_'~OBJECT(TEMP.field_types).curr_counter</do>
+                                <do>TEMP.curr_counter = OBJECT(TEMP.field_types).curr_counter</do>
+                                <set_object_field>
+                                  <input>TEMP.charge_count</input>
+                                  <object_id>OBJECT.object_id</object_id>
+                                  <field_name>OBJECT(TEMP.charge_fields).field_type~'_suffix'</field_name>
+                                </set_object_field>
+                              </then>
+                            </index_select>
+                            <index_remove>
+                              <index>'FIELDTYPE_COUNTERS'</index>
+                              <field name='field_type'>OBJECT(TEMP.charge_fields).field_type</field>
+                            </index_remove>
+                            <do>TEMP.curr_counter += 1</do>
+                            <index_insert>
+                              <index>'FIELDTYPE_COUNTERS'</index>
+                              <field name="field_type">OBJECT(TEMP.charge_fields).field_type</field>
+                              <field name="curr_counter">TEMP.curr_counter</field>
+                            </index_insert>
+                            <do>
+                              TEMP.my_ncq_proc~="<![CDATA[
+  <!--<object_delta_get_original>
+    <field>OBJECT(OBJECT.object_id)."~OBJECT(TEMP.charge_fields).field_name~"</field>
+    <value>OBJECT.master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~"_orig</value>
+  </object_delta_get_original>-->
+  <do>OBJECT.master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~"_orig = object_delta_get_original(OBJECT.object_id,'"~OBJECT(TEMP.charge_fields).field_name~"')</do>
+  <do>OBJECT.master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~" = OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</do>
+  <!--<print>'Setting master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~" = OBJECT."~OBJECT(TEMP.charge_fields).field_name~" ['~OBJECT."~OBJECT(TEMP.charge_fields).field_name~"~']'</print>-->
+
+  
+            ]]>"
+                            </do>
+                            <if>
+                              <condition>OBJECT(TEMP.charge_fields).field_type Eq 'amount' and GLOBAL.avoid_denorm_if_no_changes eq '1'</condition>
+                              <then>
+                                <do>
+                                  TEMP.my_ncq_proc~="<![CDATA[
+  <do>OBJECT.master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~"_pre = OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</do> 
+            ]]>"
+                                </do>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.charge_fields).modifier ne ''</condition>
+                              <then>
+                                <do>
+                                  TEMP.my_ncq_proc~="<![CDATA[
+  <do>TEMP.value = OBJECT.master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~"</do>
+  <do>OBJECT.master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~" = "~OBJECT(TEMP.charge_fields).modifier~"</do>
+  <do>TEMP.value = OBJECT.master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~"_orig</do>
+  <do>OBJECT.master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~"_orig = "~OBJECT(TEMP.charge_fields).modifier~"</do>
+            ]]>"
+                                </do>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.charge_fields).field_type Eq 'amount' and OBJECT(TEMP.charge_fields).currency_field ne ''</condition>
+                              <then>
+                                <do>
+                                  TEMP.my_ncq_proc~="<![CDATA[
+  <do>OBJECT.master_currency = OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</do>
+            ]]>"
+                                </do>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.charge_fields).field_type Eq 'units' and OBJECT(TEMP.charge_fields).currency_field ne ''</condition>
+                              <then>
+                                <do>
+                                  TEMP.my_ncq_proc~="<![CDATA[
+  <do>OBJECT.master_unit_uom = OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</do>
+            ]]>"
+                                </do>
+                              </then>
+                            </if>
+                            <if>
+                              <condition>OBJECT(TEMP.charge_fields).field_type Eq 'units' and OBJECT(TEMP.charge_fields).currency_field ne ''</condition>
+                              <then>
+                                <do>
+                                  TEMP.my_ncq_proc~="<![CDATA[
+  <do>OBJECT.master_unit_uom = OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</do>
+            ]]>"
+                                </do>
+                              </then>
+                            </if>
+
+                          </else>
+                        </index_select>
+                        <get_object_field>
+                          <object_id>OBJECT.object_id</object_id>
+                          <field_name>OBJECT(TEMP.charge_fields).field_type~'_suffix'</field_name>
+                          <output>TEMP.charge_count</output>
+                        </get_object_field>
+                        <do>
+                          TEMP.my_field~="<![CDATA[
+  <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = OBJECT.master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~"</do>
+  <!-- <print>'Setting ["~OBJECT(TEMP.charge_fields).field_name~"] to ['~OBJECT.master_"~OBJECT(TEMP.charge_fields).field_type~TEMP.charge_count~"~']'</print> -->
+            ]]>"
+                        </do>
+                        <if>
+                          <condition>OBJECT(TEMP.charge_fields).modifier ne ''</condition>
+                          <then>
+                            <do>
+                              TEMP.my_field~="<![CDATA[
+  <do>TEMP.value = OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</do>
+  <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = "~OBJECT(TEMP.charge_fields).modifier~"</do>
+            ]]>"
+                            </do>
+                          </then>
+                        </if>
+                        <if>
+                          <condition>(OBJECT(TEMP.charge_fields).field_type Eq 'amount' or OBJECT(TEMP.charge_fields).field_type eq 'rate')</condition>
+                          <then>
+                            <if>
+                              <condition>OBJECT(TEMP.charge_fields).precision ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                              <then>
+                                <do>
+                                  TEMP.my_field~="<![CDATA[
+          <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round' counter='OBJECT(GLOBAL.counter_object).gen_charge_round_ctr'>
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>"~OBJECT(TEMP.charge_fields).precision~"</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+          </stopwatch>
+            ]]>"
+                                </do>
+
+                              </then>
+                              <else>
+                                <if>
+                                  <condition>OBJECT(TEMP.charge_fields).currency_field ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                                  <then>
+                                    <do>
+                                      TEMP.my_field~="<![CDATA[
+    <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency'  counter='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_ctr'>
+  <round_currency>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <currency>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</currency>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round_currency> 
+          </stopwatch>
+  <!--        
+  <call_proc_for_current_object>
+    <name>'round_currency_amount'</name>
+    <param name='source_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+    <param name='target_currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</param>
+    <param name='target_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+  </call_proc_for_current_object>
+  <if>
+        <condition>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" eq ''</condition>
+        <then>
+          <print>'Rounding ["~OBJECT(TEMP.charge_fields).field_name~"] to ['~OBJECT."~OBJECT(TEMP.charge_fields).field_name~"~'] in currency ['~OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"n~']'</print>
+        </then>
+      </if>
+    -->
+  <!--
+  <stopwatch ms='TEMP.junk_round_currency_"~OBJECT(TEMP.charge_fields).field_name~"' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_timer_"~OBJECT(TEMP.charge_fields).field_name~"'>  
+  <if>
+    <condition>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~" Eq GLOBAL.last_currency</condition>
+    <then>
+      <round>
+        <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+        <precision>GLOBAL.last_currency_precision</precision>
+        <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+      </round>
+    </then>
+    <else>
+      <index_select>
+        <index>'ALL_CURRENCIES'</index>
+        <field name='currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</field>
+        <cursor>TEMP.currency_cur</cursor>
+        <then>
+          <do>GLOBAL.last_currency = OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</do>
+          <do>GLOBAL.last_currency_precision = OBJECT(TEMP.currency_cur).significant_digits</do>
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>OBJECT(TEMP.currency_cur).significant_digits</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+        </then>
+      </index_select>
+    </else>
+  </if>
+  </stopwatch>
+  -->
+            ]]>"
+                                    </do>
+                                  </then>
+                                </if>
+                              </else>
+                            </if>
+                          </then>
+                        </if>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.charge_fields).field_type Eq 'aggregate'</condition>
+                      <then>
+                        <if>
+                          <condition>OBJECT(TEMP.charge_fields).contributing_field eq ''</condition>
+                          <then>
+                            <do>OBJECT(TEMP.charge_fields).contributing_field = 'master_amount'</do>
+                          </then>
+                        </if>
+                        <do>TEMP.found_field = '0'</do>
+                        <index_select>
+                          <index>'CHARGE_FIELDS'</index>
+                          <field name="charge_name">OBJECT(TEMP.charge_fields).charge_name</field>
+                          <field name="productview_name">TEMP.productview_name</field>
+                          <order_by  type="numeric">OBJECT.field_order</order_by>
+                          <cursor>TEMP.inner_charge_fields</cursor>
+                        
+                          <loop>
+                            <if>
+                              <condition>TEMP.found_field eq '0' and OBJECT(TEMP.inner_charge_fields).field_name eq OBJECT(TEMP.charge_fields).contributing_field </condition>
+                              <then>
+                                <do>TEMP.found_field = '1'</do>
+                                <get_object_field>
+                                  <object_id>OBJECT.object_id</object_id>
+                                  <field_name>OBJECT(TEMP.inner_charge_fields).field_type~'_suffix'</field_name>
+                                  <output>TEMP.charge_count</output>
+                                </get_object_field>
+                                <do>
+                                  TEMP.my_field~="<![CDATA[                               
+  <!--<object_delta_get_original>
+    <field>OBJECT(OBJECT.object_id)."~OBJECT(TEMP.inner_charge_fields).field_name~"</field>
+    <value>TEMP.orig_value</value>
+  </object_delta_get_original>-->
+  <do>TEMP.orig_value = object_delta_get_snapshot(OBJECT.object_id,'OBJECT(OBJECT.object_id)."~OBJECT(TEMP.inner_charge_fields).field_name~"', OBJECT.current_denorm_snapshot)</do>
+  <do>TEMP.orig_value=TEMP.orig_value ne '' ? TEMP.orig_value : 0</do>
+  
+  <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = OBJECT."~OBJECT(TEMP.charge_fields).field_name~" + OBJECT."~OBJECT(TEMP.inner_charge_fields).field_name~" - TEMP.orig_value</do>
+           ]]>"
+                                </do>
+                                <if>
+                                  <condition>OBJECT(TEMP.charge_fields).modifier ne ''</condition>
+                                  <then>
+                                    <do>
+                                      TEMP.my_field~="<![CDATA[
+  <do>TEMP.value = OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</do>
+  <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = "~OBJECT(TEMP.charge_fields).modifier~"</do>
+            ]]>"
+                                    </do>
+                                  </then>
+                                </if>
+
+                                <if>
+                                  <condition>OBJECT(TEMP.charge_fields).precision ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                                  <then>
+                                    <do>
+                                      TEMP.my_field~="<![CDATA[
+          <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round' counter='OBJECT(GLOBAL.counter_object).gen_charge_round_ctr'>
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>"~OBJECT(TEMP.charge_fields).precision~"</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+          </stopwatch>
+            ]]>"
+                                    </do>
+
+                                  </then>
+                                  <else>
+                                    <if>
+                                      <condition>OBJECT(TEMP.charge_fields).currency_field ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                                      <then>
+                                        <do>
+                                          TEMP.my_field~="<![CDATA[
+  <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency'  counter='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_ctr'>                                        
+  <round_currency>
+    <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+    <currency>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</currency>
+    <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+  </round_currency> 
+  </stopwatch>
+  <!--        
+  <call_proc_for_current_object>
+    <name>'round_currency_amount'</name>
+    <param name='source_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+    <param name='target_currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</param>
+    <param name='target_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+  </call_proc_for_current_object>
+  <if>
+        <condition>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" eq ''</condition>
+        <then>
+          <print>'Rounding ["~OBJECT(TEMP.charge_fields).field_name~"] to ['~OBJECT."~OBJECT(TEMP.charge_fields).field_name~"~'] in currency ['~OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"n~']'</print>
+        </then>
+      </if>
+    -->
+  
+  <!--
+  <stopwatch ms='TEMP.junk_round_currency_"~OBJECT(TEMP.charge_fields).field_name~"' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_timer_"~OBJECT(TEMP.charge_fields).field_name~"'>  
+  <if>
+    <condition>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~" Eq GLOBAL.last_currency</condition>
+    <then>
+      <round>
+        <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+        <precision>GLOBAL.last_currency_precision</precision>
+        <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+      </round>
+    </then>
+    <else>
+      <index_select>
+        <index>'ALL_CURRENCIES'</index>
+        <field name='currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</field>
+        <cursor>TEMP.currency_cur</cursor>
+        <then>
+          <do>GLOBAL.last_currency = OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</do>
+          <do>GLOBAL.last_currency_precision = OBJECT(TEMP.currency_cur).significant_digits</do>
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>OBJECT(TEMP.currency_cur).significant_digits</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+        </then>
+      </index_select>
+    </else>
+  </if>
+  </stopwatch>
+  -->
+            ]]>"
+                                        </do>
+                                      </then>
+                                    </if>
+                                  </else>
+                                </if>
+                                
+                              </then>
+                            </if>
+
+                          </loop>
+                        </index_select>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.charge_fields).field_type Eq 'proportional'</condition>
+                      <then>
+                        <if>
+                          <condition>OBJECT(TEMP.charge_fields).contributing_field eq ''</condition>
+                          <then>
+                            <do>OBJECT(TEMP.charge_fields).contributing_field = 'amount'</do>
+                          </then>
+                        </if>
+                        <do>TEMP.found_field = '0'</do>
+                        <index_select>
+                          <index>'CHARGE_FIELDS'</index>
+                          <field name="charge_name">OBJECT(TEMP.charge_fields).charge_name</field>
+                          <field name="productview_name">TEMP.productview_name</field>
+                          <order_by  type="numeric">OBJECT.field_order</order_by>
+                          <cursor>TEMP.inner_charge_fields</cursor>
+                        
+                          <loop>
+                            <if>
+                              <condition>TEMP.found_field eq '0' and OBJECT(TEMP.inner_charge_fields).field_name eq OBJECT(TEMP.charge_fields).contributing_field </condition>
+                              <then>
+                                <do>TEMP.found_field = '1'</do>
+                                <get_object_field>
+                                  <object_id>OBJECT.object_id</object_id>
+                                  <field_name>OBJECT(TEMP.inner_charge_fields).field_type~'_suffix'</field_name>
+                                  <output>TEMP.charge_count</output>
+                                </get_object_field>
+                                <do>
+                                  TEMP.my_field~="<![CDATA[                              
+  <!--<object_delta_get_original>
+    <field>OBJECT(OBJECT.object_id)."~OBJECT(TEMP.inner_charge_fields).field_name~"</field>
+    <value>TEMP.orig_value</value>
+  </object_delta_get_original>-->   
+  <do>TEMP.orig_value = object_delta_get_snapshot(OBJECT.object_id,'OBJECT(OBJECT.object_id)."~OBJECT(TEMP.inner_charge_fields).field_name~"', OBJECT.current_denorm_snapshot)</do>
+  <!--<object_delta_get_original>
+    <field>OBJECT(OBJECT.object_id)."~OBJECT(TEMP.charge_fields).field_name~"</field>
+    <value>TEMP.orig_target_value</value>
+  </object_delta_get_original>-->
+  <do>TEMP.orig_target_value = object_delta_get_snapshot(OBJECT.object_id,'OBJECT(OBJECT.object_id)."~OBJECT(TEMP.charge_fields).field_name~"', OBJECT.current_denorm_snapshot)</do>
+  
+  <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = TEMP.orig_target_value * OBJECT."~OBJECT(TEMP.inner_charge_fields).field_name~" / TEMP.orig_value</do>
+            ]]>"
+                                </do>
+                                <if>
+                                  <condition>OBJECT(TEMP.charge_fields).modifier ne ''</condition>
+                                  <then>
+                                    <do>
+                                      TEMP.my_field~="<![CDATA[
+  <do>TEMP.value = OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</do>
+  <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = "~OBJECT(TEMP.charge_fields).modifier~"</do>
+            ]]>"
+                                    </do>
+                                  </then>
+                                </if>
+                                <if>
+                                  <condition>OBJECT(TEMP.charge_fields).precision ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                                  <then>
+                                    <do>
+                                      TEMP.my_field~="<![CDATA[
+          <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round counter='OBJECT(GLOBAL.counter_object).gen_charge_round_ctr''>
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>"~OBJECT(TEMP.charge_fields).precision~"</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+          </stopwatch>
+            ]]>"
+                                    </do>
+
+                                  </then>
+                                  <else>
+                                    <if>
+                                      <condition>OBJECT(TEMP.charge_fields).currency_field ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                                      <then>
+                                        <do>
+                                          TEMP.my_field~="<![CDATA[
+  <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency' counter='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_ctr'>
+  <round_currency>
+    <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+    <currency>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</currency>
+    <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+  </round_currency> 
+  </stopwatch>
+  <!--        
+  <call_proc_for_current_object>
+    <name>'round_currency_amount'</name>
+    <param name='source_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+    <param name='target_currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</param>
+    <param name='target_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+  </call_proc_for_current_object>
+  <if>
+        <condition>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" eq ''</condition>
+        <then>
+          <print>'Rounding ["~OBJECT(TEMP.charge_fields).field_name~"] to ['~OBJECT."~OBJECT(TEMP.charge_fields).field_name~"~'] in currency ['~OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"n~']'</print>
+        </then>
+      </if>
+    -->
+  <!--
+  <stopwatch ms='TEMP.junk_round_currency_"~OBJECT(TEMP.charge_fields).field_name~"' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_timer_"~OBJECT(TEMP.charge_fields).field_name~"'>  
+  <if>
+    <condition>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~" Eq GLOBAL.last_currency</condition>
+    <then>
+      <round>
+        <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+        <precision>GLOBAL.last_currency_precision</precision>
+        <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+      </round>
+    </then>
+    <else>
+      <index_select>
+        <index>'ALL_CURRENCIES'</index>
+        <field name='currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</field>
+        <cursor>TEMP.currency_cur</cursor>
+        <then>
+          <do>GLOBAL.last_currency = OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</do>
+          <do>GLOBAL.last_currency_precision = OBJECT(TEMP.currency_cur).significant_digits</do>
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>OBJECT(TEMP.currency_cur).significant_digits</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+        </then>
+      </index_select>
+    </else>
+  </if>
+  </stopwatch>
+  -->
+    
+            ]]>"
+                                        </do>
+                                      </then>
+                                    </if>
+                                  </else>
+                                </if>
+                              </then>
+                            </if>
+
+                          </loop>
+                        </index_select>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.charge_fields).field_type Eq 'currency_conversion'</condition>
+                      <then>
+                        <if>
+                          <condition>OBJECT(TEMP.charge_fields).contributing_field eq ''</condition>
+                          <then>
+                            <do>OBJECT(TEMP.charge_fields).contributing_field = 'amount'</do>
+                          </then>
+                        </if>
+                        <do>TEMP.found_field = '0'</do>
+                        <index_select>
+                          <index>'CHARGE_FIELDS'</index>
+                          <field name="charge_name">OBJECT(TEMP.charge_fields).charge_name</field>
+                          <field name="productview_name">TEMP.productview_name</field>
+                          <order_by  type="numeric">OBJECT.field_order</order_by>
+                          <cursor>TEMP.inner_charge_fields</cursor>
+                         
+                          <loop>
+                            <if>
+                              <condition>TEMP.found_field eq '0' and OBJECT(TEMP.inner_charge_fields).field_name eq OBJECT(TEMP.charge_fields).contributing_field </condition>
+                              <then>
+                                <do>TEMP.found_field = '1'</do>
+                                <get_object_field>
+                                  <object_id>OBJECT.object_id</object_id>
+                                  <field_name>OBJECT(TEMP.inner_charge_fields).field_type~'_suffix'</field_name>
+                                  <output>TEMP.charge_count</output>
+                                </get_object_field>
+                                <do>
+                                  TEMP.my_field~="<![CDATA[
+  <!--<stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_conv_curr' counter='OBJECT(GLOBAL.counter_object).gen_charge_conv_curr_ctr' >-->
+  <if>
+    <condition>OBJECT."~OBJECT(TEMP.inner_charge_fields).currency_field~" Ne OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</condition>
+    <then>
+      <c>Perform currency conversion</c>
+      <call_proc_for_current_object>
+        <name>'convert_currency_amount'</name>
+        <param name='source_field'>OBJECT."~OBJECT(TEMP.inner_charge_fields).field_name~"</param>
+        <param name='source_currency'>OBJECT."~OBJECT(TEMP.inner_charge_fields).currency_field~"</param>
+        <param name='target_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+        <param name='target_currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</param>
+        <param name='effective_date'>OBJECT.dt_session</param>
+      </call_proc_for_current_object>
+    </then>
+    <else>
+      <c>Skip currency conversion because currencies are the same</c>
+      <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = OBJECT."~OBJECT(TEMP.inner_charge_fields).field_name~"</do>
+    </else>
+  </if>
+  <!--</stopwatch>-->
+
+            ]]>"
+                                </do>
+                                <if>
+                                  <condition>OBJECT(TEMP.charge_fields).modifier ne ''</condition>
+                                  <then>
+                                    <do>
+                                      TEMP.my_field~="<![CDATA[
+  <do>TEMP.value = OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</do>
+  <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = "~OBJECT(TEMP.charge_fields).modifier~"</do>
+            ]]>"
+                                    </do>
+                                  </then>
+                                </if>
+                                <if>
+                                  <condition>OBJECT(TEMP.charge_fields).precision ne ''  and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                                  <then>
+                                    <do>
+                                      TEMP.my_field~="<![CDATA[
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>"~OBJECT(TEMP.charge_fields).precision~"</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+            ]]>"
+                                    </do>
+
+                                  </then>
+                                  <else>
+                                    <if>
+                                      <condition>OBJECT(TEMP.charge_fields).currency_field ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                                      <then>
+                                        <do>
+                                          TEMP.my_field~="<![CDATA[
+<stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency' counter='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_ctr'>
+  <round_currency>
+    <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+    <currency>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</currency>
+    <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+  </round_currency> 
+  </stopwatch>
+  <!--        
+  <call_proc_for_current_object>
+    <name>'round_currency_amount'</name>
+    <param name='source_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+    <param name='target_currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</param>
+    <param name='target_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+  </call_proc_for_current_object>
+  <if>
+        <condition>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" eq ''</condition>
+        <then>
+          <print>'Rounding ["~OBJECT(TEMP.charge_fields).field_name~"] to ['~OBJECT."~OBJECT(TEMP.charge_fields).field_name~"~'] in currency ['~OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"n~']'</print>
+        </then>
+      </if>
+    -->
+  <!--
+  <stopwatch ms='TEMP.junk_round_currency_"~OBJECT(TEMP.charge_fields).field_name~"' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_timer_"~OBJECT(TEMP.charge_fields).field_name~"'>  
+  <if>
+    <condition>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~" Eq GLOBAL.last_currency</condition>
+    <then>
+      <round>
+        <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+        <precision>GLOBAL.last_currency_precision</precision>
+        <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+      </round>
+    </then>
+    <else>
+      <index_select>
+        <index>'ALL_CURRENCIES'</index>
+        <field name='currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</field>
+        <cursor>TEMP.currency_cur</cursor>
+        <then>
+          <do>GLOBAL.last_currency = OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</do>
+          <do>GLOBAL.last_currency_precision = OBJECT(TEMP.currency_cur).significant_digits</do>
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>OBJECT(TEMP.currency_cur).significant_digits</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+        </then>
+      </index_select>
+    </else>
+  </if>
+  </stopwatch>
+  -->
+            ]]>"
+                                        </do>
+                                      </then>
+                                    </if>
+                                  </else>
+                                </if>
+                              </then>
+                            </if>
+                          </loop>
+                        </index_select>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.charge_fields).field_type Eq 'percentage'</condition>
+                      <then>
+                        <if>
+                          <condition>OBJECT(TEMP.charge_fields).contributing_field eq ''</condition>
+                          <then>
+                            <do>OBJECT(TEMP.charge_fields).contributing_field = 'amount'</do>
+                          </then>
+                        </if>
+                        <do>TEMP.found_field = '0'</do>
+                        <index_select>
+                          <index>'CHARGE_FIELDS'</index>
+                          <field name="charge_name">OBJECT(TEMP.charge_fields).charge_name</field>
+                          <field name="productview_name">TEMP.productview_name</field>
+                          <order_by  type="numeric">OBJECT.field_order</order_by>
+                          <cursor>TEMP.inner_charge_fields</cursor>
+                        
+                          <loop>
+                            <!--<print>'Checking fields ['~OBJECT(TEMP.inner_charge_fields).field_name~'] and ['~OBJECT(TEMP.charge_fields).contributing_field~'] and ['~TEMP.found_field~']'</print>-->
+                            <if>
+                              <condition>TEMP.found_field eq '0' and OBJECT(TEMP.inner_charge_fields).field_name eq OBJECT(TEMP.charge_fields).contributing_field </condition>
+                              <then>
+                                <do>TEMP.found_field = '1'</do>
+                                <get_object_field>
+                                  <object_id>OBJECT.object_id</object_id>
+                                  <field_name>OBJECT(TEMP.inner_charge_fields).field_type~'_suffix'</field_name>
+                                  <output>TEMP.charge_count</output>
+                                </get_object_field>
+                                <do>
+                                  TEMP.my_field~="<![CDATA[                                                             
+  <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = OBJECT."~OBJECT(TEMP.charge_fields).percentage_field~" * OBJECT."~OBJECT(TEMP.charge_fields).contributing_field~"</do>
+  <if>
+    <condition>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" eq ''</condition>
+    <then>
+      <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = '0'</do>
+    </then>
+  </if>
+  
+              ]]>"
+                                </do>
+                                <if>
+                                  <condition>OBJECT(TEMP.charge_fields).modifier ne ''</condition>
+                                  <then>
+                                    <do>
+                                      TEMP.my_field~="<![CDATA[
+  <do>TEMP.value = OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</do>
+  <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = "~OBJECT(TEMP.charge_fields).modifier~"</do>
+            ]]>"
+                                    </do>
+                                  </then>
+                                </if>
+                                <if>
+                                  <condition>OBJECT(TEMP.charge_fields).precision ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                                  <then>
+                                    <do>
+                                      TEMP.my_field~="<![CDATA[
+
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>"~OBJECT(TEMP.charge_fields).precision~"</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+
+            ]]>"
+                                    </do>
+                                    
+                                  </then>
+                                  <else>
+                                    <if>
+                                      <condition>OBJECT(TEMP.charge_fields).currency_field ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                                      <then>
+
+                                        <do>
+                                          TEMP.my_field~="<![CDATA[
+<stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency' counter='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_ctr'>
+<round_currency>
+    <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+    <currency>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</currency>
+    <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+  </round_currency> 
+  </stopwatch>
+  <!--        
+  <call_proc_for_current_object>
+    <name>'round_currency_amount'</name>
+    <param name='source_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+    <param name='target_currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</param>
+    <param name='target_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+  </call_proc_for_current_object>
+  <if>
+        <condition>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" eq ''</condition>
+        <then>
+          <print>'Rounding ["~OBJECT(TEMP.charge_fields).field_name~"] to ['~OBJECT."~OBJECT(TEMP.charge_fields).field_name~"~'] in currency ['~OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"n~']'</print>
+        </then>
+      </if>
+    -->
+  <!--
+  <stopwatch ms='TEMP.junk_round_currency_"~OBJECT(TEMP.charge_fields).field_name~"' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_timer_"~OBJECT(TEMP.charge_fields).field_name~"'>  
+  <if>
+    <condition>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~" Eq GLOBAL.last_currency</condition>
+    <then>
+      <round>
+        <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+        <precision>GLOBAL.last_currency_precision</precision>
+        <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+      </round>
+    </then>
+    <else>
+      <index_select>
+        <index>'ALL_CURRENCIES'</index>
+        <field name='currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</field>
+        <cursor>TEMP.currency_cur</cursor>
+        <then>
+          <do>GLOBAL.last_currency = OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</do>
+          <do>GLOBAL.last_currency_precision = OBJECT(TEMP.currency_cur).significant_digits</do>
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>OBJECT(TEMP.currency_cur).significant_digits</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+        </then>
+      </index_select>
+    </else>
+  </if>
+  </stopwatch>
+  -->
+            ]]>"
+                                        </do>
+                                      </then>
+                                    </if>
+                                  </else>
+                                </if>                                
+                              </then>
+                            </if>
+                          </loop>
+                        </index_select>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.charge_fields).field_type Eq 'modifier'</condition>
+                      <then>
+                        <if>
+                          <condition>OBJECT(TEMP.charge_fields).modifier ne ''</condition>
+                          <then>
+                            <do>
+                              TEMP.my_field~="<![CDATA[
+  <do>TEMP.value = OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</do>
+  <do>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" = "~OBJECT(TEMP.charge_fields).modifier~"</do>
+            ]]>"
+                            </do>
+                            <if>
+                              <condition>OBJECT(TEMP.charge_fields).precision ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                              <then>
+                                <do>
+                                  TEMP.my_field~="<![CDATA[
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>"~OBJECT(TEMP.charge_fields).precision~"</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+            ]]>"
+                                </do>
+
+                              </then>
+                              <else>
+                                <if>
+                                  <condition>OBJECT(TEMP.charge_fields).currency_field ne '' and OBJECT(TEMP.charge_fields).precision ne '-99'</condition>
+                                  <then>
+                                    <do>
+                                      TEMP.my_field~="<![CDATA[
+  <stopwatch ms='TEMP.junk' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency' counter='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_ctr'>
+  <round_currency>
+    <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+    <currency>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</currency>
+    <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+  </round_currency> 
+  </stopwatch>
+  <!--        
+  <call_proc_for_current_object>
+    <name>'round_currency_amount'</name>
+    <param name='source_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+    <param name='target_currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</param>
+    <param name='target_field'>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</param>
+  </call_proc_for_current_object>
+  <if>
+        <condition>OBJECT."~OBJECT(TEMP.charge_fields).field_name~" eq ''</condition>
+        <then>
+          <print>'Rounding ["~OBJECT(TEMP.charge_fields).field_name~"] to ['~OBJECT."~OBJECT(TEMP.charge_fields).field_name~"~'] in currency ['~OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"n~']'</print>
+        </then>
+      </if>
+    -->
+  <!--
+  <stopwatch ms='TEMP.junk_round_currency_"~OBJECT(TEMP.charge_fields).field_name~"' total_ms='OBJECT(GLOBAL.counter_object).gen_charge_round_currency_timer_"~OBJECT(TEMP.charge_fields).field_name~"'>  
+  <if>
+    <condition>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~" Eq GLOBAL.last_currency</condition>
+    <then>
+      <round>
+        <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+        <precision>GLOBAL.last_currency_precision</precision>
+        <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+      </round>
+    </then>
+    <else>
+      <index_select>
+        <index>'ALL_CURRENCIES'</index>
+        <field name='currency'>OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</field>
+        <cursor>TEMP.currency_cur</cursor>
+        <then>
+          <do>GLOBAL.last_currency = OBJECT."~OBJECT(TEMP.charge_fields).currency_field~"</do>
+          <do>GLOBAL.last_currency_precision = OBJECT(TEMP.currency_cur).significant_digits</do>
+          <round>
+            <input>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</input>
+            <precision>OBJECT(TEMP.currency_cur).significant_digits</precision>
+            <output>OBJECT."~OBJECT(TEMP.charge_fields).field_name~"</output>
+          </round>
+        </then>
+      </index_select>
+    </else>
+  </if>
+  </stopwatch>
+  -->
+            ]]>"
+                                    </do>
+                                  </then>
+                                </if>
+                              </else>
+                            </if>
+                          </then>
+                        </if>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.charge_fields).filter ne ''</condition>
+                      <then>
+                        <do>
+                          TEMP.my_field~="<![CDATA[
+    </then>
+  </if>
+            ]]>"
+                        </do>
+                      </then>
+                    </if>
+                    <!--<do>
+                      TEMP.my_dncq_proc~="<![CDATA[
+</stopwatch>
+            ]]>"
+                    </do>-->
+                    <if>
+                      <condition>OBJECT(TEMP.charge_fields).direction Ne 'normalize'</condition>
+                      <then>
+                        <do>TEMP.my_dncq_proc~=TEMP.my_field</do>
+                      </then>
+                    </if>
+                    <if>
+                      <condition>OBJECT(TEMP.charge_fields).direction Eq 'normalize' or OBJECT(TEMP.charge_fields).direction Eq 'both'</condition>
+                      <then>
+                        <do>TEMP.my_ncq_proc~=TEMP.my_field</do>
+                      </then>
+                    </if>
+                  </loop>
+                </index_select>
+
+                <if>
+                  <condition>GLOBAL.avoid_denorm_if_no_changes eq '1'</condition>
+                  <then>
+                    <do>
+                      TEMP.my_dncq_proc~="<![CDATA[
+              </then>
+            </if>
+	                  ]]>"
+                    </do>
+                  </then>
+                </if>
+                <do>
+                  TEMP.my_dncq_proc~="<![CDATA[
+             <!-- </stopwatch> -->
+</proc>
+            ]]>"
+                </do>
+                <do>
+                  TEMP.my_ncq_proc~="<![CDATA[
+    </then>
+  </if>
+</proc>
+            ]]>"
+                </do>
+
+
+                <!--<print>'Looking for parents!['~TEMP.parent_id_view~']'</print>-->
+                <if>
+                  <condition>TEMP.parent_id_view ne ''</condition>
+                  <then>
+                    <!--<print>'REALLY Looking for parents!['~TEMP.parent_id_view~']'</print>-->
+                    <do>TEMP.remaining = TEMP.my_dncq_proc ~ ' ' ~ TEMP.my_ncq_proc</do>
+                    <do>TEMP.success = '1'</do>
+                    <do>TEMP.parent_field = ''</do>
+                    <do>TEMP.regex='OBJECT\.parent\.(\w+).*'</do>
+                    <while>
+                      <condition>TEMP.success eq '1'</condition>
+                      <loop>
+                        <match>
+                          <input>TEMP.remaining</input>
+                          <regex>TEMP.regex</regex>
+                          <success>TEMP.success</success>
+                          <capture>TEMP.parent_field</capture>
+                        </match>
+                        <if>
+                          <condition>TEMP.success eq '1'</condition>
+                          <then>
+                            <replace>
+                              <input>TEMP.remaining</input>
+                              <old_value>'OBJECT.parent.'~TEMP.parent_field</old_value>
+                              <new_value>'replacedobj.parent.'~TEMP.parent_field</new_value>
+                              <output>TEMP.remaining</output>
+                            </replace>
+                            <do>TEMP.have_field = '0'</do>
+                            <index_select>
+                              <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+                              <field name="id_view">TEMP.parent_id_view</field>
+                              <cursor>TEMP.existing_csr</cursor>
+                              <loop>
+                                <if>
+                                  <condition>OBJECT(TEMP.existing_csr).field_name eq TEMP.parent_field</condition>
+                                  <then>
+                                    <do>TEMP.have_field = '1'</do>
+                                  </then>
+                                </if>
+                              </loop>
+                            </index_select>
+                            <if>
+                              <condition>TEMP.have_field eq '0'</condition>
+                              <then>
+                                <!--<print>'I am inserting ['~TEMP.parent_field~'] for id_view ['~TEMP.parent_id_view~']'</print>-->
+                                <index_insert>
+                                  <index>'PARENT_USAGE_OBJECT_FIELDS'</index>
+                                  <field name="id_view">TEMP.parent_id_view</field>
+                                  <field name="field_name">TEMP.parent_field</field>
+                                </index_insert>
+                              </then>
+                            </if>
+                          </then>
+                        </if>
+                      </loop>
+                    </while>
+                  </then>
+                </if>
+                
+
+                <replace>
+                  <input>TEMP.my_ncq_proc</input>
+                  <old_value>'OBJECT.parent.'</old_value>
+                  <new_value>'OBJECT(OBJECT.parent_oid).'</new_value>
+                  <output>TEMP.my_ncq_proc</output>
+                </replace>
+                <replace>
+                  <input>TEMP.my_dncq_proc</input>
+                  <old_value>'OBJECT.parent.'</old_value>
+                  <new_value>'OBJECT(OBJECT.parent_oid).'</new_value>
+                  <output>TEMP.my_dncq_proc</output>
+                </replace>
+                <replace>
+                  <input>TEMP.my_dncq_proc</input>
+                  <old_value>'parent.'</old_value>
+                  <new_value>'parent_'</new_value>
+                  <output>TEMP.my_dncq_proc</output>
+                </replace>
+                <!--<print>'DOING NCQ!!!!!'</print>  
+	                <print>TEMP.my_ncq_proc</print>-->
+                <execute_immediate>TEMP.my_ncq_proc</execute_immediate>
+                <!--<print>'DOING DNCQ!!!!!'</print>
+	                <print>TEMP.my_dncq_proc</print>--> 
+                <execute_immediate>TEMP.my_dncq_proc</execute_immediate>
+
+
+
+                <c>do some stuff to generate the apply usage to bucket and vice versa</c>
+                <do>
+                  TEMP.my_acq_proc="<![CDATA[
+<proc name='apply_charge_qual_"~TEMP.charge_qualification_group~"_"~TEMP.id_view~"'>
+  <param name='bucket_object'/>
+  <param name='usage_object'/>
+  <if>
+    <condition>OBJECT(TEMP.usage_object).current_denorm ne '"~TEMP.charge_qualification_group~"_"~TEMP.id_view~"'</condition>
+    <then>
+      <if>
+        <condition>OBJECT(TEMP.usage_object).current_denorm ne ''</condition>
+        <then>
+          <call_dynamic_proc_for_object>
+            <name>'denormalize_charge_qual_'~OBJECT(TEMP.usage_object).current_denorm</name>
+            <object_id>TEMP.usage_object</object_id>
+          </call_dynamic_proc_for_object>
+        </then>
+      </if>
+      <call_proc_for_object>
+        <name>'normalize_charge_qual_"~TEMP.charge_qualification_group~"_"~TEMP.id_view~"'</name>
+        <object_id>TEMP.usage_object</object_id>
+      </call_proc_for_object>
+    </then>
+  </if>
+  <do>TEMP.counting_sign = 1</do>
+  <if>
+    <condition>OBJECT(TEMP.bucket_object).decrement_counter eq '1'</condition>
+    <then>
+      <do>TEMP.counting_sign = -1</do>
+    </then>
+  </if>
+            ]]>"
+                </do>
+                <index_select>
+                  <index>'FIELDTYPE_COUNTERS'</index>
+                  <field name="field_type">'amount'</field>
+                  <cursor>TEMP.field_types</cursor>
+                  <then>
+                    <do>
+                      TEMP.my_acq_proc~="<![CDATA[
+                  <!--<print>'tier metric = ['~OBJECT(TEMP.bucket_object).tier_metric ~'] master_amount = ['~OBJECT(TEMP.usage_object).master_amount~']'</print>-->
+  <if>
+    <condition>OBJECT(TEMP.bucket_object).tier_metric Eq 'amount'</condition>
+    <then>
+      <do>OBJECT(TEMP.bucket_object).last_dt_session = OBJECT(TEMP.usage_object).dt_session </do>
+      <do>OBJECT(TEMP.bucket_object).last_qualified_total = OBJECT(TEMP.bucket_object).qualified_total </do>
+      <do>OBJECT(TEMP.bucket_object).last_qualified_amount = OBJECT(TEMP.bucket_object).qualified_amount </do>
+      <do>OBJECT(TEMP.bucket_object).last_qualified_events = OBJECT(TEMP.bucket_object).qualified_events </do>
+      <do>OBJECT(TEMP.bucket_object).last_qualified_units = OBJECT(TEMP.bucket_object).qualified_units </do>
+      <do>OBJECT(TEMP.bucket_object).qualified_events = (OBJECT(TEMP.bucket_object).qualified_events==''?'0':OBJECT(TEMP.bucket_object).qualified_events) + 1</do>
+            ]]>"
+                    </do>
+                    <do>TEMP.suffix = ''</do>
+                    <do>TEMP.loop_counter = 0</do>
+                    <!--<print>'LOOP counter = ['~TEMP.loop_counter~'] and curr = ['~OBJECT(TEMP.field_types).curr_counter~']'</print>-->
+                    <while>
+                      <condition>TEMP.loop_counter LT OBJECT(TEMP.field_types).curr_counter</condition>
+                      <loop>
+                        <if>
+                          <condition>OBJECT(TEMP.field_types).curr_counter GT '1'</condition>
+                          <then>
+                            <do>TEMP.suffix = '_'~OBJECT(TEMP.field_types).curr_counter</do>
+                          </then>
+                        </if>
+                        <do>
+                          TEMP.my_acq_proc~="<![CDATA[
+      <do>TEMP.converted_amount = OBJECT(TEMP.usage_object).master_amount"~TEMP.suffix~"</do>                
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).tier_currency ne ''</condition>
+        <then>
+          <if>
+            <condition>OBJECT(TEMP.usage_object).master_currency ne ''</condition>
+            <then>
+              <if>
+                <condition>OBJECT(TEMP.bucket_object).tier_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                <then>
+                  <c>Perform currency conversion</c>
+                  <call_proc_for_current_object>
+                    <name>'convert_currency_amount'</name>
+                    <param name='source_field'>OBJECT(TEMP.usage_object).master_amount"~TEMP.suffix~"</param>
+                    <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                    <param name='target_field'>TEMP.converted_amount</param>
+                    <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                    <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                  </call_proc_for_current_object>
+                </then>
+                <else>
+                  <c>Skip currency conversion because currencies are the same</c>
+                </else>
+              </if>
+            </then>
+            <else>
+              <print>'Attempting to convert currency for tier incrementing but no currency exists on the usage event!'</print>
+            </else>
+          </if>
+        </then>
+      </if>
+      <do>TEMP.converted_units = OBJECT(TEMP.usage_object).master_units"~TEMP.suffix~"</do>  
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).tier_uom ne ''</condition>
+        <then>
+          <if>
+            <condition>OBJECT(TEMP.usage_object).master_uom ne ''</condition>
+            <then>
+              <if>
+                <condition>OBJECT(TEMP.bucket_object).tier_uom Ne OBJECT(TEMP.usage_object).master_uom</condition>
+                <then>
+                  <c>Perform uom conversion</c>
+                  <call_proc_for_current_object>
+                    <name>'convert_uom_units'</name>
+                    <param name='source_field'>TEMP.converted_units</param>
+                    <param name='source_currency'>OBJECT(TEMP.usage_object).master_uom</param>
+                    <param name='target_field'>TEMP.converted_units</param>
+                    <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_uom</param>
+                  </call_proc_for_current_object>
+                </then>
+                <else>
+                  <c>Skip uom conversion because currencies are the same</c>
+                </else>
+              </if>
+            </then>
+            <else>
+              <print>'Attempting to convert uom for tier incrementing but no uom exists on the usage event!'</print>
+            </else>
+          </if>
+        </then>
+      </if>
+      <do>OBJECT(TEMP.bucket_object).qualified_total = (OBJECT(TEMP.bucket_object).qualified_total==''?'0':OBJECT(TEMP.bucket_object).qualified_total) + (OBJECT(TEMP.usage_object).percent_remaining * TEMP.converted_amount * TEMP.counting_sign)</do>                
+      <do>OBJECT(TEMP.bucket_object).qualified_amount = (OBJECT(TEMP.bucket_object).qualified_amount==''?'0':OBJECT(TEMP.bucket_object).qualified_amount) + (OBJECT(TEMP.usage_object).percent_remaining * TEMP.converted_amount)</do>
+      <do>OBJECT(TEMP.bucket_object).qualified_units = (OBJECT(TEMP.bucket_object).qualified_units==''?'0':OBJECT(TEMP.bucket_object).qualified_units) + (OBJECT(TEMP.usage_object).percent_remaining * TEMP.converted_units)</do>
+            ]]>"
+                        </do>
+                        <!--<do>
+                      TEMP.my_acq_proc~="<![CDATA[
+      <do>OBJECT(TEMP.bucket_object).qualified_total = (OBJECT(TEMP.bucket_object).qualified_total==''?'0':OBJECT(TEMP.bucket_object).qualified_total) + (OBJECT(TEMP.usage_object).percent_remaining * OBJECT(TEMP.usage_object).master_amount"~TEMP.suffix~")</do>                
+      <do>OBJECT(TEMP.bucket_object).qualified_amount = (OBJECT(TEMP.bucket_object).qualified_amount==''?'0':OBJECT(TEMP.bucket_object).qualified_amount) + (OBJECT(TEMP.usage_object).percent_remaining * OBJECT(TEMP.usage_object).master_amount"~TEMP.suffix~")</do>
+      <do>OBJECT(TEMP.bucket_object).qualified_units = (OBJECT(TEMP.bucket_object).qualified_units==''?'0':OBJECT(TEMP.bucket_object).qualified_units) + (OBJECT(TEMP.usage_object).percent_remaining * OBJECT(TEMP.usage_object).master_units"~TEMP.suffix~")</do>
+            ]]>"
+                    </do>-->
+                        <do>TEMP.loop_counter += 1</do>
+                      </loop>
+                    </while>
+                    <do>
+                      TEMP.my_acq_proc~="<![CDATA[
+    </then>
+  </if>
+            ]]>"
+                    </do>
+                  </then>
+                </index_select>
+
+                <index_select>
+                  <index>'FIELDTYPE_COUNTERS'</index>
+                  <field name="field_type">'units'</field>
+                  <cursor>TEMP.field_types</cursor>
+                  <then>
+                    <do>
+                      TEMP.my_acq_proc~="<![CDATA[
+  <if>
+    <condition>OBJECT(TEMP.bucket_object).tier_metric Eq 'units'</condition>
+    <then>
+      <do>OBJECT(TEMP.bucket_object).last_dt_session = OBJECT(TEMP.usage_object).dt_session </do>
+      <do>OBJECT(TEMP.bucket_object).last_qualified_total = (OBJECT(TEMP.bucket_object).qualified_total==''?'0':OBJECT(TEMP.bucket_object).qualified_total)</do>
+      <do>OBJECT(TEMP.bucket_object).last_qualified_units = (OBJECT(TEMP.bucket_object).qualified_units==''?'0':OBJECT(TEMP.bucket_object).qualified_units)</do>
+      <do>OBJECT(TEMP.bucket_object).last_qualified_events = OBJECT(TEMP.bucket_object).qualified_events </do>
+      <do>OBJECT(TEMP.bucket_object).last_qualified_amount = OBJECT(TEMP.bucket_object).qualified_amount </do>
+      <do>OBJECT(TEMP.bucket_object).qualified_events = (OBJECT(TEMP.bucket_object).qualified_events==''?'0':OBJECT(TEMP.bucket_object).qualified_events) + 1</do>
+            ]]>"
+                    </do>
+                    <do>TEMP.suffix = ''</do>
+                    <do>TEMP.loop_counter = 0</do>
+                    <while>
+                      <condition>TEMP.loop_counter LT OBJECT(TEMP.field_types).curr_counter</condition>
+                      <loop>
+                        <if>
+                          <condition>OBJECT(TEMP.field_types).curr_counter GT '1'</condition>
+                          <then>
+                            <do>TEMP.suffix = '_'~OBJECT(TEMP.field_types).curr_counter</do>
+                          </then>
+                        </if>
+                        <do>
+                          TEMP.my_acq_proc~="<![CDATA[
+                          
+      <do>TEMP.converted_amount = OBJECT(TEMP.usage_object).master_amount"~TEMP.suffix~"</do> 
+      <!-- <print>'tier currency is ['~OBJECT(TEMP.bucket_object).tier_currency~'] and uom is ['~OBJECT(TEMP.bucket_object).tier_uom~'] and converted amount is ['~TEMP.converted_amount~']'</print> -->
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).tier_currency ne ''</condition>
+        <then>
+          <if>
+            <condition>OBJECT(TEMP.usage_object).master_currency ne ''</condition>
+            <then>
+              <if>
+                <condition>OBJECT(TEMP.bucket_object).tier_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                <then>
+                  <c>Perform currency conversion</c>
+                  <call_proc_for_current_object>
+                    <name>'convert_currency_amount'</name>
+                    <param name='source_field'>OBJECT(TEMP.usage_object).master_amount"~TEMP.suffix~"</param>
+                    <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                    <param name='target_field'>TEMP.converted_amount</param>
+                    <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                    <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                  </call_proc_for_current_object>
+                </then>
+                <else>
+                  <c>Skip currency conversion because currencies are the same</c>
+                </else>
+              </if>
+            </then>
+            <else>
+              <print>'Attempting to convert currency for tier incrementing but no currency exists on the usage event!'</print>
+            </else>
+          </if>
+        </then>
+      </if>
+      <do>TEMP.converted_units = OBJECT(TEMP.usage_object).master_units"~TEMP.suffix~"</do>  
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).tier_uom ne ''</condition>
+        <then>
+          <if>
+            <condition>OBJECT(TEMP.usage_object).master_uom ne ''</condition>
+            <then>
+              <if>
+                <condition>OBJECT(TEMP.bucket_object).tier_uom Ne OBJECT(TEMP.usage_object).master_uom</condition>
+                <then>
+                  <c>Perform uom conversion</c>
+                  <call_proc_for_current_object>
+                    <name>'convert_uom_units'</name>
+                    <param name='source_field'>TEMP.converted_units</param>
+                    <param name='source_currency'>OBJECT(TEMP.usage_object).master_uom</param>
+                    <param name='target_field'>TEMP.converted_units</param>
+                    <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_uom</param>
+                  </call_proc_for_current_object>
+                </then>
+                <else>
+                  <c>Skip uom conversion because currencies are the same</c>
+                </else>
+              </if>
+            </then>
+            <else>
+              <print>'Attempting to convert uom for tier incrementing but no uom exists on the usage event!'</print>
+            </else>
+          </if>
+        </then>
+      </if>                    
+      <do>OBJECT(TEMP.bucket_object).qualified_total = (OBJECT(TEMP.bucket_object).qualified_total==''?'0':OBJECT(TEMP.bucket_object).qualified_total) + (OBJECT(TEMP.usage_object).percent_remaining * TEMP.converted_units * TEMP.counting_sign)</do>
+      <do>OBJECT(TEMP.bucket_object).qualified_units = (OBJECT(TEMP.bucket_object).qualified_units==''?'0':OBJECT(TEMP.bucket_object).qualified_units) + (OBJECT(TEMP.usage_object).percent_remaining * TEMP.converted_units)</do>
+      <!-- <print>'percent remaining is ['~OBJECT(TEMP.usage_object).percent_remaining~'] and converted amount is ['~TEMP.converted_amount~']'</print> -->
+      <do>OBJECT(TEMP.bucket_object).qualified_amount = (OBJECT(TEMP.bucket_object).qualified_amount==''?'0':OBJECT(TEMP.bucket_object).qualified_amount) + (OBJECT(TEMP.usage_object).percent_remaining * TEMP.converted_amount)</do>
+            ]]>"
+                        </do>
+                        <do>TEMP.loop_counter += 1</do>
+                      </loop>
+                    </while>
+                    <do>
+                      TEMP.my_acq_proc~="<![CDATA[
+    </then>
+  </if>
+            ]]>"
+                    </do>
+                  </then>
+                </index_select>
+                <c>Added logic to only count RCs in event buckets if it is billed in arrears OR it is not prorated on start</c>
+                <do>
+                  TEMP.my_acq_proc~="<![CDATA[
+  <if>
+    <condition>OBJECT(TEMP.bucket_object).tier_metric Eq 'events' and (OBJECT(TEMP.usage_object).c_advance ne '1' or (OBJECT(TEMP.usage_object).c_proratedonsubscription ne '1' and OBJECT(TEMP.usage_object).c_proratedonunsubscription ne '1'))</condition>
+    <then>
+      <do>OBJECT(TEMP.bucket_object).last_dt_session = OBJECT(TEMP.usage_object).dt_session </do>
+      <do>OBJECT(TEMP.bucket_object).last_qualified_total = OBJECT(TEMP.bucket_object).qualified_total </do>
+      <do>OBJECT(TEMP.bucket_object).last_qualified_events = OBJECT(TEMP.bucket_object).qualified_events </do>
+      <do>OBJECT(TEMP.bucket_object).qualified_total = (OBJECT(TEMP.bucket_object).qualified_total==''?'0':OBJECT(TEMP.bucket_object).qualified_total) + TEMP.counting_sign</do>
+      <do>OBJECT(TEMP.bucket_object).qualified_events = (OBJECT(TEMP.bucket_object).qualified_events==''?'0':OBJECT(TEMP.bucket_object).qualified_events) + 1</do>
+      
+      <do>TEMP.converted_amount = OBJECT(TEMP.usage_object).master_amount"~TEMP.suffix~"</do>                
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).tier_currency ne ''</condition>
+        <then>
+          <if>
+            <condition>OBJECT(TEMP.usage_object).master_currency ne ''</condition>
+            <then>
+              <if>
+                <condition>OBJECT(TEMP.bucket_object).tier_currency Ne OBJECT(TEMP.usage_object).master_currency</condition>
+                <then>
+                  <c>Perform currency conversion</c>
+                  <call_proc_for_current_object>
+                    <name>'convert_currency_amount'</name>
+                    <param name='source_field'>OBJECT(TEMP.usage_object).master_amount"~TEMP.suffix~"</param>
+                    <param name='source_currency'>OBJECT(TEMP.usage_object).master_currency</param>
+                    <param name='target_field'>TEMP.converted_amount</param>
+                    <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_currency</param>
+                    <param name='effective_date'>OBJECT(TEMP.usage_object).dt_session</param>
+                  </call_proc_for_current_object>
+    </then>
+                <else>
+                  <c>Skip currency conversion because currencies are the same</c>
+                </else>
+  </if>
+            </then>
+            <else>
+              <print>'Attempting to convert currency for tier incrementing but no currency exists on the usage event!'</print>
+            </else>
+          </if>
+        </then>
+      </if>
+      <do>TEMP.converted_units = OBJECT(TEMP.usage_object).master_units"~TEMP.suffix~"</do>  
+      <if>
+        <condition>OBJECT(TEMP.bucket_object).tier_uom ne ''</condition>
+        <then>
+          <if>
+            <condition>OBJECT(TEMP.usage_object).master_uom ne ''</condition>
+            <then>
+              <if>
+                <condition>OBJECT(TEMP.bucket_object).tier_uom Ne OBJECT(TEMP.usage_object).master_uom</condition>
+                <then>
+                  <c>Perform uom conversion</c>
+                  <call_proc_for_current_object>
+                    <name>'convert_uom_units'</name>
+                    <param name='source_field'>TEMP.converted_units</param>
+                    <param name='source_currency'>OBJECT(TEMP.usage_object).master_uom</param>
+                    <param name='target_field'>TEMP.converted_units</param>
+                    <param name='target_currency'>OBJECT(TEMP.bucket_object).tier_uom</param>
+                  </call_proc_for_current_object>
+                </then>
+                <else>
+                  <c>Skip uom conversion because currencies are the same</c>
+                </else>
+              </if>
+            </then>
+            <else>
+              <print>'Attempting to convert uom for tier incrementing but no uom exists on the usage event!'</print>
+            </else>
+          </if>
+        </then>
+      </if> 
+      <do>OBJECT(TEMP.bucket_object).qualified_units = (OBJECT(TEMP.bucket_object).qualified_units==''?'0':OBJECT(TEMP.bucket_object).qualified_units) + (OBJECT(TEMP.usage_object).percent_remaining * TEMP.converted_units)</do>
+      <do>OBJECT(TEMP.bucket_object).qualified_amount = (OBJECT(TEMP.bucket_object).qualified_amount==''?'0':OBJECT(TEMP.bucket_object).qualified_amount) + (OBJECT(TEMP.usage_object).percent_remaining * TEMP.converted_amount)</do>
+      
+    </then>
+  </if>
+            ]]>"
+                </do>
+                <do>
+                  TEMP.my_acq_proc~="<![CDATA[
+  <if>
+    <condition>OBJECT(TEMP.bucket_object).custom_increment_proc ne ''</condition>
+    <then>
+      <call_dynamic_proc_for_current_object>
+        <name>OBJECT(TEMP.bucket_object).custom_increment_proc</name>
+        <param name='bucket_object'>TEMP.bucket_object</param>
+        <param name='usage_object'>TEMP.usage_object</param>
+      </call_dynamic_proc_for_current_object>
+    </then>
+  </if>
+            ]]>"
+                </do>
+                <do>
+                  TEMP.my_acq_proc~="<![CDATA[
+</proc>
+            ]]>"
+                </do>
+
+             <!--<print>'DOING ACQ!!!!!'</print>
+            <print>TEMP.my_acq_proc</print>--> 
+                <execute_immediate>TEMP.my_acq_proc</execute_immediate>
+              </then>
+            </if>
+          </loop>
+        </db_select>
+      </loop>
+    </db_select>
+
+    <!--<print>'ROB IS EXITING THIS PROC!!'</print>-->
+  </proc>
+
+  <proc name='generate_charge_procs_wrapper'>
+    <initialize>
+      <print>'Started initialize generate charge procs wrapper'</print>
+      <db_select>
+        <login_object>GLOBAL.target_login</login_object>
+        <query type ='sql'>
+          "SELECT DISTINCT lower(a.productview_name) productview_name, b.id_view FROM usage_charge_fields a
+          INNER JOIN t_prod_view b ON LOWER(a.productview_name) = SUBSTRING(LOWER(b.nm_table_name),6,99)"
+        </query>
+        <query type ='oracle'>
+          "SELECT DISTINCT lower(a.productview_name) productview_name, b.id_view FROM usage_charge_fields a
+          INNER JOIN t_prod_view b ON LOWER(a.productview_name) = SUBSTR(LOWER(b.nm_table_name),6,99)"
+        </query>
+        <cursor>TEMP.pv_csr</cursor>
+        <loop>
+          <print>'Generating charge procs for ['~OBJECT(TEMP.pv_csr).productview_name~']'</print>
+          <call_proc_for_current_object>
+            <name>'generate_charge_procs'</name>
+            <param name='productview_name'>OBJECT(TEMP.pv_csr).productview_name</param>
+          </call_proc_for_current_object>
+          <!--<print>' Finished calling generate charge procs'</print>-->
+        </loop>
+      </db_select>
+      <print>'Finished initialize generate charge procs wrapper'</print>
+    </initialize>
+  </proc>
+
+</procs>

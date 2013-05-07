@@ -1,0 +1,125 @@
+<procs>
+  <proc name='unapply_obsolete_work_for_interval'>
+    <param name='id_interval'/>
+
+
+    <initialize>
+      <define_memory_index>
+        <index>'ACC_TO_WIPE'</index>
+        <field>'id_acc'</field>
+        <field>'id_usage_interval'</field>
+      </define_memory_index>
+    </initialize>
+
+<debug>'unapply_obsolete_work_for_interval at top'</debug>
+    <index_clear>
+      <index>'ACC_TO_WIPE'</index>
+    </index_clear>
+    
+    <do>GLOBAL.producer_queue_length=2</do>
+    <do>GLOBAL.reduce_ctr=0</do>
+
+<debug>'unapply_obsolete_work_for_interval run query'</debug>
+    <db_select>
+      <login_object>GLOBAL.target_login</login_object>
+      <query>
+        "select distinct id_payee, id_usage_interval from agg_usage_audit_trail where id_usage_interval = $${TEMP.id_interval} and agg_applied_tier_counter >= 1 and is_realtime = 0
+        union select distinct id_payee, id_usage_interval from agg_charge_audit_trail where id_usage_interval = $${TEMP.id_interval}
+        union select distinct id_acc id_payee, old_usage_interval id_usage_interval from agg_pushed_usage where old_usage_interval = $${TEMP.id_interval}"
+      </query>
+      <cursor>TEMP.id_acc_list</cursor>
+      <loop>
+        <index_select>
+          <index>'AGG_BUCKETS_BY_ACCOUNT'</index>
+          <field name='id_acc'>OBJECT(TEMP.id_acc_list).id_payee</field>
+          <cursor>TEMP.csr1</cursor>
+          <else>
+            <index_insert>
+              <index>'ACC_TO_WIPE'</index>
+              <field name='id_acc'>OBJECT(TEMP.id_acc_list).id_payee</field>
+              <field name='id_usage_interval'>OBJECT(TEMP.id_acc_list).id_usage_interval</field>
+            </index_insert>
+          </else>
+        </index_select>
+      </loop>
+    </db_select>
+
+<debug>'unapply_obsolete_work_for_interval after query'</debug>
+    <slave_node_id_select>
+      <cursor>TEMP.csr</cursor>
+      <loop>
+        <do>TEMP.slave_id=OBJECT(TEMP.csr).node_id</do>
+        <remote_queue_proc>
+          <name>'clear_local_structs'</name>
+          <process_id>TEMP.slave_id</process_id>
+          <batch_id>TEMP.my_batch_id</batch_id>
+          <new_remote_object_type>'REMOTE_EMPTY'</new_remote_object_type>
+        </remote_queue_proc>
+        <wait_for_batch_complete>TEMP.my_batch_id</wait_for_batch_complete>
+      </loop>
+    </slave_node_id_select>
+
+<debug>'unapply_obsolete_work_for_interval after clear'</debug>
+
+    <time ms='TEMP.ms'>
+      <map_reduce>
+        <producer_queue_length>GLOBAL.producer_queue_length</producer_queue_length>
+        <producer_proc>
+          <name>'produce_acc_wipe'</name>
+        </producer_proc>
+        <consumer_proc>
+          <name>'consume_acc_wipe'</name>
+          <include_object_fields_in_output>1</include_object_fields_in_output>
+        </consumer_proc>
+        <reducer_proc>
+          <name>'reduce_acc_wipe'</name>
+        </reducer_proc>
+      </map_reduce>
+      <!--<print>'AFTER MAP_REDUCE'</print>-->
+    </time>
+    
+<debug>'unapply_obsolete_work_for_interval after mapreduce'</debug>
+  </proc>
+
+  <proc name='produce_acc_wipe'>
+    <param name='pipe_cursor'/>
+        <debug>'enter produce_acc_wipe'</debug>
+
+        <index_select>
+          <index>'ACC_TO_WIPE'</index>
+          <cursor>TEMP.csr</cursor>
+          <loop>
+            <!--<do>OBJECT(TEMP.csr).id_interval = TEMP.id_interval</do>-->
+            <print>'wiping id_acc='~OBJECT(TEMP.csr).id_acc</print>
+            <pipe_row>TEMP.csr</pipe_row>
+          </loop>
+        </index_select>
+        <debug>'produce_acc_wipe piping null'</debug>
+    <while>
+      <condition>1</condition>
+      <loop>
+<debug>'here i am now pipe null...'</debug>
+        <pipe_row>''</pipe_row>
+      </loop>
+    </while>
+        <debug>'produce_acc_wipe exiting'</debug>
+  </proc>
+
+  <proc name='consume_acc_wipe'>
+    <print>'Wiping id_acc='~OBJECT.id_acc</print>
+    <print>'For id_interval='~OBJECT.id_usage_interval</print>
+
+    <call_proc_for_current_object>
+      <name>'wipe_account'</name>
+      <param name="id_acc">OBJECT.id_acc</param>
+      <param name="id_interval">OBJECT.id_usage_interval</param>
+    </call_proc_for_current_object>
+
+  </proc>
+
+  <proc name='reduce_acc_wipe'>
+    <do>GLOBAL.reduce_ctr+=1</do> 
+    <print>'wiped id_acc='~OBJECT.id_acc~', total_reduce_ctr='~GLOBAL.reduce_ctr</print>
+  </proc>
+
+</procs>
